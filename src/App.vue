@@ -568,35 +568,7 @@ onBeforeUnmount(() => {
 }
 
 .desktop-layout.dashboard-showcase {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  padding: 30px 0 38px;
-  background: linear-gradient(135deg, #f8fbfd 0%, #e8f1f7 100%);
-}
-
-.desktop-layout.dashboard-showcase::before,
-.desktop-layout.dashboard-showcase::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  width: 630px;
-  height: 630px;
-  border: 9px solid rgba(19, 183, 191, 0.78);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.desktop-layout.dashboard-showcase::before {
-  top: 90px;
-  right: -470px;
-}
-
-.desktop-layout.dashboard-showcase::after {
-  bottom: -100px;
-  left: -410px;
-  border-width: 88px;
-  border-color: rgba(84, 203, 211, 0.42);
+  background: var(--bg-gray);
 }
 
 .topbar-desktop {
@@ -610,12 +582,11 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-showcase .topbar-desktop {
-  position: relative;
-  width: min(1060px, calc(100% - 48px));
+  width: min(1240px, calc(100% - 32px));
   margin: 0 auto;
-  border: 0;
-  border-radius: 24px 24px 0 0;
-  box-shadow: 0 10px 34px rgba(15, 58, 74, 0.08);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .topbar-container {
@@ -628,7 +599,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-showcase .topbar-container {
-  padding: 20px 44px;
+  padding: 16px 24px;
 }
 
 .brand-logo {
@@ -703,13 +674,13 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-showcase .desktop-main {
-  width: min(1060px, calc(100% - 48px));
+  width: min(1240px, calc(100% - 32px));
   max-width: none;
   margin: 0 auto;
-  padding: 12px 44px 42px;
-  background: #fff;
-  border-radius: 0 0 24px 24px;
-  box-shadow: 0 18px 38px rgba(15, 58, 74, 0.08);
+  padding: 24px;
+  background: var(--bg-gray);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .container {
