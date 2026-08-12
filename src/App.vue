@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import LoginView from './components/LoginView.vue'
 import DashboardView from './components/DashboardView.vue'
 import AdminView from './components/AdminView.vue'
@@ -32,10 +32,65 @@ const showDropdown = ref(false)
 // Dropdown de Indicações no Mobile
 const activeRefTab = ref('visaoGeral')
 const showRefMenuDropdown = ref(false)
+const profileMenuRef = ref(null)
+const mobileMenuRef = ref(null)
+const chatPanelRef = ref(null)
+const chatButtonRef = ref(null)
 
 // Modal Global de Desenvolvimento
 const showDevModal = ref(false)
 const devModalData = ref({ title: '', message: '' })
+
+const PWA_INSTALL_STORAGE_KEY = 'vivamais-pwa-installed'
+const deferredInstallPrompt = ref(null)
+const showInstallPrompt = ref(false)
+const showInstallHelp = ref(false)
+
+const isInstalledPwa = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+
+const hasInstalledPwa = () => localStorage.getItem(PWA_INSTALL_STORAGE_KEY) === 'true'
+
+const isMobileViewport = () => window.matchMedia('(max-width: 767px)').matches
+
+const syncInstallPrompt = () => {
+  showInstallPrompt.value = isMobileViewport() && !hasInstalledPwa() && !isInstalledPwa()
+}
+
+const handleResize = () => {
+  layoutMode.value = window.innerWidth < 768 ? 'pwa' : 'desktop'
+  syncInstallPrompt()
+}
+
+const handleBeforeInstallPrompt = (event) => {
+  event.preventDefault()
+  deferredInstallPrompt.value = event
+  showInstallHelp.value = false
+  syncInstallPrompt()
+}
+
+const handleAppInstalled = () => {
+  localStorage.setItem(PWA_INSTALL_STORAGE_KEY, 'true')
+  deferredInstallPrompt.value = null
+  showInstallPrompt.value = false
+}
+
+const installPwa = async () => {
+  if (!deferredInstallPrompt.value) {
+    showInstallHelp.value = true
+    return
+  }
+  deferredInstallPrompt.value.prompt()
+  const { outcome } = await deferredInstallPrompt.value.userChoice
+  if (outcome === 'accepted') handleAppInstalled()
+  else showInstallPrompt.value = false
+  deferredInstallPrompt.value = null
+}
+
+// Fecha somente nesta visita. Sem instalação, o aviso volta na próxima entrada.
+const dismissInstallPrompt = () => {
+  showInstallPrompt.value = false
+  showInstallHelp.value = false
+}
 
 // Controla scroll do body quando modal está aberto
 watch(showDevModal, (val) => {
@@ -120,6 +175,17 @@ const toggleChatPanel = () => {
   if (showChatPanel.value) chatHasUnread.value = false
 }
 
+const closeFloatingPanels = (event) => {
+  if (profileMenuRef.value && !profileMenuRef.value.contains(event.target)) {
+    showDropdown.value = false
+  }
+  if (mobileMenuRef.value && !mobileMenuRef.value.contains(event.target)) {
+    showRefMenuDropdown.value = false
+  }
+  const clickedChat = chatPanelRef.value?.contains(event.target) || chatButtonRef.value?.contains(event.target)
+  if (!clickedChat) showChatPanel.value = false
+}
+
 const handleRouting = () => {
   const path = window.location.pathname
   const hash = window.location.hash
@@ -155,6 +221,11 @@ const handleRouting = () => {
 }
 
 onMounted(async () => {
+  document.addEventListener('click', closeFloatingPanels)
+  window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+  window.addEventListener('appinstalled', handleAppInstalled)
+  syncInstallPrompt()
+
   const token = getToken()
   if (token) {
     try {
@@ -177,9 +248,15 @@ onMounted(async () => {
     handleRouting()
   }
   window.addEventListener('popstate', handleRouting)
-  window.addEventListener('resize', () => {
-    layoutMode.value = window.innerWidth < 768 ? 'pwa' : 'desktop'
-  })
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeFloatingPanels)
+  window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+  window.removeEventListener('appinstalled', handleAppInstalled)
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('popstate', handleRouting)
 })
 </script>
 
@@ -199,7 +276,7 @@ onMounted(async () => {
   <div v-else class="app-layout">
     
     <!-- VERSÃO DESKTOP -->
-    <div v-if="layoutMode === 'desktop'" class="desktop-layout">
+    <div v-if="layoutMode === 'desktop'" class="desktop-layout" :class="{ 'dashboard-showcase': currentTab === 'home' }">
       <!-- Navbar Superior Desktop (Fundo escuro sem nav central) -->
       <header class="topbar-desktop">
         <div class="topbar-container">
@@ -208,7 +285,7 @@ onMounted(async () => {
           </div>
 
           <!-- Avatar com Dropdown de Opções (Navegação apenas pelo menu) -->
-          <div class="user-profile-wrapper">
+          <div ref="profileMenuRef" class="user-profile-wrapper">
             <div class="user-profile-area" @click="showDropdown = !showDropdown">
               <div class="avatar-circle">
                 {{ currentUser.name.split(' ').map(n => n[0]).join('') }}
@@ -304,7 +381,7 @@ onMounted(async () => {
           </div>
           
           <!-- Menu com 3 riscos (no text) se estiver na aba Indicações -->
-          <div v-if="currentTab === 'indicacoes'" style="position: relative; display: flex; align-items: center;">
+          <div v-if="currentTab === 'indicacoes'" ref="mobileMenuRef" style="position: relative; display: flex; align-items: center;">
             <button @click.stop="showRefMenuDropdown = !showRefMenuDropdown" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center;">
               <i class="ph ph-list" style="font-size: 26px; color: var(--secondary);"></i>
             </button>
@@ -383,10 +460,10 @@ onMounted(async () => {
 
     <!-- Botão flutuante de chat ao vivo (todas as páginas, exceto admin) -->
     <template v-if="currentUser?.role !== 'admin'">
-      <div v-if="showChatPanel" class="chat-fab-panel">
+      <div v-if="showChatPanel" ref="chatPanelRef" class="chat-fab-panel">
         <ChatAoVivoView />
       </div>
-      <button class="chat-fab" @click="toggleChatPanel" :aria-label="showChatPanel ? 'Fechar chat' : 'Abrir chat'">
+      <button ref="chatButtonRef" class="chat-fab" @click="toggleChatPanel" :aria-label="showChatPanel ? 'Fechar chat' : 'Abrir chat'">
         <i :class="showChatPanel ? 'ph ph-x' : 'ph ph-chat-circle-dots'"></i>
         <span v-if="chatHasUnread && !showChatPanel" class="chat-fab-dot"></span>
       </button>
@@ -402,6 +479,22 @@ onMounted(async () => {
       </div>
     </div>
 
+  </div>
+
+  <div v-if="showInstallPrompt" class="install-prompt" role="dialog" aria-modal="true" aria-labelledby="install-title">
+    <div class="install-prompt-card">
+      <img src="/favicon.png" alt="Ícone Viva Mais Club" class="install-prompt-icon" />
+      <div class="install-prompt-content">
+        <h2 id="install-title">Instale o Viva Mais Club</h2>
+        <p v-if="showInstallHelp" class="install-prompt-help">Para instalar, abra o menu do navegador e escolha “Instalar aplicativo” ou “Adicionar à tela de início”.</p>
+        <p v-if="!deferredInstallPrompt" class="install-prompt-instructions">No menu do navegador, escolha “Instalar aplicativo” ou “Adicionar à tela de início”.</p>
+        <p>Tenha acesso rápido aos seus benefícios direto pela tela inicial do celular ou computador.</p>
+      </div>
+      <div class="install-prompt-actions">
+        <button type="button" class="install-later" @click="dismissInstallPrompt">Agora não</button>
+        <button type="button" class="install-confirm" @click="installPwa">Instalar app</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -474,6 +567,38 @@ onMounted(async () => {
   flex-grow: 1;
 }
 
+.desktop-layout.dashboard-showcase {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 30px 0 38px;
+  background: linear-gradient(135deg, #f8fbfd 0%, #e8f1f7 100%);
+}
+
+.desktop-layout.dashboard-showcase::before,
+.desktop-layout.dashboard-showcase::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 630px;
+  height: 630px;
+  border: 9px solid rgba(19, 183, 191, 0.78);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.desktop-layout.dashboard-showcase::before {
+  top: 90px;
+  right: -470px;
+}
+
+.desktop-layout.dashboard-showcase::after {
+  bottom: -100px;
+  left: -410px;
+  border-width: 88px;
+  border-color: rgba(84, 203, 211, 0.42);
+}
+
 .topbar-desktop {
   background: var(--bg-white); /* Fundo branco solicitado */
   color: var(--text-dark);
@@ -484,6 +609,15 @@ onMounted(async () => {
   box-shadow: var(--shadow-sm);
 }
 
+.dashboard-showcase .topbar-desktop {
+  position: relative;
+  width: min(1060px, calc(100% - 48px));
+  margin: 0 auto;
+  border: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 10px 34px rgba(15, 58, 74, 0.08);
+}
+
 .topbar-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -491,6 +625,10 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.dashboard-showcase .topbar-container {
+  padding: 20px 44px;
 }
 
 .brand-logo {
@@ -564,6 +702,16 @@ onMounted(async () => {
   flex-grow: 1;
 }
 
+.dashboard-showcase .desktop-main {
+  width: min(1060px, calc(100% - 48px));
+  max-width: none;
+  margin: 0 auto;
+  padding: 12px 44px 42px;
+  background: #fff;
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 18px 38px rgba(15, 58, 74, 0.08);
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -609,5 +757,118 @@ onMounted(async () => {
 .pwa-logo {
   max-height: 36px;
   /* Removido o filtro invertido para manter as cores originais no fundo branco */
+}
+
+.install-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.install-prompt-card {
+  width: min(520px, 100%);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 20px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.25);
+}
+
+.install-prompt-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 14px;
+}
+
+.install-prompt-content h2 {
+  margin: 0 0 4px;
+  color: #064b93;
+  font-size: 17px;
+}
+
+.install-prompt-content p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.install-prompt-instructions {
+  display: none;
+  margin-top: 6px !important;
+  color: #064b93 !important;
+  font-weight: 600;
+}
+
+.install-prompt-help {
+  margin: 6px 0 0 !important;
+  color: #064b93 !important;
+  font-weight: 600;
+}
+
+.install-prompt-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.install-prompt-actions button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.install-later {
+  background: #eef2f7;
+  color: #475569;
+}
+
+.install-confirm {
+  background: #064b93;
+  color: #fff;
+}
+
+@media (min-width: 768px) {
+  .install-prompt { display: none; }
+}
+
+@media (max-width: 767px) {
+  .chat-fab {
+    right: 16px;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  .chat-fab-panel {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    bottom: calc(146px + env(safe-area-inset-bottom));
+  }
+
+  .install-prompt {
+    padding: 12px;
+    background: rgba(15, 23, 42, 0.22);
+  }
+
+  .install-prompt-card {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .install-prompt-actions button {
+    min-height: 42px;
+  }
 }
 </style>

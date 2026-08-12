@@ -79,7 +79,12 @@ const emit = defineEmits(['updateUser', 'logout', 'triggerDevModal', 'changeTab'
 
 // Carrossel Contínuo
 const activeSlide = ref(0)
-const slides = ref([])
+const DEFAULT_SLIDES = [{
+  tag: 'SAÚDE',
+  title: 'Consultas de Telemedicina 24h',
+  description: 'Fale com um médico a qualquer hora, sem sair de casa.',
+}]
+const slides = ref([...DEFAULT_SLIDES])
 
 const nextSlide = () => {
   if (slides.value.length === 0) return
@@ -849,7 +854,7 @@ onMounted(async () => {
       api.get('/billing/summary'),
       api.get('/content/pricing'),
     ])
-    slides.value = slidesData
+    slides.value = slidesData?.length ? slidesData : DEFAULT_SLIDES
     rawReferrals.value = referrals
     userLinks.value = links
     invoices.value = invoicesData
@@ -907,7 +912,7 @@ onMounted(async () => {
             v-for="(slide, idx) in slides" 
             :key="idx" 
             class="slide-item"
-            :style="{ backgroundImage: `linear-gradient(135deg, #16607D 0%, #2596BE 100%)` }"
+            :style="{ backgroundImage: `url('/telemedicina-banner.png')` }"
           >
             <div class="slide-content">
               <span class="badge badge-warning">{{ slide.tag }}</span>
@@ -2141,6 +2146,10 @@ onMounted(async () => {
   gap: 24px;
 }
 
+.dashboard-wrapper.desktop .tab-content {
+  min-width: 0;
+}
+
 .welcome-section {
   display: flex;
   justify-content: space-between;
@@ -2153,6 +2162,29 @@ onMounted(async () => {
 .welcome-text h1 {
   font-size: 26px;
   color: var(--secondary);
+}
+
+.dashboard-wrapper.desktop .welcome-section {
+  margin: 8px 0 24px;
+}
+
+.dashboard-wrapper.desktop .welcome-text h1 {
+  color: #082c63;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
+.dashboard-wrapper.desktop .welcome-text h1::after {
+  content: ' 👋';
+  font-size: 25px;
+  letter-spacing: 0;
+}
+
+.dashboard-wrapper.desktop .welcome-text p {
+  max-width: 380px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .welcome-text p {
@@ -2170,6 +2202,13 @@ onMounted(async () => {
   gap: 12px;
 }
 
+.dashboard-wrapper.desktop .plan-pill {
+  padding: 11px 15px;
+  border-color: #edf0f4;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 58, 74, 0.04);
+}
+
 .plan-name {
   font-size: 13px;
   font-weight: 600;
@@ -2181,7 +2220,7 @@ onMounted(async () => {
   position: relative;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  height: 320px;
+  height: 306px;
   box-shadow: var(--shadow-md);
   background-color: var(--bg-sidebar);
 }
@@ -2198,7 +2237,7 @@ onMounted(async () => {
   height: 100%;
   background-size: cover;
   background-position: center;
-  padding: 40px;
+  padding: 38px 36px;
   display: flex;
   align-items: center;
   color: white;
@@ -2206,7 +2245,7 @@ onMounted(async () => {
 }
 
 .slide-content {
-  max-width: 500px;
+  max-width: 43%;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2214,7 +2253,7 @@ onMounted(async () => {
 }
 
 .slide-content h2 {
-  font-size: 28px;
+  font-size: 30px;
   color: white;
   margin-top: 4px;
 }
@@ -2223,6 +2262,36 @@ onMounted(async () => {
   font-size: 15px;
   opacity: 0.9;
   line-height: 1.6;
+}
+
+.dashboard-wrapper.desktop .slide-item {
+  background-position: center;
+}
+
+.dashboard-wrapper.desktop .slide-content .badge {
+  background: #0db9c5;
+  color: #fff;
+  font-size: 10px;
+}
+
+.dashboard-wrapper.desktop .slide-content h2 {
+  max-width: 310px;
+  line-height: 1.18;
+}
+
+.dashboard-wrapper.desktop .slide-content h2::first-line {
+  color: #fff;
+}
+
+.dashboard-wrapper.desktop .slide-content p {
+  max-width: 250px;
+  line-height: 1.5;
+}
+
+.dashboard-wrapper.desktop .slide-content .btn {
+  padding: 11px 20px;
+  background: #0db9c5;
+  border-radius: 11px;
 }
 
 .slide-indicator-container {
@@ -2252,7 +2321,7 @@ onMounted(async () => {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  gap: 14px;
   margin: 12px 0;
 }
 
@@ -2260,6 +2329,23 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.dashboard-wrapper.desktop .metric-card {
+  min-height: 170px;
+  padding: 19px;
+  border-radius: 13px;
+  border-color: #eef1f5;
+  box-shadow: 0 4px 14px rgba(15, 58, 74, 0.035);
+}
+
+.dashboard-wrapper.desktop .metric-card h3 {
+  color: #082c63;
+  font-size: 24px;
+}
+
+.dashboard-wrapper.desktop .metric-card p {
+  line-height: 1.5;
 }
 
 .renew-card {
@@ -2317,8 +2403,8 @@ onMounted(async () => {
 /* Layout Grid Principal */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1.7fr 1.3fr;
-  gap: 32px;
+  grid-template-columns: 1.18fr 0.9fr;
+  gap: 30px;
 }
 
 @media (max-width: 992px) {
@@ -2331,6 +2417,12 @@ onMounted(async () => {
   font-size: 18px;
   margin-bottom: 16px;
   color: var(--secondary);
+}
+
+.dashboard-wrapper.desktop .section-title {
+  color: #082c63;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .shortcuts-list {
@@ -2392,6 +2484,15 @@ onMounted(async () => {
   transition: var(--transition);
 }
 
+.dashboard-wrapper.desktop .shortcut-card {
+  min-height: 58px;
+  padding: 11px 13px;
+  gap: 12px;
+  border-color: #edf0f4;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
 .shortcut-card:hover {
   transform: translateY(-2px);
   border-color: var(--primary);
@@ -2409,6 +2510,12 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.dashboard-wrapper.desktop .shortcut-icon {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+
 .icon-teal { background: #e8f2f3; color: var(--secondary); }
 .icon-pink { background: #fdf2f8; color: #db2777; }
 .icon-green { background: #eef7eb; color: var(--primary-hover); }
@@ -2424,10 +2531,21 @@ onMounted(async () => {
   margin-bottom: 2px;
 }
 
+.dashboard-wrapper.desktop .shortcut-details h3 {
+  color: #082c63;
+  font-size: 13px;
+  margin-bottom: 0;
+}
+
 .shortcut-details p {
   font-size: 12px;
   color: var(--text-gray);
   margin-bottom: 0;
+}
+
+.dashboard-wrapper.desktop .shortcut-details p {
+  font-size: 10.5px;
+  line-height: 1.4;
 }
 
 .action-arrow {
@@ -2442,7 +2560,7 @@ onMounted(async () => {
 
 /* Carteirinha Digital */
 .digital-card-preview {
-  background: linear-gradient(135deg, var(--secondary) 0%, #0d3444 100%);
+  background: linear-gradient(135deg, #042d67 0%, #06376f 100%);
   color: white;
   padding: 24px;
   border-radius: var(--radius-lg);
@@ -2454,6 +2572,14 @@ onMounted(async () => {
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow-md);
+}
+
+.dashboard-wrapper.desktop .digital-card-preview {
+  min-height: 240px;
+  padding: 24px;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(8, 44, 99, 0.16);
 }
 
 .digital-card-preview::before {
@@ -2486,8 +2612,17 @@ onMounted(async () => {
   align-items: center;
 }
 
+.dashboard-wrapper.desktop .dcard-logo-box {
+  padding: 5px 9px;
+  border-radius: 7px;
+}
+
 .dcard-logo {
   max-height: 24px;
+}
+
+.dashboard-wrapper.desktop .dcard-logo {
+  max-height: 22px;
 }
 
 .dcard-body h3 {
@@ -2916,19 +3051,47 @@ onMounted(async () => {
 }
 
 .pwa .banner-slider {
-  height: 240px;
+  height: 232px;
+  background: #063b7b;
+}
+
+.pwa .slider-track {
+  transform: translateX(0) !important;
 }
 
 .pwa .slide-item {
   padding: 24px;
+  background-image: linear-gradient(135deg, #063b7b 0%, #082a5c 100%) !important;
+}
+
+.pwa .slide-item:nth-child(n + 2) {
+  display: none;
+}
+
+.pwa .slide-content {
+  max-width: 100%;
+  gap: 10px;
 }
 
 .pwa .slide-content h2 {
-  font-size: 20px;
+  max-width: 250px;
+  font-size: 23px;
+  line-height: 1.25;
 }
 
 .pwa .slide-content p {
+  max-width: 265px;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+.pwa .slide-content .btn {
+  min-width: 166px;
+  padding: 11px 18px;
+}
+
+.pwa .slide-indicator-container {
+  display: none;
 }
 
 .pwa .dashboard-grid {

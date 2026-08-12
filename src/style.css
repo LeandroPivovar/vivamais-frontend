@@ -863,16 +863,27 @@ input:checked + .slider:before {
 }
 
 @media (max-width: 767px) {
+  html, body, #app {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  img, video, svg {
+    max-width: 100%;
+    height: auto;
+  }
+
   .pwa-layout {
     background: var(--bg-gray) !important;
     padding: 0 !important;
-    min-height: 100vh !important;
+    min-height: 100dvh !important;
     align-items: stretch !important;
   }
   
   .pwa-simulator {
     max-width: 100% !important;
-    height: 100vh !important;
+    height: 100dvh !important;
     margin: 0 !important;
     border: none !important;
     border-radius: 0 !important;
@@ -889,6 +900,53 @@ input:checked + .slider:before {
     left: 0 !important;
     width: 100% !important;
     box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.08);
+    padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .pwa-simulator .main-content {
+    padding: 16px 16px calc(112px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .pwa-layout .dashboard-wrapper,
+  .pwa-layout .tab-content,
+  .pwa-layout .dashboard-grid,
+  .pwa-layout .financial-grid,
+  .pwa-layout .metrics-grid,
+  .pwa-layout .form-row,
+  .pwa-layout .billing-actions,
+  .pwa-layout .payment-methods-select,
+  .pwa-layout .consultas-options {
+    min-width: 0 !important;
+  }
+
+  .pwa-layout .dashboard-grid,
+  .pwa-layout .financial-grid,
+  .pwa-layout .metrics-grid,
+  .pwa-layout .form-row,
+  .pwa-layout .billing-actions,
+  .pwa-layout .payment-methods-select,
+  .pwa-layout .consultas-options {
+    grid-template-columns: 1fr !important;
+    flex-direction: column !important;
+  }
+
+  .pwa-layout [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pwa-layout .btn,
+  .pwa-layout .form-control,
+  .pwa-layout select,
+  .pwa-layout textarea {
+    max-width: 100%;
+  }
+
+  .pwa-layout .checkout-box,
+  .pwa-layout .modal-large,
+  .pwa-layout .tree-modal-card,
+  .pwa-layout .consultas-modal {
+    width: min(100% - 24px, 560px) !important;
+    max-height: calc(100dvh - 24px) !important;
   }
 
   /* Oculta abas horizontais de indicação no mobile (substituído pelo menu do topo) */
