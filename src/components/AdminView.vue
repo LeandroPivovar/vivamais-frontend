@@ -235,7 +235,7 @@ const billingHistory = ref([])
 const billingPage = ref(1)
 const billingPageSize = ref(10)
 const loadError = ref('')
-const subStats = ref({ today: 0, pending: 0, canceled: 0, active: 0 })
+const subStats = ref({ active: 0, pending: 0, canceled: 0, today: 0, todayActive: 0, todayPending: 0, todayCanceled: 0 })
 
 const loadAdminData = async () => {
   try {
@@ -243,7 +243,7 @@ const loadAdminData = async () => {
       api.get('/admin/users'),
       api.get('/admin/config'),
       api.get('/admin/billing'),
-      api.get('/admin/subscription-stats').catch(() => ({ today: 0, pending: 0, canceled: 0, active: 0 })),
+      api.get('/admin/subscription-stats').catch(() => ({ active: 0, pending: 0, canceled: 0, today: 0, todayActive: 0, todayPending: 0, todayCanceled: 0 })),
     ])
     users.value = usersData
     applyConfig(configData)
@@ -868,10 +868,10 @@ const filteredUsers = computed(() => {
           <small style="display:block; color:var(--text-gray); margin-top:4px;">Pix R$ {{ money(todayBillingTotals.pix) }} - Cartao R$ {{ money(todayBillingTotals.card) }}</small>
         </div>
         <div class="rules-col-box finance-metric-card" style="border-color: #99f6e4;">
-          <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">ASSINATURAS</span>
-          <strong style="font-size: 24px; color: #0d9488;">{{ subStats.active }} ativa(s)</strong>
+          <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">ASSINATURAS HOJE</span>
+          <strong style="font-size: 24px; color: #0d9488;">{{ subStats.today }} nova(s)</strong>
           <small style="display:block; color:var(--text-gray); margin-top:4px;">
-            Hoje {{ subStats.today }} · Pendentes {{ subStats.pending }} · Canceladas {{ subStats.canceled }}
+            Ativas {{ subStats.todayActive }} · Pendentes {{ subStats.todayPending }} · Canceladas {{ subStats.todayCanceled }}
           </small>
         </div>
       </div>
