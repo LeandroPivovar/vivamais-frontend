@@ -232,18 +232,23 @@ onUnmounted(() => {
 
 // Histórico Financeiro do Admin (Renovações e Comissões)
 const billingHistory = ref([])
+const billingPage = ref(1)
+const billingPageSize = ref(10)
 const loadError = ref('')
+const subStats = ref({ today: 0, pending: 0, canceled: 0, active: 0 })
 
 const loadAdminData = async () => {
   try {
-    const [usersData, configData, billing] = await Promise.all([
+    const [usersData, configData, billing, subs] = await Promise.all([
       api.get('/admin/users'),
       api.get('/admin/config'),
       api.get('/admin/billing'),
+      api.get('/admin/subscription-stats').catch(() => ({ today: 0, pending: 0, canceled: 0, active: 0 })),
     ])
     users.value = usersData
     applyConfig(configData)
     billingHistory.value = billing
+    subStats.value = subs
   } catch (err) {
     loadError.value = 'Não foi possível carregar os dados administrativos agora.'
   }
@@ -257,6 +262,74 @@ onMounted(() => {
 // e um .toFixed() nesses valores quebrava o render (tela branca). n() e money() blindam.
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 const money = (v) => n(v).toFixed(2)
+
+const isPaidBilling = (item) => {
+  const status = String(item?.status ?? '').toLowerCase()
+  return status === 'pago' || status.includes('pago') || status === 'paid'
+}
+
+const isPixBilling = (item) => {
+  const text = `${item?.paymentMethod ?? ''} ${item?.gatewayProvider ?? ''}`.toLowerCase()
+  return text.includes('pix') || text.includes('woovi') || text.includes('veenca')
+}
+
+const isCardBilling = (item) => {
+  const text = `${item?.paymentMethod ?? ''} ${item?.gatewayProvider ?? ''}`.toLowerCase()
+  return text.includes('cart') || text.includes('card') || text.includes('pagarme')
+}
+
+const todayKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+const billingDateKey = (item) => {
+  const raw = item?.dateIso ?? item?.createdAt
+  if (!raw) return ''
+  return new Date(raw).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+}
+
+const aggregateBilling = (items) => {
+  const paid = items.filter(isPaidBilling)
+  const gross = paid.reduce((acc, item) => acc + n(item.value), 0)
+  const commission = paid.reduce((acc, item) => acc + n(item.commissionMmn), 0)
+  const pix = paid.filter(isPixBilling).reduce((acc, item) => acc + n(item.value), 0)
+  const card = paid.filter(isCardBilling).reduce((acc, item) => acc + n(item.value), 0)
+  return { paidCount: paid.length, gross, commission, net: gross - commission, pix, card }
+}
+
+const todayBillingHistory = computed(() => billingHistory.value.filter((item) => billingDateKey(item) === todayKey()))
+const billingTotals = computed(() => aggregateBilling(billingHistory.value))
+const todayBillingTotals = computed(() => aggregateBilling(todayBillingHistory.value))
+const totalBillingPages = computed(() => Math.max(1, Math.ceil(billingHistory.value.length / n(billingPageSize.value || 10))))
+const paginatedBillingHistory = computed(() => {
+  const pageSize = n(billingPageSize.value || 10)
+  const start = (billingPage.value - 1) * pageSize
+  return billingHistory.value.slice(start, start + pageSize)
+})
+const billingRangeStart = computed(() => billingHistory.value.length ? ((billingPage.value - 1) * n(billingPageSize.value || 10)) + 1 : 0)
+const billingRangeEnd = computed(() => Math.min(billingHistory.value.length, billingPage.value * n(billingPageSize.value || 10)))
+
+watch([billingHistory, billingPageSize], () => {
+  billingPage.value = 1
+})
+
+const billingStatusLabel = (status) => {
+  const s = String(status ?? '').toLowerCase()
+  if (s === 'pago' || s === 'paid') return 'Pago'
+  if (s === 'pendente' || s === 'pending') return 'Pendente'
+  if (s === 'cancelado' || s === 'cancelled') return 'Cancelado'
+  return status || '-'
+}
+
+const billingStatusClass = (status) => {
+  const s = String(status ?? '').toLowerCase()
+  if (s === 'pago' || s === 'paid') return 'ativo'
+  if (s === 'pendente' || s === 'pending') return 'pendente'
+  return 'inativo'
+}
+
+const billingMethodLabel = (item) => {
+  if (isCardBilling(item)) return 'Cartao'
+  if (isPixBilling(item)) return 'Pix'
+  return item?.paymentMethod || '-'
+}
 
 // Preço base do plano (mesma fórmula do backend — cada plano tem preço próprio configurável)
 const basePriceForPlan = (planName) => {
@@ -767,19 +840,54 @@ const filteredUsers = computed(() => {
     <!-- ABA 2: HISTÓRICO FINANCEIRO / RENOVAÇÕES -->
     <div v-else-if="activeAdminTab === 'financeiro'" class="tab-content-admin animated-item" style="animation-delay: 0s;">
       <!-- Grid de métricas rápidas de faturamento -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
-        <div class="rules-col-box" style="text-align: center; padding: 16px;">
+      <div class="finance-metrics-grid">
+        <div class="rules-col-box finance-metric-card">
           <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">FATURAMENTO BRUTO</span>
-          <strong style="font-size: 24px; color: var(--secondary);">R$ {{ billingHistory.filter(b=>b.status.includes('Pago')).reduce((a,b)=>a+b.value, 0).toFixed(2) }}</strong>
+          <strong style="font-size: 24px; color: var(--secondary);">R$ {{ money(billingTotals.gross) }}</strong>
+          <small style="display:block; color:var(--text-gray); margin-top:4px;">{{ billingTotals.paidCount }} pago(s)</small>
         </div>
-        <div class="rules-col-box" style="text-align: center; padding: 16px; border-color: #fbcfe8;">
+        <div class="rules-col-box finance-metric-card" style="border-color: #bfdbfe;">
+          <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">PIX RECEBIDO</span>
+          <strong style="font-size: 24px; color: #2563eb;">R$ {{ money(billingTotals.pix) }}</strong>
+        </div>
+        <div class="rules-col-box finance-metric-card" style="border-color: #ddd6fe;">
+          <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">CARTAO RECEBIDO</span>
+          <strong style="font-size: 24px; color: #7c3aed;">R$ {{ money(billingTotals.card) }}</strong>
+        </div>
+        <div class="rules-col-box finance-metric-card" style="border-color: #fbcfe8;">
           <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">COMISSÕES DISTRIBUÍDAS</span>
-          <strong style="font-size: 24px; color: #db2777;">R$ {{ billingHistory.filter(b=>b.status.includes('Pago')).reduce((a,b)=>a+b.commissionMmn, 0).toFixed(2) }}</strong>
+          <strong style="font-size: 24px; color: #db2777;">R$ {{ money(billingTotals.commission) }}</strong>
         </div>
-        <div class="rules-col-box" style="text-align: center; padding: 16px; border-color: #bbf7d0;">
+        <div class="rules-col-box finance-metric-card" style="border-color: #bbf7d0;">
           <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">RECEITA LÍQUIDA DA EMPRESA</span>
-          <strong style="font-size: 24px; color: #16a34a;">R$ {{ (billingHistory.filter(b=>b.status.includes('Pago')).reduce((a,b)=>a+b.value, 0) - billingHistory.filter(b=>b.status.includes('Pago')).reduce((a,b)=>a+b.commissionMmn, 0)).toFixed(2) }}</strong>
+          <strong style="font-size: 24px; color: #16a34a;">R$ {{ money(billingTotals.net) }}</strong>
         </div>
+        <div class="rules-col-box finance-metric-card" style="border-color: #fde68a;">
+          <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">CAIU HOJE</span>
+          <strong style="font-size: 24px; color: #ca8a04;">R$ {{ money(todayBillingTotals.gross) }}</strong>
+          <small style="display:block; color:var(--text-gray); margin-top:4px;">Pix R$ {{ money(todayBillingTotals.pix) }} - Cartao R$ {{ money(todayBillingTotals.card) }}</small>
+        </div>
+        <div class="rules-col-box finance-metric-card" style="border-color: #99f6e4;">
+          <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">ASSINATURAS</span>
+          <strong style="font-size: 24px; color: #0d9488;">{{ subStats.active }} ativa(s)</strong>
+          <small style="display:block; color:var(--text-gray); margin-top:4px;">
+            Hoje {{ subStats.today }} · Pendentes {{ subStats.pending }} · Canceladas {{ subStats.canceled }}
+          </small>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+        <div style="font-size:13px; color:var(--text-gray);">
+          Mostrando {{ billingRangeStart }}-{{ billingRangeEnd }} de {{ billingHistory.length }} registros
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-gray);">
+          Registros por pagina
+          <select v-model.number="billingPageSize" style="border:1px solid var(--border-color); border-radius:6px; padding:6px 8px;">
+            <option :value="10">10</option>
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+          </select>
+        </label>
       </div>
 
       <div class="card" style="padding: 0; overflow-x: auto;">
@@ -789,6 +897,7 @@ const filteredUsers = computed(() => {
               <th>Usuário</th>
               <th>Plano</th>
               <th>Valor Cobrado</th>
+              <th>Metodo</th>
               <th>Data Vencimento/Pago</th>
               <th>Status Renovação</th>
               <th>Comissão Distribuída</th>
@@ -796,24 +905,25 @@ const filteredUsers = computed(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="b in billingHistory" :key="b.id">
+            <tr v-for="b in paginatedBillingHistory" :key="b.id">
               <td>
                 <strong>{{ b.user }}</strong>
               </td>
               <td>{{ b.plan }}</td>
-              <td class="price-col">R$ {{ b.value.toFixed(2) }}</td>
+              <td class="price-col">R$ {{ money(b.value) }}</td>
+              <td>{{ billingMethodLabel(b) }}</td>
               <td>{{ b.date }}</td>
               <td>
-                <span :class="['status-pill', b.status.includes('Pago') ? 'ativo' : (b.status === 'Pendente' ? 'pendente' : 'inativo')]">
-                  {{ b.status }}
+                <span :class="['status-pill', billingStatusClass(b.status)]">
+                  {{ billingStatusLabel(b.status) }}
                 </span>
               </td>
-              <td style="font-weight: bold; color: #db2777;">R$ {{ b.commissionMmn.toFixed(2) }}</td>
+              <td style="font-weight: bold; color: #db2777;">R$ {{ money(b.commissionMmn) }}</td>
               <td>
                 <div v-if="b.commissionMmn > 0 && getCommissionReceivers(b.user, b.plan).length > 0" style="display:flex; flex-direction:column; gap:4px; font-size: 11px;">
                   <div v-for="recv in getCommissionReceivers(b.user, b.plan)" :key="recv.name" style="background:#fdf2f8; border:1px solid #fbcfe8; padding: 4px 8px; border-radius: 4px; display:inline-flex; align-items:center; justify-content:space-between; gap:10px;">
                     <span>Nível {{ recv.level }}: <strong>{{ recv.name }}</strong></span>
-                    <strong style="color: #db2777;">+ R$ {{ recv.gain.toFixed(2) }}</strong>
+                    <strong style="color: #db2777;">+ R$ {{ money(recv.gain) }}</strong>
                   </div>
                 </div>
                 <span v-else class="text-gray" style="font-size:11px;">Nenhuma comissão distribuída</span>
@@ -821,6 +931,16 @@ const filteredUsers = computed(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:12px;">
+        <button class="btn btn-outline btn-sm" :disabled="billingPage <= 1" @click="billingPage--">
+          <i class="ph ph-caret-left"></i> Anterior
+        </button>
+        <span style="font-size:13px; color:var(--text-gray);">Pagina {{ billingPage }} de {{ totalBillingPages }}</span>
+        <button class="btn btn-outline btn-sm" :disabled="billingPage >= totalBillingPages" @click="billingPage++">
+          Proxima <i class="ph ph-caret-right"></i>
+        </button>
       </div>
     </div>
 
@@ -1749,6 +1869,32 @@ const filteredUsers = computed(() => {
 .ticket-row:hover { background: var(--bg-gray, #f4f6f8); }
 .ticket-row.active { background: var(--primary-light, #e6efff); }
 .badge-muted { background:#e5e7eb; color:#6b7280; }
+.finance-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.finance-metric-card {
+  text-align: center;
+  padding: 14px 10px;
+  min-width: 0;
+}
+.finance-metric-card strong,
+.finance-metric-card small,
+.finance-metric-card span {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1180px) {
+  .finance-metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .finance-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .ticket-thread { display:flex; flex-direction:column; gap:12px; max-height:52vh; overflow-y:auto; padding:4px; }
 .t-msg { display:flex; }
 .t-msg.from-admin { justify-content:flex-end; }
