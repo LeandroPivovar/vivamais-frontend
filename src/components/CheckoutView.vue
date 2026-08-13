@@ -149,8 +149,7 @@ const copyPix = async () => {
 <template>
   <div class="checkout-public">
     <header class="cp-header">
-      <img src="/logo.png" alt="Viva Mais" class="cp-logo" onerror="this.style.display='none'" />
-      <span class="cp-brand">Viva Mais Club</span>
+      <img src="/logo.png" alt="Viva Mais Club" class="cp-logo" />
     </header>
 
     <div class="cp-body">
