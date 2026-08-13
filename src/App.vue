@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Cabeçalho PWA -->
-        <header class="pwa-header" style="position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 12px 16px; background: white; border-bottom: 1px solid var(--border-color);">
+        <header class="pwa-header" style="position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 16px 24px; background: white; border-bottom: 1px solid var(--border-color);">
           <div @click="navigateTo('home')" style="cursor: pointer; display: flex; align-items: center;">
             <img src="/logo.png" alt="Viva Mais" class="pwa-logo" style="max-height: 32px;" />
           </div>
@@ -582,8 +582,8 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-showcase .topbar-desktop {
-  width: min(1240px, calc(100% - 32px));
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   border-bottom: 1px solid var(--border-color);
   border-radius: 0;
   box-shadow: none;
@@ -599,6 +599,9 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-showcase .topbar-container {
+  width: min(1240px, calc(100% - 32px));
+  max-width: none;
+  margin: 0 auto;
   padding: 16px 24px;
 }
 
