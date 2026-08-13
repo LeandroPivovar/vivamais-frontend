@@ -79,16 +79,52 @@ const emit = defineEmits(['updateUser', 'logout', 'triggerDevModal', 'changeTab'
 
 // Carrossel Contínuo
 const activeSlide = ref(0)
-const DEFAULT_SLIDES = [{
-  tag: 'SAÚDE',
-  title: 'Consultas de Telemedicina 24h',
-  description: 'Fale com um médico a qualquer hora, sem sair de casa.',
-}]
+const DEFAULT_SLIDES = [
+  {
+    tag: 'SAÚDE',
+    title: 'Consultas de Telemedicina 24h',
+    description: 'Fale com um médico a qualquer hora, sem sair de casa.',
+    image: '/telemedicina-banner.png',
+    benefit: 'Telemedicina'
+  },
+  {
+    tag: 'PET',
+    title: 'Consultas Veterinárias 24h',
+    description: 'Fale com um veterinário a qualquer hora, sem sair de casa.',
+    image: '/pet-banner.png',
+    benefit: 'Veterinário 24h'
+  },
+  {
+    tag: 'ECONOMIA',
+    title: 'Clube de Descontos Exclusivo',
+    description: 'Economize até 50% em farmácias, compras, lazer e parceiros.',
+    image: '/clube_banner.png',
+    benefit: 'Clube de Descontos'
+  },
+  {
+    tag: 'CONSULTAS & EXAMES',
+    title: 'Consultas e Exames',
+    description: 'Agende consultas e exames pelo app Nipomed no seu celular.',
+    image: '/saude_banner.png',
+    benefit: 'Consultas e exames'
+  }
+]
 const slides = ref([...DEFAULT_SLIDES])
 
 const nextSlide = () => {
   if (slides.value.length === 0) return
   activeSlide.value = (activeSlide.value + 1) % slides.value.length
+}
+
+const handleSlideAction = (slide) => {
+  const benefit = slide.benefit || slide.title || ''
+  if (benefit.toLowerCase().includes('consultas') || benefit.toLowerCase().includes('nipomed') || benefit.toLowerCase().includes('exames')) {
+    showConsultasModal.value = true
+  } else if (benefit.toLowerCase().includes('indicaç') || benefit.toLowerCase().includes('afilia')) {
+    emit('changeTab', 'indicacoes')
+  } else {
+    triggerRedirect(benefit)
+  }
 }
 
 onMounted(() => {
@@ -363,6 +399,14 @@ function parseGain(gain) {
 
 function formatCurrency(value) {
   return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function getUserInitials(fullName) {
+  if (!fullName) return '?'
+  const clean = fullName.trim().replace(/\s+(da|de|do|das|dos|e)\s+/gi, ' ')
+  const parts = clean.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
 // Estatísticas do programa de indicações, derivadas 100% dos indicados reais (rawReferrals)
@@ -846,28 +890,28 @@ watch([showCardModal, showCheckoutModal, showShareModal, showReportModal, showEd
 
 onMounted(async () => {
   try {
-    const [slidesData, referrals, links, invoicesData, summary, prices] = await Promise.all([
-      api.get('/content/slides'),
-      api.get('/referrals'),
-      api.get('/referrals/my-links'),
-      api.get('/billing/invoices'),
-      api.get('/billing/summary'),
-      api.get('/content/pricing'),
+    const [, referrals, links, invoicesData, summary, prices] = await Promise.all([
+      api.get('/content/slides').catch(() => DEFAULT_SLIDES),
+      api.get('/referrals').catch(() => []),
+      api.get('/referrals/my-links').catch(() => []),
+      api.get('/billing/invoices').catch(() => []),
+      api.get('/billing/summary').catch(() => ({ plan: '', monthlyValue: '', nextBillingDate: '' })),
+      api.get('/content/pricing').catch(() => ({ Individual: '', Família: '' })),
     ])
-    slides.value = slidesData?.length ? slidesData : DEFAULT_SLIDES
-    rawReferrals.value = referrals
-    userLinks.value = links
-    invoices.value = invoicesData
-    billingSummary.value = summary
-    planPrices.value = prices
+    slides.value = DEFAULT_SLIDES
+    rawReferrals.value = referrals || []
+    userLinks.value = links || []
+    invoices.value = invoicesData || []
+    billingSummary.value = summary || { plan: '', monthlyValue: '', nextBillingDate: '' }
+    planPrices.value = prices || { Individual: '', Família: '' }
     await loadProfile()
-    // Dependentes: best-effort, não derruba o dashboard se falhar.
     try {
       depInfo.value = await api.get('/dependents')
     } catch {
       // mantém o padrão (limite 0)
     }
   } catch (err) {
+    slides.value = DEFAULT_SLIDES
     emit('triggerDevModal', { title: 'Erro ao carregar dados', message: 'Não foi possível carregar seus dados agora. Tente recarregar a página.' })
   }
 })
@@ -912,13 +956,13 @@ onMounted(async () => {
             v-for="(slide, idx) in slides" 
             :key="idx" 
             class="slide-item"
-            :style="{ backgroundImage: `url('/telemedicina-banner.png')` }"
+            :style="{ backgroundImage: `url('${slide.image || slide.fallbackImage || '/telemedicina-banner.png'}')` }"
           >
             <div class="slide-content">
               <span class="badge badge-warning">{{ slide.tag }}</span>
               <h2>{{ slide.title }}</h2>
               <p>{{ slide.description }}</p>
-              <button class="btn btn-primary" @click="triggerRedirect(slide.title)">Acessar Benefício</button>
+              <button class="btn btn-primary" @click="handleSlideAction(slide)">Acessar Benefício</button>
             </div>
           </div>
         </div>
@@ -1350,7 +1394,7 @@ onMounted(async () => {
           <div class="activities-list" style="display: flex; flex-direction: column; gap: 16px;">
             <div class="activity-item" v-for="ref in latestReferrals" :key="ref.name + ref.date" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
               <div style="display: flex; align-items: center; gap: 12px;">
-                <div class="user-avatar-mini">{{ ref.name.split(' ').map(n => n[0]).join('') }}</div>
+                <div class="user-avatar-mini">{{ getUserInitials(ref.name) }}</div>
                 <div>
                   <strong style="color: var(--text-dark); display:block; font-size: 14px;">{{ ref.name }}</strong>
                   <span style="font-size: 12px; color: var(--text-gray);">Indicado(a) em {{ ref.date }} • {{ ref.level }} • <span :class="['badge', ref.status === 'ativo' ? 'badge-success' : 'badge-warning']" style="font-size:10px; padding: 2px 6px;">{{ ref.status.charAt(0).toUpperCase() + ref.status.slice(1) }}</span></span>
@@ -1407,8 +1451,8 @@ onMounted(async () => {
         </div>
 
         <!-- Tabela -->
-        <div class="card animated-item" style="overflow-x: auto; padding: 0; animation-delay: 0.15s;">
-          <p style="font-size:12px; color:var(--text-gray); margin: 0 16px 8px;">Clique em um indicado para ver a hierarquia da rede.</p>
+        <div class="card animated-item" style="overflow-x: auto; padding: 20px 0 0; animation-delay: 0.15s;">
+          <p style="font-size: 13px; color: var(--text-gray); margin: 0 20px 16px; padding: 0;">Clique em um indicado para ver a hierarquia da rede.</p>
           <table class="referral-table">
             <thead>
               <tr>
@@ -1426,7 +1470,7 @@ onMounted(async () => {
               <tr v-for="(refItem, index) in filteredReferrals" :key="index" class="animated-item ref-row-clickable" :style="{ 'animation-delay': (0.2 + index * 0.05) + 's' }" @click="openReferralTree">
                 <td>
                   <div class="referral-user">
-                    <div class="user-avatar-mini">{{ refItem.name.split(' ').map(n=>n[0]).join('') }}</div>
+                    <div class="user-avatar-mini">{{ getUserInitials(refItem.name) }}</div>
                     <strong style="color: var(--text-dark);">{{ refItem.name }}</strong>
                   </div>
                 </td>
@@ -2220,9 +2264,9 @@ onMounted(async () => {
   position: relative;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  height: 306px;
+  height: 385px;
   box-shadow: var(--shadow-md);
-  background-color: var(--bg-sidebar);
+  background-color: #031d44;
 }
 
 .slider-track {
@@ -2236,8 +2280,10 @@ onMounted(async () => {
   min-width: 100%;
   height: 100%;
   background-size: cover;
-  background-position: center;
-  padding: 38px 36px;
+  background-position: right center;
+  background-repeat: no-repeat;
+  background-color: #031d44;
+  padding: 46px 44px;
   display: flex;
   align-items: center;
   color: white;
@@ -2245,27 +2291,28 @@ onMounted(async () => {
 }
 
 .slide-content {
-  max-width: 43%;
+  max-width: 44%;
   display: flex;
   flex-direction: column;
   gap: 12px;
   align-items: flex-start;
+  z-index: 2;
 }
 
 .slide-content h2 {
-  font-size: 30px;
+  font-size: 32px;
   color: white;
   margin-top: 4px;
 }
 
 .slide-content p {
   font-size: 15px;
-  opacity: 0.9;
+  opacity: 0.92;
   line-height: 1.6;
 }
 
 .dashboard-wrapper.desktop .slide-item {
-  background-position: center;
+  background-position: right center;
 }
 
 .dashboard-wrapper.desktop .slide-content .badge {
@@ -2321,8 +2368,12 @@ onMounted(async () => {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin: 12px 0;
+  gap: 16px;
+  margin: 28px 0 32px;
+}
+
+.dashboard-wrapper.desktop .metrics-grid {
+  margin: 28px 0 34px;
 }
 
 .metric-card {
@@ -2436,14 +2487,60 @@ onMounted(async () => {
   filter: grayscale(0.5);
 }
 
+/* Sub-Abas do Programa de Indicações */
+.referral-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.ref-tab-btn {
+  border: none;
+  background: transparent;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-gray);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.15s ease;
+  white-space: nowrap;
+  position: relative;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+
+.ref-tab-btn:hover {
+  color: var(--secondary);
+}
+
+.ref-tab-btn.active {
+  color: #2563eb !important;
+  font-weight: 700;
+  border-bottom: 2px solid #2563eb !important;
+  margin-bottom: -2px;
+}
+
 /* Abas de "Minha Conta" */
 .account-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 4px;
+}
+.account-tabs::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 .account-tab {
   flex: 0 0 auto;

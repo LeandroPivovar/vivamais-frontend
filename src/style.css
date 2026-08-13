@@ -483,27 +483,29 @@ input:checked + .slider:before {
    ========================================================================== */
 .referral-tabs {
   display: flex;
+  align-items: center;
   gap: 8px;
-  border-bottom: 2px solid var(--border-color);
+  border-bottom: 2px solid #e2e8f0;
   margin-bottom: 24px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  position: relative;
 }
 
 .ref-tab-btn {
   border: none;
   background: transparent;
-  padding: 12px 20px;
+  padding: 12px 18px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-gray);
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 3px solid transparent;
-  transition: var(--transition);
+  transition: color 0.15s ease;
   white-space: nowrap;
+  position: relative;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
 }
 
 .ref-tab-btn:hover {
@@ -511,8 +513,10 @@ input:checked + .slider:before {
 }
 
 .ref-tab-btn.active {
-  color: var(--secondary);
-  border-bottom-color: var(--primary);
+  color: #2563eb !important;
+  font-weight: 700;
+  border-bottom: 2px solid #2563eb !important;
+  margin-bottom: -2px;
 }
 
 .level-row {
@@ -683,15 +687,21 @@ input:checked + .slider:before {
 }
 
 .user-avatar-mini {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   border-radius: 50%;
-  background: var(--primary-light);
-  color: var(--secondary);
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .status-badge-ref {
