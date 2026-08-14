@@ -108,7 +108,7 @@ const handleSSO = async () => {
 }
 
 .benefit-hero {
-  background: linear-gradient(135deg, var(--secondary) 0%, #0d3444 100%);
+  background: var(--primary);
   color: white;
   border-radius: var(--radius-lg);
   padding: 40px;

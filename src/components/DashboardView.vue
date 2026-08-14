@@ -1020,7 +1020,7 @@ onMounted(async () => {
           <div class="shortcuts-list">
 
             <div class="shortcut-card animated-item" style="animation-delay: 0.35s;" @click="showConsultasModal = true">
-              <div class="shortcut-icon icon-teal" style="background: #dbeafe; color: #1d4ed8;">
+              <div class="shortcut-icon icon-pink">
                 <i class="ph ph-clipboard-text"></i>
               </div>
               <div class="shortcut-details">
@@ -1065,7 +1065,7 @@ onMounted(async () => {
             </div>
 
             <div class="shortcut-card animated-item" style="animation-delay: 0.8s;" @click="emit('changeTab', 'indicacoes')">
-              <div class="shortcut-icon icon-teal" style="background: #e0f2fe; color: #0369a1;">
+              <div class="shortcut-icon icon-teal">
                 <i class="ph ph-users-three"></i>
               </div>
               <div class="shortcut-details">
@@ -1322,7 +1322,7 @@ onMounted(async () => {
         <section class="metrics-grid">
           <div class="metric-card card animated-item" style="animation-delay: 0.1s;">
             <div class="metric-header">
-              <i class="ph ph-coins" style="color: #15803d; background: #dcfce7; padding: 8px; border-radius: var(--radius-sm);"></i>
+              <i class="ph ph-coins" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
               <span>GANHOS TOTAIS</span>
             </div>
             <h3>{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
@@ -1330,7 +1330,7 @@ onMounted(async () => {
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.15s;">
             <div class="metric-header">
-              <i class="ph ph-users" style="color: #6d28d9; background: #ede9fe; padding: 8px; border-radius: var(--radius-sm);"></i>
+              <i class="ph ph-users" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
               <span>TOTAL INDICADOS</span>
             </div>
             <h3>{{ referralStats.totalIndicados }}</h3>
@@ -1338,7 +1338,7 @@ onMounted(async () => {
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.2s;">
             <div class="metric-header">
-              <i class="ph ph-trend-up" style="color: #b45309; background: #fef3c7; padding: 8px; border-radius: var(--radius-sm);"></i>
+              <i class="ph ph-trend-up" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
               <span>TAXA DE ATIVAÇÃO</span>
             </div>
             <h3>{{ referralStats.taxaAtivacao }}%</h3>
@@ -1372,18 +1372,18 @@ onMounted(async () => {
           <div class="card animated-item" style="padding: 24px; display: flex; flex-direction: column; gap: 16px; animation-delay: 0.35s;">
             <h3 style="font-size: 18px; color: var(--secondary);">Ganhos por Nível</h3>
 
-            <div v-for="lvl in levelBreakdown" :key="lvl.level" style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 16px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+            <div v-for="lvl in levelBreakdown" :key="lvl.level" style="background: var(--primary-light); border-left: 4px solid var(--primary); padding: 12px 16px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
               <div>
-                <strong style="color: #1e3a8a; font-size: 14px; display:block;">{{ lvl.level }}</strong>
-                <span style="font-size: 12px; color: #1e40af;">{{ lvl.count }} {{ lvl.count === 1 ? 'pessoa' : 'pessoas' }}</span>
+                <strong style="color: var(--primary); font-size: 14px; display:block;">{{ lvl.level }}</strong>
+                <span style="font-size: 12px; color: var(--primary-hover);">{{ lvl.count }} {{ lvl.count === 1 ? 'pessoa' : 'pessoas' }}</span>
               </div>
-              <strong style="color: #1d4ed8;">{{ formatCurrency(lvl.total) }}</strong>
+              <strong style="color: var(--primary);">{{ formatCurrency(lvl.total) }}</strong>
             </div>
             <p v-if="levelBreakdown.length === 0" style="color: var(--text-gray); font-size: 13px;">Nenhum ganho registrado ainda.</p>
 
-            <div style="background: #f0fdf4; padding: 16px; border-radius: var(--radius-sm); text-align: center; border: 1px solid #bbf7d0; margin-top: auto;">
+            <div style="background: var(--primary-light); padding: 16px; border-radius: var(--radius-sm); text-align: center; border: 1px solid var(--border-color); margin-top: auto;">
               <span style="font-size: 12px; color: var(--text-gray); display:block; margin-bottom: 4px;">Total recorrente</span>
-              <strong style="font-size: 24px; color: #166534;">{{ formatCurrency(referralStats.ganhosTotais) }}</strong>
+              <strong style="font-size: 24px; color: var(--primary);">{{ formatCurrency(referralStats.ganhosTotais) }}</strong>
             </div>
           </div>
         </div>
@@ -1508,7 +1508,7 @@ onMounted(async () => {
         <section class="metrics-grid">
           <div class="metric-card card animated-item" style="animation-delay: 0.1s;">
             <div class="metric-header">
-              <i class="ph ph-hand-coins" style="color: #15803d; background: #dcfce7; padding: 8px; border-radius: var(--radius-sm);"></i>
+              <i class="ph ph-hand-coins" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
               <span>GANHOS ACUMULADOS</span>
             </div>
             <h3>{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
@@ -1516,7 +1516,7 @@ onMounted(async () => {
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.15s;">
             <div class="metric-header">
-              <i class="ph ph-users" style="color: #1d4ed8; background: #dbeafe; padding: 8px; border-radius: var(--radius-sm);"></i>
+              <i class="ph ph-users" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
               <span>INDICADOS ATIVOS</span>
             </div>
             <h3>{{ referralStats.ativos }}</h3>
@@ -1524,7 +1524,7 @@ onMounted(async () => {
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.2s;">
             <div class="metric-header">
-              <i class="ph ph-trend-up" style="color: #6d28d9; background: #ede9fe; padding: 8px; border-radius: var(--radius-sm);"></i>
+              <i class="ph ph-trend-up" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
               <span>TAXA DE ATIVAÇÃO</span>
             </div>
             <h3>{{ referralStats.taxaAtivacao }}%</h3>
@@ -1563,9 +1563,9 @@ onMounted(async () => {
                   <strong style="display: block; font-size: 14px; color: var(--text-dark);">{{ lvl.level }}</strong>
                   <span style="font-size: 12px; color: var(--text-gray);">{{ lvl.ativos }} de {{ lvl.count }} ativa(s)</span>
                 </div>
-                <strong style="color: #1d4ed8; font-size: 16px;">{{ formatCurrency(lvl.total) }}</strong>
+                <strong style="color: var(--primary); font-size: 16px;">{{ formatCurrency(lvl.total) }}</strong>
               </div>
-              <div style="background: #f8fafc; border-left: 3px solid #3b82f6; padding: 8px 12px; border-radius: 4px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; margin-top: 8px;">
+              <div style="background: var(--primary-light); border-left: 3px solid var(--primary); padding: 8px 12px; border-radius: 4px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; margin-top: 8px;">
                 <div v-for="person in lvl.people" :key="person.email" style="display: flex; justify-content: space-between; color: var(--text-dark);">
                   <span>{{ person.name }} ({{ person.plan }})</span>
                   <strong>{{ person.gain !== '-' ? '+ ' + person.gain : 'Pendente' }}</strong>
@@ -2213,7 +2213,7 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .welcome-text h1 {
-  color: #082c63;
+  color: var(--primary);
   font-size: 32px;
   font-weight: 700;
   letter-spacing: -0.045em;
@@ -2316,13 +2316,13 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .slide-content .badge {
-  background: #0db9c5;
+  background: var(--primary);
   color: #fff;
   font-size: 10px;
 }
 
 .dashboard-wrapper.desktop .slide-content h2 {
-  max-width: 310px;
+  max-width: 420px;
   line-height: 1.18;
 }
 
@@ -2331,13 +2331,13 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .slide-content p {
-  max-width: 250px;
+  max-width: 390px;
   line-height: 1.5;
 }
 
 .dashboard-wrapper.desktop .slide-content .btn {
   padding: 11px 20px;
-  background: #0db9c5;
+  background: var(--primary);
   border-radius: 11px;
 }
 
@@ -2391,7 +2391,7 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .metric-card h3 {
-  color: #082c63;
+  color: var(--primary);
   font-size: 24px;
 }
 
@@ -2471,7 +2471,7 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .section-title {
-  color: #082c63;
+  color: var(--primary);
   font-size: 17px;
   font-weight: 700;
 }
@@ -2520,9 +2520,9 @@ onMounted(async () => {
 }
 
 .ref-tab-btn.active {
-  color: #2563eb !important;
+  color: var(--primary) !important;
   font-weight: 700;
-  border-bottom: 2px solid #2563eb !important;
+  border-bottom: 2px solid var(--primary) !important;
   margin-bottom: -2px;
 }
 
@@ -2582,9 +2582,9 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .shortcut-card {
-  min-height: 58px;
-  padding: 11px 13px;
-  gap: 12px;
+  min-height: 76px;
+  padding: 14px 16px;
+  gap: 14px;
   border-color: #edf0f4;
   border-radius: 10px;
   box-shadow: none;
@@ -2608,15 +2608,15 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .shortcut-icon {
-  width: 36px;
-  height: 36px;
-  font-size: 18px;
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
 }
 
-.icon-teal { background: #e8f2f3; color: var(--secondary); }
-.icon-pink { background: #fdf2f8; color: #db2777; }
-.icon-green { background: #eef7eb; color: var(--primary-hover); }
-.icon-orange { background: #fffbeb; color: var(--accent); }
+.icon-teal { background: var(--secondary-light); color: var(--secondary-hover); }
+.icon-pink { background: var(--primary-light); color: var(--primary); }
+.icon-green { background: #EDF8F8; color: var(--secondary-hover); }
+.icon-orange { background: #F1F6FC; color: var(--primary); }
 
 .shortcut-details {
   flex-grow: 1;
@@ -2629,9 +2629,9 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .shortcut-details h3 {
-  color: #082c63;
-  font-size: 13px;
-  margin-bottom: 0;
+  color: var(--primary);
+  font-size: 15px;
+  margin-bottom: 2px;
 }
 
 .shortcut-details p {
@@ -2641,7 +2641,7 @@ onMounted(async () => {
 }
 
 .dashboard-wrapper.desktop .shortcut-details p {
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -2657,7 +2657,7 @@ onMounted(async () => {
 
 /* Carteirinha Digital */
 .digital-card-preview {
-  background: linear-gradient(135deg, #042d67 0%, #06376f 100%);
+  background: var(--primary);
   color: white;
   padding: 24px;
   border-radius: var(--radius-lg);
@@ -2895,7 +2895,7 @@ onMounted(async () => {
 }
 
 .digital-card-preview.full-size {
-  background: linear-gradient(135deg, var(--secondary) 0%, #0d3444 100%);
+  background: var(--primary);
   cursor: default;
 }
 
@@ -3149,7 +3149,7 @@ onMounted(async () => {
 
 .pwa .banner-slider {
   height: 232px;
-  background: #063b7b;
+  background: var(--primary);
 }
 
 .pwa .slider-track {
@@ -3158,7 +3158,8 @@ onMounted(async () => {
 
 .pwa .slide-item {
   padding: 24px;
-  background-image: linear-gradient(135deg, #063b7b 0%, #082a5c 100%) !important;
+  background-image: none !important;
+  background-color: var(--primary) !important;
 }
 
 .pwa .slide-item:nth-child(n + 2) {
@@ -3171,13 +3172,13 @@ onMounted(async () => {
 }
 
 .pwa .slide-content h2 {
-  max-width: 250px;
+  max-width: 310px;
   font-size: 23px;
   line-height: 1.25;
 }
 
 .pwa .slide-content p {
-  max-width: 265px;
+  max-width: 310px;
   font-size: 13px;
   line-height: 1.5;
 }

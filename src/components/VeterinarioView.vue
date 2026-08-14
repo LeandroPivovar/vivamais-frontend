@@ -120,7 +120,7 @@ const toggleFaq = (index) => {
 }
 
 .benefit-hero {
-  background: linear-gradient(135deg, #2596BE 0%, #16607D 100%);
+  background: var(--primary);
   color: white;
   border-radius: var(--radius-lg);
   padding: 40px;

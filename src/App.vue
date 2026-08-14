@@ -288,7 +288,7 @@ onBeforeUnmount(() => {
           <div ref="profileMenuRef" class="user-profile-wrapper">
             <div class="user-profile-area" @click="showDropdown = !showDropdown">
               <div class="avatar-circle">
-                {{ currentUser.name.split(' ').map(n => n[0]).join('') }}
+                {{ currentUser.name.split(' ').filter(Boolean).slice(0, 2).map(n => n[0]).join('') }}
               </div>
               <span class="profile-name">{{ currentUser.name }}</span>
               <i class="ph ph-caret-down"></i>
@@ -514,7 +514,7 @@ onBeforeUnmount(() => {
   height: 56px;
   border-radius: 50%;
   border: none;
-  background: var(--primary, #215cff);
+  background: var(--primary);
   color: #fff;
   font-size: 26px;
   display: flex;

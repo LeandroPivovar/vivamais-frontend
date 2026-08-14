@@ -148,7 +148,7 @@ onMounted(load)
 .dependents-page { display: flex; flex-direction: column; gap: 24px; }
 
 .dep-hero {
-  background: linear-gradient(135deg, var(--secondary) 0%, #0d3444 100%);
+  background: var(--primary);
   color: white; border-radius: var(--radius-lg); padding: 32px;
   display: flex; justify-content: space-between; align-items: center; gap: 24px;
 }
