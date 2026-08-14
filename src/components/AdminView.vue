@@ -763,7 +763,7 @@ const filteredUsers = computed(() => {
       <div v-else class="admin-content-mobile animated-item" style="animation-delay: 0.1s;">
         <div v-for="u in filteredUsers" :key="u.id" class="mobile-user-card card">
           <div class="mobile-card-header">
-            <div class="user-avatar-mini">{{ u.name.split(' ').map(n=>n[0]).join('') }}</div>
+            <div class="user-avatar-mini">{{ u.name.split(' ').filter(Boolean).slice(0, 2).map(n=>n[0]).join('') }}</div>
             <div class="mobile-card-title">
               <strong>{{ u.name }}</strong>
               <span>{{ u.email }}</span>
@@ -848,7 +848,7 @@ const filteredUsers = computed(() => {
         </div>
         <div class="rules-col-box finance-metric-card" style="border-color: #bfdbfe;">
           <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">PIX RECEBIDO</span>
-          <strong style="font-size: 24px; color: #2563eb;">R$ {{ money(billingTotals.pix) }}</strong>
+          <strong style="font-size: 24px; color: var(--primary);">R$ {{ money(billingTotals.pix) }}</strong>
         </div>
         <div class="rules-col-box finance-metric-card" style="border-color: #ddd6fe;">
           <span style="font-size: 11px; color: var(--text-gray); font-weight: 700; display:block; margin-bottom: 4px;">CARTAO RECEBIDO</span>
@@ -1904,8 +1904,8 @@ const filteredUsers = computed(() => {
 .t-bubble p { margin:0; font-size:14px; color:var(--text-dark); white-space:pre-wrap; }
 .t-img { max-width:220px; border-radius:8px; margin-top:8px; display:block; }
 .t-time { font-size:10px; color:var(--text-gray); display:block; margin-top:4px; text-align:right; }
-.chat-unread { background:#215cff; color:#fff; font-size:11px; font-weight:700; min-width:20px; height:20px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; padding:0 6px; }
-.chat-nav-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#215cff; margin-left:6px; }
+.chat-unread { background:var(--primary); color:#fff; font-size:11px; font-weight:700; min-width:20px; height:20px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; padding:0 6px; }
+.chat-nav-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--primary); margin-left:6px; }
 
 .admin-badge {
   background: var(--primary-light);
@@ -2116,11 +2116,11 @@ const filteredUsers = computed(() => {
 }
 
 .btn-action-edit {
-  color: #0284c7;
+  color: var(--primary);
 }
 
 .btn-action-edit:hover {
-  background: #e0f2fe;
+  background: var(--primary-light);
 }
 
 .btn-action-delete {
@@ -2187,7 +2187,7 @@ const filteredUsers = computed(() => {
 }
 
 .modal-price-aside {
-  background: linear-gradient(135deg, var(--secondary-light), #f8fafc);
+  background: var(--primary-light);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 20px;

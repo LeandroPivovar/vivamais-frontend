@@ -227,7 +227,7 @@ const confirmReset = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top right, var(--primary-light), var(--bg-gray));
+  background: var(--bg-gray);
   padding: 16px;
   width: 100%;
 }

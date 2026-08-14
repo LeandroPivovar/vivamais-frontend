@@ -177,7 +177,7 @@ onMounted(async () => {
 }
 
 .benefit-hero {
-  background: linear-gradient(135deg, #16607D 0%, #d97706 150%);
+  background: var(--primary);
   color: white;
   border-radius: var(--radius-lg);
   padding: 40px;

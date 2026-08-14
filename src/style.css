@@ -9,25 +9,25 @@
 
 :root {
   /* Identidade Viva Mais Club — cor principal #215cff (demais tons derivados dessa base azul) */
-  --primary: #215cff;
-  --primary-hover: #1747d6;
-  --primary-light: #e9efff;
+  --primary: #0B3C82;
+  --primary-hover: #082F68;
+  --primary-light: #E8F0FA;
 
-  --secondary: #16607D;
-  --secondary-hover: #114A61;
-  --secondary-light: #E6F1F6;
+  --secondary: #0B3C82;
+  --secondary-hover: #082F68;
+  --secondary-light: #E8F0FA;
 
-  --accent: #F59E0B;
-  --accent-light: #fef3c7;
+  --accent: #0B3C82;
+  --accent-light: #E8F0FA;
 
   --bg-white: #FFFFFF;
-  --bg-gray: #f8fafc;
+  --bg-gray: #F7FAFC;
 
-  --text-dark: #0F3A4A;
-  --text-gray: #4b5563;
+  --text-dark: #0B3C82;
+  --text-gray: #5A6A7B;
   --text-light-gray: #9ca3af;
   
-  --border-color: #e2e8f0;
+  --border-color: #DCE7F0;
   
   --font-main: 'Poppins', sans-serif;
   --font-heading: 'Poppins', sans-serif;
@@ -513,9 +513,9 @@ input:checked + .slider:before {
 }
 
 .ref-tab-btn.active {
-  color: #2563eb !important;
+  color: var(--primary) !important;
   font-weight: 700;
-  border-bottom: 2px solid #2563eb !important;
+  border-bottom: 2px solid var(--primary) !important;
   margin-bottom: -2px;
 }
 
@@ -550,9 +550,9 @@ input:checked + .slider:before {
   font-weight: 700;
 }
 
-.level-badge.lvl-1 { background-color: #2563eb; }
-.level-badge.lvl-2 { background-color: #7c3aed; }
-.level-badge.lvl-3 { background-color: #ea580c; }
+.level-badge.lvl-1 { background-color: var(--primary); }
+.level-badge.lvl-2 { background-color: var(--secondary); }
+.level-badge.lvl-3 { background-color: var(--secondary-hover); }
 
 .level-count {
   font-size: 18px;
@@ -575,9 +575,9 @@ input:checked + .slider:before {
   transition: width 0.5s ease-in-out;
 }
 
-.progress-bar.lvl-1 { background-color: #2563eb; }
-.progress-bar.lvl-2 { background-color: #7c3aed; }
-.progress-bar.lvl-3 { background-color: #ea580c; }
+.progress-bar.lvl-1 { background-color: var(--primary); }
+.progress-bar.lvl-2 { background-color: var(--secondary); }
+.progress-bar.lvl-3 { background-color: var(--secondary-hover); }
 
 .level-footer {
   font-size: 11px;
@@ -691,9 +691,9 @@ input:checked + .slider:before {
   height: 36px;
   min-width: 36px;
   border-radius: 50%;
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
