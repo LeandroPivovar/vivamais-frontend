@@ -35,6 +35,12 @@ async function request(path, { method = 'GET', body } = {}) {
   const data = isJson ? await response.json() : null
 
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/auth/login')) {
+      clearToken()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+      }
+    }
     throw new ApiError(data?.message ?? 'Erro na comunicação com o servidor.', response.status)
   }
   return data

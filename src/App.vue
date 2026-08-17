@@ -111,6 +111,7 @@ const handleLogout = async () => {
     // token já pode estar expirado — segue com o logout local de qualquer forma
   }
   clearToken()
+  localStorage.removeItem('vivamais_mock_user')
   disconnectSocket()
   chatSock = null
   showChatPanel.value = false
@@ -220,10 +221,15 @@ const handleRouting = () => {
   }
 }
 
+const onUnauthorized = () => {
+  handleLogout()
+}
+
 onMounted(async () => {
   document.addEventListener('click', closeFloatingPanels)
   window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.addEventListener('appinstalled', handleAppInstalled)
+  window.addEventListener('auth:unauthorized', onUnauthorized)
   syncInstallPrompt()
 
   const token = getToken()
@@ -233,7 +239,12 @@ onMounted(async () => {
       isLoggedIn.value = true
     } catch {
       clearToken()
+      currentUser.value = null
+      isLoggedIn.value = false
     }
+  } else {
+    currentUser.value = null
+    isLoggedIn.value = false
   }
   restoringSession.value = false
 
@@ -255,6 +266,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeFloatingPanels)
   window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   window.removeEventListener('appinstalled', handleAppInstalled)
+  window.removeEventListener('auth:unauthorized', onUnauthorized)
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('popstate', handleRouting)
 })

@@ -17,9 +17,10 @@ const remaining = computed(() => Math.max(0, info.value.limit - info.value.used)
 const load = async () => {
   loading.value = true
   try {
-    info.value = await api.get('/dependents')
-  } catch {
-    emit('triggerDevModal', { title: 'Erro', message: 'Não foi possível carregar seus dependentes agora.' })
+    const res = await api.get('/dependents')
+    info.value = res || { limit: 0, used: 0, canAdd: false, dependents: [] }
+  } catch (err) {
+    info.value = { limit: 0, used: 0, canAdd: false, dependents: [] }
   } finally {
     loading.value = false
   }

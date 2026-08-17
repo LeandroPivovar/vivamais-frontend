@@ -29,7 +29,7 @@ const handleLogin = async () => {
     setToken(token)
     emit('login', user)
   } catch (err) {
-    error.value = err.status === 401 ? 'CPF/e-mail ou senha incorretos.' : 'Não foi possível entrar. Tente novamente.'
+    error.value = err.status === 401 ? 'CPF/e-mail ou senha incorretos.' : (err?.message || 'Não foi possível entrar. Tente novamente.')
   } finally {
     loading.value = false
   }

@@ -12,10 +12,10 @@ const props = defineProps({
 
 const emit = defineEmits(['triggerDevModal'])
 
-// Aba ativa do Admin: 'usuarios' ou 'financeiro'
+// Aba ativa do Admin: 'usuarios', 'financeiro', 'tickets' ou 'chat'
 const activeAdminTab = ref('usuarios')
 
-// Dados vêm da API — banco é a única fonte de verdade (sem mais localStorage)
+// Dados vêm da API — banco é a única fonte de verdade
 const users = ref([])
 const config = ref({
   planBronzePrice: 0,
@@ -26,7 +26,6 @@ const config = ref({
   planFamilyMmn: 0,
   planPremiumPrice: 0,
   planPremiumMmn: 0,
-  // Limite de dependentes por plano.
   planBronzeDependents: 0,
   planIndividualDependents: 0,
   planFamilyDependents: 0,
@@ -37,8 +36,6 @@ const config = ref({
     clube: { label: 'Clube de Descontos', price: 0, icon: 'ph-tag' },
     pet: { label: 'Veterinário (Pet)', price: 0, icon: 'ph-dog' }
   },
-  // Gateway Veenca — a chave secreta nunca vem da API: o campo fica vazio e só é
-  // enviado quando o admin digita uma nova. veencaSecretKeySet/Last4 são só exibição.
   veencaPayEnabled: false,
   veencaPublicKey: '',
   veencaSecretKey: '',
@@ -47,20 +44,17 @@ const config = ref({
   veencaPeriodicityType: 'MONTHS',
   veencaProductIndividual: '',
   veencaProductFamily: '',
-  // Woovi/OpenPix — Pix Automático. AppID nunca vem da API (só wooviAppIdSet/Last4).
   activeGateway: 'veenca',
   wooviEnabled: false,
   wooviAppId: '',
   wooviAppIdSet: false,
   wooviAppIdLast4: null,
   wooviSandbox: false,
-  // Pagar.me (cartão) — secret key nunca vem da API (só pagarmeSecretKeySet/Last4).
   pagarmeEnabled: false,
   pagarmeSecretKey: '',
   pagarmeSecretKeySet: false,
   pagarmeSecretKeyLast4: null,
   pagarmePublicKey: '',
-  // Clube de Descontos (Clube Certo) — senha nunca vem da API (só clubeCertoPasswordSet).
   clubeCertoEnabled: false,
   clubeCertoCnpj: '',
   clubeCertoPassword: '',
@@ -84,7 +78,9 @@ watch([showRegisterModal, showConfigModal, showTreeModal, editingUser], (vals) =
 // A API nunca devolve a chave secreta do gateway — o campo do form volta vazio,
 // o que o backend lê como "manter a chave gravada".
 const applyConfig = (data) => {
-  config.value = { ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '' }
+  if (data && Object.keys(data).length > 0) {
+    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '' }
+  }
 }
 
 // CEP → preenche endereço (ViaCEP via backend). Usado no cadastro e na edição de usuário.
@@ -116,11 +112,27 @@ const ticketUpload = async (file) => {
 }
 
 const loadTickets = async () => {
-  try { adminTickets.value = await api.get('/admin/tickets') } catch { adminTickets.value = [] }
+  try { 
+    const res = await api.get('/admin/tickets') 
+    adminTickets.value = res || []
+  } catch { 
+    adminTickets.value = [] 
+  }
 }
-const openTicketsTab = () => { activeAdminTab.value = 'tickets'; currentTicket.value = null; loadTickets() }
+const openTicketsTab = async () => {
+  activeAdminTab.value = 'tickets'
+  await loadTickets()
+  if (!currentTicket.value && adminTickets.value.length > 0) {
+    currentTicket.value = adminTickets.value[0]
+  }
+}
 const openAdminTicket = async (id) => {
-  try { currentTicket.value = await api.get(`/admin/tickets/${id}`) } catch { /* ignore */ }
+  try { 
+    const res = await api.get(`/admin/tickets/${id}`)
+    currentTicket.value = res || null
+  } catch { 
+    currentTicket.value = null
+  }
 }
 const replyTicket = async () => {
   if (!ticketReply.value.body.trim()) return
@@ -141,6 +153,21 @@ const setTicketStatus = async (status) => {
     currentTicket.value = await api.put(`/admin/tickets/${currentTicket.value.id}/status`, { status })
     await loadTickets()
   } catch { /* ignore */ }
+}
+
+const normalizeChatCurrent = (convOrObj) => {
+  if (!convOrObj) return null
+  if (convOrObj.conversation && convOrObj.messages) return convOrObj
+  return {
+    conversation: {
+      id: convOrObj.id,
+      user: convOrObj.user || convOrObj.userName || 'Usuário',
+      userName: convOrObj.userName || convOrObj.user || 'Usuário',
+      userEmail: convOrObj.userEmail || '',
+      status: convOrObj.status || 'aberto'
+    },
+    messages: convOrObj.messages || []
+  }
 }
 
 // --- Chat ao vivo (admin, WebSocket) ---
@@ -167,59 +194,86 @@ const upsertConv = (conv) => {
 }
 
 const onChatMessage = (payload) => {
-  if (chatCurrent.value && payload.conversationId === chatCurrent.value.conversation.id) {
+  if (chatCurrent.value && payload.conversationId === (chatCurrent.value.conversation?.id || chatCurrent.value.id)) {
+    if (!chatCurrent.value.messages) chatCurrent.value.messages = []
     chatCurrent.value.messages.push(payload.message)
     scrollChat()
   }
 }
 
 const loadChatConvs = async () => {
-  try { chatConvs.value = await api.get('/admin/chat') } catch { chatConvs.value = [] }
+  try { 
+    const res = await api.get('/admin/chat') 
+    chatConvs.value = res || []
+  } catch { 
+    chatConvs.value = [] 
+  }
 }
 
 const openChatTab = async () => {
   activeAdminTab.value = 'chat'
   await loadChatConvs()
-  chatSocket = getSocket()
-  if (!chatWired) {
-    chatSocket.on('chat:message', onChatMessage)
-    chatSocket.on('chat:conversation', upsertConv)
-    chatSocket.on('chat:purged', onChatPurged)
-    chatWired = true
+  if (!chatCurrent.value && chatConvs.value.length > 0) {
+    chatCurrent.value = normalizeChatCurrent(chatConvs.value[0])
+  }
+  try {
+    chatSocket = getSocket()
+    if (!chatWired && chatSocket) {
+      chatSocket.on('chat:message', onChatMessage)
+      chatSocket.on('chat:conversation', upsertConv)
+      chatSocket.on('chat:purged', onChatPurged)
+      chatWired = true
+    }
+  } catch (err) {
+    console.warn('Socket connect skipped:', err)
   }
 }
 
 const openChatConv = async (id) => {
   try {
-    chatCurrent.value = await api.get(`/admin/chat/${id}`)
+    const res = await api.get(`/admin/chat/${id}`)
+    chatCurrent.value = normalizeChatCurrent(res)
     if (chatSocket) chatSocket.emit('chat:join', { conversationId: id })
-    // zera bolinha localmente
     const c = chatConvs.value.find((x) => x.id === id)
     if (c) c.unreadForAdmin = 0
     scrollChat()
-  } catch { /* ignore */ }
+  } catch { 
+    chatCurrent.value = null
+    scrollChat()
+  }
 }
 
 const sendChat = () => {
   const body = chatInput.value.trim()
-  if (!body || !chatCurrent.value || !chatSocket) return
-  chatSocket.emit('chat:send', { conversationId: chatCurrent.value.conversation.id, body })
+  if (!body || !chatCurrent.value) return
+  if (chatSocket) {
+    chatSocket.emit('chat:send', { conversationId: chatCurrent.value.conversation?.id || chatCurrent.value.id, body })
+  }
+  if (!chatCurrent.value.messages) chatCurrent.value.messages = []
+  chatCurrent.value.messages.push({
+    id: `msg-${Date.now()}`,
+    senderRole: 'admin',
+    body,
+    createdAt: new Date().toISOString()
+  })
   chatInput.value = ''
+  scrollChat()
 }
 
 // Admin encerra a conversa: marca fechada (usuário recebe aviso; some em ~1min).
 const closeChat = () => {
-  if (!chatCurrent.value || !chatSocket) return
-  const id = chatCurrent.value.conversation.id
-  chatSocket.emit('chat:close', { conversationId: id })
-  chatCurrent.value.conversation.status = 'fechado'
+  if (!chatCurrent.value) return
+  const id = chatCurrent.value.conversation?.id || chatCurrent.value.id
+  if (chatSocket) chatSocket.emit('chat:close', { conversationId: id })
+  if (chatCurrent.value.conversation) chatCurrent.value.conversation.status = 'fechado'
+  chatCurrent.value.status = 'fechado'
 }
 
 // Conversa apagada (após 1min): tira da lista e fecha o painel se estava aberta.
 const onChatPurged = (payload) => {
   const id = payload?.conversationId
   chatConvs.value = chatConvs.value.filter((c) => c.id !== id)
-  if (chatCurrent.value && chatCurrent.value.conversation.id === id) chatCurrent.value = null
+  if (chatCurrent.value && (chatCurrent.value.conversation?.id === id || chatCurrent.value.id === id)) chatCurrent.value = null
 }
 
 onUnmounted(() => {
@@ -240,17 +294,17 @@ const subStats = ref({ active: 0, pending: 0, canceled: 0, today: 0, todayActive
 const loadAdminData = async () => {
   try {
     const [usersData, configData, billing, subs] = await Promise.all([
-      api.get('/admin/users'),
-      api.get('/admin/config'),
-      api.get('/admin/billing'),
-      api.get('/admin/subscription-stats').catch(() => ({ active: 0, pending: 0, canceled: 0, today: 0, todayActive: 0, todayPending: 0, todayCanceled: 0 })),
+      api.get('/admin/users').catch(() => []),
+      api.get('/admin/config').catch(() => ({})),
+      api.get('/admin/billing').catch(() => []),
+      api.get('/admin/subscription-stats').catch(() => null),
     ])
-    users.value = usersData
+    users.value = usersData || []
     applyConfig(configData)
-    billingHistory.value = billing
-    subStats.value = subs
+    billingHistory.value = billing || []
+    subStats.value = subs || { active: 0, pending: 0, canceled: 0, today: 0, todayActive: 0, todayPending: 0, todayCanceled: 0 }
   } catch (err) {
-    loadError.value = 'Não foi possível carregar os dados administrativos agora.'
+    loadError.value = 'Não foi possível carregar os dados administrativos.'
   }
 }
 
@@ -294,17 +348,58 @@ const aggregateBilling = (items) => {
   return { paidCount: paid.length, gross, commission, net: gross - commission, pix, card }
 }
 
+// Filtros do Histórico Financeiro
+const billingSearchTerm = ref('')
+const billingStatusFilter = ref('todos')
+const billingMethodFilter = ref('todos')
+
+watch([billingSearchTerm, billingStatusFilter, billingMethodFilter, billingPageSize], () => {
+  billingPage.value = 1
+})
+
+const clearBillingFilters = () => {
+  billingSearchTerm.value = ''
+  billingStatusFilter.value = 'todos'
+  billingMethodFilter.value = 'todos'
+  billingPageSize.value = 10
+  billingPage.value = 1
+}
+
+const filteredBillingHistory = computed(() => {
+  const term = (billingSearchTerm.value || '').trim().toLowerCase()
+  return billingHistory.value.filter(item => {
+    const matchSearch = !term ||
+      (item.user && item.user.toLowerCase().includes(term)) ||
+      (item.userName && item.userName.toLowerCase().includes(term)) ||
+      (item.userEmail && item.userEmail.toLowerCase().includes(term)) ||
+      (item.plan && item.plan.toLowerCase().includes(term)) ||
+      (item.transactionId && item.transactionId.toLowerCase().includes(term))
+    
+    const status = String(item.status || '').toLowerCase()
+    const matchStatus = billingStatusFilter.value === 'todos' ||
+      (billingStatusFilter.value === 'pago' && (status === 'pago' || status === 'paid')) ||
+      (billingStatusFilter.value === 'pendente' && (status === 'pendente' || status === 'pending')) ||
+      (billingStatusFilter.value === 'cancelado' && (status === 'cancelado' || status === 'falha' || status === 'inativo' || status === 'cancelled'))
+    
+    const matchMethod = billingMethodFilter.value === 'todos' ||
+      (billingMethodFilter.value === 'pix' && isPixBilling(item)) ||
+      (billingMethodFilter.value === 'cartao' && isCardBilling(item))
+
+    return matchSearch && matchStatus && matchMethod
+  })
+})
+
 const todayBillingHistory = computed(() => billingHistory.value.filter((item) => billingDateKey(item) === todayKey()))
 const billingTotals = computed(() => aggregateBilling(billingHistory.value))
 const todayBillingTotals = computed(() => aggregateBilling(todayBillingHistory.value))
-const totalBillingPages = computed(() => Math.max(1, Math.ceil(billingHistory.value.length / n(billingPageSize.value || 10))))
+const totalBillingPages = computed(() => Math.max(1, Math.ceil(filteredBillingHistory.value.length / n(billingPageSize.value || 10))))
 const paginatedBillingHistory = computed(() => {
   const pageSize = n(billingPageSize.value || 10)
   const start = (billingPage.value - 1) * pageSize
-  return billingHistory.value.slice(start, start + pageSize)
+  return filteredBillingHistory.value.slice(start, start + pageSize)
 })
-const billingRangeStart = computed(() => billingHistory.value.length ? ((billingPage.value - 1) * n(billingPageSize.value || 10)) + 1 : 0)
-const billingRangeEnd = computed(() => Math.min(billingHistory.value.length, billingPage.value * n(billingPageSize.value || 10)))
+const billingRangeStart = computed(() => filteredBillingHistory.value.length ? ((billingPage.value - 1) * n(billingPageSize.value || 10)) + 1 : 0)
+const billingRangeEnd = computed(() => Math.min(filteredBillingHistory.value.length, billingPage.value * n(billingPageSize.value || 10)))
 
 watch([billingHistory, billingPageSize], () => {
   billingPage.value = 1
@@ -594,15 +689,48 @@ const openTreeModal = (user) => {
   showTreeModal.value = true
 }
 
-// Filtro de Busca
+// Filtros e Paginação da Gestão de Usuários
 const searchFilter = ref('')
+const userStatusFilter = ref('todos')
+const userPlanFilter = ref('todos')
+const userPageSize = ref(10)
+const userPage = ref(1)
+
+watch([searchFilter, userStatusFilter, userPlanFilter, userPageSize], () => {
+  userPage.value = 1
+})
+
+const clearUserFilters = () => {
+  searchFilter.value = ''
+  userStatusFilter.value = 'todos'
+  userPlanFilter.value = 'todos'
+  userPageSize.value = 10
+  userPage.value = 1
+}
+
 const filteredUsers = computed(() => {
+  const term = (searchFilter.value || '').trim().toLowerCase()
   return users.value.filter(u => {
-    return u.name.toLowerCase().includes(searchFilter.value.toLowerCase()) ||
-           u.email.toLowerCase().includes(searchFilter.value.toLowerCase()) ||
-           u.cpf.includes(searchFilter.value)
+    const matchSearch = !term ||
+      (u.name && u.name.toLowerCase().includes(term)) ||
+      (u.email && u.email.toLowerCase().includes(term)) ||
+      (u.cpf && u.cpf.replace(/\D/g, '').includes(term.replace(/\D/g, '')))
+    
+    const matchStatus = userStatusFilter.value === 'todos' || u.status === userStatusFilter.value
+    const matchPlan = userPlanFilter.value === 'todos' || (u.plan && u.plan.toLowerCase().includes(userPlanFilter.value.toLowerCase()))
+
+    return matchSearch && matchStatus && matchPlan
   })
 })
+
+const totalUserPages = computed(() => Math.max(1, Math.ceil(filteredUsers.value.length / n(userPageSize.value || 10))))
+const paginatedUsers = computed(() => {
+  const size = n(userPageSize.value || 10)
+  const start = (userPage.value - 1) * size
+  return filteredUsers.value.slice(start, start + size)
+})
+const userRangeStart = computed(() => filteredUsers.value.length ? ((userPage.value - 1) * n(userPageSize.value || 10)) + 1 : 0)
+const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPage.value * n(userPageSize.value || 10)))
 </script>
 
 <template>
@@ -663,16 +791,47 @@ const filteredUsers = computed(() => {
 
     <!-- ABA 1: GESTÃO DE USUÁRIOS -->
     <div v-if="activeAdminTab === 'usuarios'" class="tab-content-admin">
-      <!-- Barra de Pesquisa -->
-      <div class="card search-card animated-item" style="animation-delay: 0.05s; padding: 16px; margin-bottom: 20px; display: flex; gap: 12px; align-items: center;">
-        <i class="ph ph-magnifying-glass text-gray"></i>
-        <input 
-          v-model="searchFilter"
-          type="text" 
-          placeholder="Buscar usuário por nome, email ou CPF..." 
-          class="form-control"
-          style="border: none; padding: 4px; font-size: 14px; width: 100%; outline: none;"
-        />
+      <!-- Barra de Filtros Dinâmicos de Usuários -->
+      <div class="card animated-item" style="padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; animation-delay: 0.05s;">
+        <div style="position: relative; flex: 1; min-width: 220px;">
+          <i class="ph ph-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-gray); font-size: 16px;"></i>
+          <input 
+            v-model="searchFilter" 
+            type="text" 
+            placeholder="Buscar usuário por nome, email ou CPF..." 
+            class="form-control" 
+            style="padding-left: 38px;" 
+          />
+        </div>
+
+        <select v-model="userStatusFilter" class="form-control" style="width: auto; min-width: 140px;">
+          <option value="todos">Todos os status</option>
+          <option value="ativo">Ativo</option>
+          <option value="pendente">Pendente</option>
+          <option value="inativo">Inativo</option>
+        </select>
+
+        <select v-model="userPlanFilter" class="form-control" style="width: auto; min-width: 140px;">
+          <option value="todos">Todos os planos</option>
+          <option value="Viva Mais Premium">Viva Mais Premium</option>
+          <option value="Família">Família</option>
+          <option value="Individual">Individual</option>
+          <option value="Bronze">Bronze</option>
+        </select>
+
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size: 12px; color: var(--text-gray); white-space: nowrap;">Limite:</span>
+          <select v-model.number="userPageSize" class="form-control" style="width: auto; min-width: 75px;">
+            <option :value="5">5</option>
+            <option :value="10">10</option>
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
+
+        <button class="btn btn-outline" @click="clearUserFilters" title="Limpar todos os filtros">
+          <i class="ph ph-arrow-counter-clockwise"></i> Limpar
+        </button>
       </div>
 
       <!-- LISTA DE USUÁRIOS: DESKTOP -->
@@ -693,7 +852,7 @@ const filteredUsers = computed(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="u in filteredUsers" :key="u.id">
+              <tr v-for="u in paginatedUsers" :key="u.id">
                 <td>
                   <div class="user-info-col">
                     <strong>{{ u.name }}</strong>
@@ -712,13 +871,13 @@ const filteredUsers = computed(() => {
                 </td>
                 <td>
                   <div class="modules-badges">
-                    <span :class="['module-badge-icon', { active: u.access.health }]" :title="'Telemedicina: ' + (u.access.health ? 'Ativo' : 'Inativo')">
+                    <span :class="['module-badge-icon', { active: u.access?.health }]" :title="'Telemedicina: ' + (u.access?.health ? 'Ativo' : 'Inativo')">
                       <i class="ph ph-first-aid"></i>
                     </span>
-                    <span :class="['module-badge-icon', { active: u.access.clube }]" :title="'Clube de Descontos: ' + (u.access.clube ? 'Ativo' : 'Inativo')">
+                    <span :class="['module-badge-icon', { active: u.access?.clube }]" :title="'Clube de Descontos: ' + (u.access?.clube ? 'Ativo' : 'Inativo')">
                       <i class="ph ph-tag"></i>
                     </span>
-                    <span :class="['module-badge-icon', { active: u.access.pet }]" :title="'Veterinário (Pet): ' + (u.access.pet ? 'Ativo' : 'Inativo')">
+                    <span :class="['module-badge-icon', { active: u.access?.pet }]" :title="'Veterinário (Pet): ' + (u.access?.pet ? 'Ativo' : 'Inativo')">
                       <i class="ph ph-dog"></i>
                     </span>
                   </div>
@@ -750,12 +909,69 @@ const filteredUsers = computed(() => {
                 </td>
               </tr>
               <tr v-if="filteredUsers.length === 0">
-                <td colspan="9" style="text-align: center; padding: 24px; color: var(--text-gray);">
-                  Nenhum usuário correspondente encontrado.
+                <td colspan="9" style="text-align: center; padding: 32px 16px; color: var(--text-gray);">
+                  <i class="ph ph-magnifying-glass" style="font-size: 32px; display:block; margin-bottom: 8px; opacity: 0.5;"></i>
+                  Nenhum usuário correspondente encontrado com os filtros aplicados.
                 </td>
               </tr>
             </tbody>
           </table>
+
+          <!-- Barra de Paginação de Usuários -->
+          <div v-if="filteredUsers.length > 0" class="table-pagination-footer">
+            <div class="pagination-info">
+              Mostrando <strong>{{ userRangeStart }}</strong> a <strong>{{ userRangeEnd }}</strong> de <strong>{{ filteredUsers.length }}</strong> usuários
+            </div>
+
+            <div class="pagination-actions">
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="userPage <= 1" 
+                @click="userPage = 1" 
+                title="Primeira Página"
+              >
+                <i class="ph ph-caret-double-left"></i>
+              </button>
+
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="userPage <= 1" 
+                @click="userPage--" 
+                title="Página Anterior"
+              >
+                <i class="ph ph-caret-left"></i> Anterior
+              </button>
+
+              <div class="pagination-pages">
+                <button 
+                  v-for="page in totalUserPages" 
+                  :key="page" 
+                  :class="['btn-page-number', { active: page === userPage }]" 
+                  @click="userPage = page"
+                >
+                  {{ page }}
+                </button>
+              </div>
+
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="userPage >= totalUserPages" 
+                @click="userPage++" 
+                title="Próxima Página"
+              >
+                Próxima <i class="ph ph-caret-right"></i>
+              </button>
+
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="userPage >= totalUserPages" 
+                @click="userPage = totalUserPages" 
+                title="Última Página"
+              >
+                <i class="ph ph-caret-double-right"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -876,28 +1092,55 @@ const filteredUsers = computed(() => {
         </div>
       </div>
 
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
-        <div style="font-size:13px; color:var(--text-gray);">
-          Mostrando {{ billingRangeStart }}-{{ billingRangeEnd }} de {{ billingHistory.length }} registros
+      <!-- Barra de Filtros Dinâmicos do Financeiro -->
+      <div class="card animated-item" style="padding: 16px 20px; margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; animation-delay: 0.05s;">
+        <div style="position: relative; flex: 1; min-width: 220px;">
+          <i class="ph ph-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-gray); font-size: 16px;"></i>
+          <input 
+            v-model="billingSearchTerm" 
+            type="text" 
+            placeholder="Buscar por usuário, e-mail, plano ou ID de transação..." 
+            class="form-control" 
+            style="padding-left: 38px;" 
+          />
         </div>
-        <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-gray);">
-          Registros por pagina
-          <select v-model.number="billingPageSize" style="border:1px solid var(--border-color); border-radius:6px; padding:6px 8px;">
+
+        <select v-model="billingStatusFilter" class="form-control" style="width: auto; min-width: 140px;">
+          <option value="todos">Todos os status</option>
+          <option value="pago">Pago</option>
+          <option value="pendente">Pendente</option>
+          <option value="cancelado">Cancelado / Falha</option>
+        </select>
+
+        <select v-model="billingMethodFilter" class="form-control" style="width: auto; min-width: 140px;">
+          <option value="todos">Todos os métodos</option>
+          <option value="pix">PIX</option>
+          <option value="cartao">Cartão de Crédito</option>
+        </select>
+
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size: 12px; color: var(--text-gray); white-space: nowrap;">Limite:</span>
+          <select v-model.number="billingPageSize" class="form-control" style="width: auto; min-width: 75px;">
+            <option :value="5">5</option>
             <option :value="10">10</option>
             <option :value="25">25</option>
             <option :value="50">50</option>
           </select>
-        </label>
+        </div>
+
+        <button class="btn btn-outline" @click="clearBillingFilters" title="Limpar todos os filtros">
+          <i class="ph ph-arrow-counter-clockwise"></i> Limpar
+        </button>
       </div>
 
-      <div class="card" style="padding: 0; overflow-x: auto;">
+      <div class="card animated-item" style="padding: 0; overflow-x: auto; animation-delay: 0.1s;">
         <table class="admin-table">
           <thead>
             <tr>
               <th>Usuário</th>
               <th>Plano</th>
               <th>Valor Cobrado</th>
-              <th>Metodo</th>
+              <th>Método</th>
               <th>Data Vencimento/Pago</th>
               <th>Status Renovação</th>
               <th>Comissão Distribuída</th>
@@ -907,7 +1150,10 @@ const filteredUsers = computed(() => {
           <tbody>
             <tr v-for="b in paginatedBillingHistory" :key="b.id">
               <td>
-                <strong>{{ b.user }}</strong>
+                <div class="user-info-col">
+                  <strong>{{ b.user || b.userName }}</strong>
+                  <span style="font-size: 11px; color: var(--text-gray);">{{ b.userEmail }}</span>
+                </div>
               </td>
               <td>{{ b.plan }}</td>
               <td class="price-col">R$ {{ money(b.value) }}</td>
@@ -920,8 +1166,8 @@ const filteredUsers = computed(() => {
               </td>
               <td style="font-weight: bold; color: #db2777;">R$ {{ money(b.commissionMmn) }}</td>
               <td>
-                <div v-if="b.commissionMmn > 0 && getCommissionReceivers(b.user, b.plan).length > 0" style="display:flex; flex-direction:column; gap:4px; font-size: 11px;">
-                  <div v-for="recv in getCommissionReceivers(b.user, b.plan)" :key="recv.name" style="background:#fdf2f8; border:1px solid #fbcfe8; padding: 4px 8px; border-radius: 4px; display:inline-flex; align-items:center; justify-content:space-between; gap:10px;">
+                <div v-if="b.commissionMmn > 0 && getCommissionReceivers(b.user || b.userName, b.plan).length > 0" style="display:flex; flex-direction:column; gap:4px; font-size: 11px;">
+                  <div v-for="recv in getCommissionReceivers(b.user || b.userName, b.plan)" :key="recv.name" style="background:#fdf2f8; border:1px solid #fbcfe8; padding: 4px 8px; border-radius: 4px; display:inline-flex; align-items:center; justify-content:space-between; gap:10px;">
                     <span>Nível {{ recv.level }}: <strong>{{ recv.name }}</strong></span>
                     <strong style="color: #db2777;">+ R$ {{ money(recv.gain) }}</strong>
                   </div>
@@ -929,18 +1175,70 @@ const filteredUsers = computed(() => {
                 <span v-else class="text-gray" style="font-size:11px;">Nenhuma comissão distribuída</span>
               </td>
             </tr>
+            <tr v-if="filteredBillingHistory.length === 0">
+              <td colspan="8" style="text-align: center; padding: 32px 16px; color: var(--text-gray);">
+                <i class="ph ph-magnifying-glass" style="font-size: 32px; display:block; margin-bottom: 8px; opacity: 0.5;"></i>
+                Nenhum registro financeiro encontrado com os filtros aplicados.
+              </td>
+            </tr>
           </tbody>
         </table>
-      </div>
 
-      <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:12px;">
-        <button class="btn btn-outline btn-sm" :disabled="billingPage <= 1" @click="billingPage--">
-          <i class="ph ph-caret-left"></i> Anterior
-        </button>
-        <span style="font-size:13px; color:var(--text-gray);">Pagina {{ billingPage }} de {{ totalBillingPages }}</span>
-        <button class="btn btn-outline btn-sm" :disabled="billingPage >= totalBillingPages" @click="billingPage++">
-          Proxima <i class="ph ph-caret-right"></i>
-        </button>
+        <!-- Barra de Paginação do Financeiro -->
+        <div v-if="filteredBillingHistory.length > 0" class="table-pagination-footer">
+          <div class="pagination-info">
+            Mostrando <strong>{{ billingRangeStart }}</strong> a <strong>{{ billingRangeEnd }}</strong> de <strong>{{ filteredBillingHistory.length }}</strong> registros
+          </div>
+
+          <div class="pagination-actions">
+            <button 
+              class="btn-pagination-nav" 
+              :disabled="billingPage <= 1" 
+              @click="billingPage = 1" 
+              title="Primeira Página"
+            >
+              <i class="ph ph-caret-double-left"></i>
+            </button>
+
+            <button 
+              class="btn-pagination-nav" 
+              :disabled="billingPage <= 1" 
+              @click="billingPage--" 
+              title="Página Anterior"
+            >
+              <i class="ph ph-caret-left"></i> Anterior
+            </button>
+
+            <div class="pagination-pages">
+              <button 
+                v-for="page in totalBillingPages" 
+                :key="page" 
+                :class="['btn-page-number', { active: page === billingPage }]" 
+                @click="billingPage = page"
+              >
+                {{ page }}
+              </button>
+            </div>
+
+            <button 
+              class="btn-pagination-nav" 
+              :disabled="billingPage >= totalBillingPages" 
+              @click="billingPage++" 
+              title="Próxima Página"
+            >
+              Próxima <i class="ph ph-caret-right"></i>
+            </button>
+
+            <button 
+              class="btn-pagination-nav" 
+              :disabled="billingPage >= totalBillingPages" 
+              @click="billingPage = totalBillingPages" 
+              title="Última Página"
+            >
+              <i class="ph ph-caret-double-right"></i>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1022,10 +1320,10 @@ const filteredUsers = computed(() => {
           <p v-if="!chatConvs.length" style="padding:24px; text-align:center; color:var(--text-gray);">Nenhuma conversa.</p>
           <ul v-else style="list-style:none; margin:0; padding:0; max-height:60vh; overflow-y:auto;">
             <li v-for="c in chatConvs" :key="c.id"
-              :class="['ticket-row', { active: chatCurrent && chatCurrent.conversation.id === c.id }]"
+              :class="['ticket-row', { active: chatCurrent && (chatCurrent.conversation?.id === c.id || chatCurrent.id === c.id) }]"
               @click="openChatConv(c.id)">
               <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                <strong style="font-size:14px;">{{ c.user || 'Usuário' }}
+                <strong style="font-size:14px;">{{ c.user || c.userName || 'Usuário' }}
                   <span :class="['chat-status-pill', c.status === 'fechado' ? 'fechado' : 'aberto']">{{ c.status === 'fechado' ? 'Fechado' : 'Aberto' }}</span>
                 </strong>
                 <span style="font-size:12px; color:var(--text-gray); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;">{{ c.lastMessage || 'Sem mensagens' }}</span>
@@ -1042,23 +1340,23 @@ const filteredUsers = computed(() => {
           </div>
           <template v-else>
             <div style="border-bottom:1px solid var(--border-color); padding-bottom:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-              <strong>{{ chatCurrent.conversation.user || 'Usuário' }}
-                <span :class="['chat-status-pill', chatCurrent.conversation.status === 'fechado' ? 'fechado' : 'aberto']">{{ chatCurrent.conversation.status === 'fechado' ? 'Fechado' : 'Aberto' }}</span>
+              <strong>{{ chatCurrent.conversation?.user || chatCurrent.conversation?.userName || chatCurrent.user || 'Usuário' }}
+                <span :class="['chat-status-pill', (chatCurrent.conversation?.status || chatCurrent.status) === 'fechado' ? 'fechado' : 'aberto']">{{ (chatCurrent.conversation?.status || chatCurrent.status) === 'fechado' ? 'Fechado' : 'Aberto' }}</span>
               </strong>
-              <button v-if="chatCurrent.conversation.status !== 'fechado'" class="btn btn-outline" style="padding:6px 12px; font-size:13px;" @click="closeChat">
+              <button v-if="(chatCurrent.conversation?.status || chatCurrent.status) !== 'fechado'" class="btn btn-outline" style="padding:6px 12px; font-size:13px;" @click="closeChat">
                 <i class="ph ph-x-circle"></i> Encerrar conversa
               </button>
             </div>
             <div ref="chatThread" class="ticket-thread">
-              <div v-for="m in chatCurrent.messages" :key="m.id" :class="['t-msg', m.senderRole === 'admin' ? 'from-admin' : 'from-user']">
+              <div v-for="m in (chatCurrent.messages || [])" :key="m.id" :class="['t-msg', m.senderRole === 'admin' ? 'from-admin' : 'from-user']">
                 <div class="t-bubble">
-                  <span class="t-who">{{ m.senderRole === 'admin' ? 'Suporte' : (chatCurrent.conversation.user || 'Usuário') }}</span>
+                  <span class="t-who">{{ m.senderRole === 'admin' ? 'Suporte' : (chatCurrent.conversation?.user || chatCurrent.user || 'Usuário') }}</span>
                   <p>{{ m.body }}</p>
                   <span class="t-time">{{ fmtChatDate(m.createdAt) }}</span>
                 </div>
               </div>
             </div>
-            <div v-if="chatCurrent.conversation.status !== 'fechado'" style="display:flex; gap:8px; border-top:1px solid var(--border-color); padding-top:12px; margin-top:12px;">
+            <div v-if="(chatCurrent.conversation?.status || chatCurrent.status) !== 'fechado'" style="display:flex; gap:8px; border-top:1px solid var(--border-color); padding-top:12px; margin-top:12px;">
               <input v-model="chatInput" type="text" class="form-control" placeholder="Responder..." @keyup.enter="sendChat" />
               <button class="btn btn-secondary" @click="sendChat"><i class="ph ph-paper-plane-tilt"></i></button>
             </div>
@@ -1954,7 +2252,7 @@ const filteredUsers = computed(() => {
   gap: 16px;
   margin-bottom: 20px;
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 10px;
+  padding-bottom: 0;
 }
 
 .admin-tab-btn {
@@ -1963,12 +2261,13 @@ const filteredUsers = computed(() => {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-gray);
-  padding: 8px 16px;
+  padding: 10px 16px 12px 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
   border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   transition: var(--transition);
 }
 

@@ -347,12 +347,42 @@ watch(() => props.activeRefTab, (newVal) => {
   if (newVal) activeRefTab.value = newVal
 }, { immediate: true })
 
+const LEVEL_COLORS = {
+  '1': { bg: '#ecfdf5', border: '#10b981', text: '#065f46', badge: '#059669' },
+  '2': { bg: '#f0f9ff', border: '#0284c7', text: '#075985', badge: '#0284c7' },
+  '3': { bg: '#eef2ff', border: '#6366f1', text: '#3730a3', badge: '#4f46e5' },
+  '4': { bg: '#f5f3ff', border: '#8b5cf6', text: '#5b21b6', badge: '#7c3aed' },
+  '5': { bg: '#fffbeb', border: '#f59e0b', text: '#92400e', badge: '#ea580c' },
+}
+
+const getLevelStyle = (lvlStr) => {
+  const num = (lvlStr || '').charAt(0)
+  return LEVEL_COLORS[num] || LEVEL_COLORS['1']
+}
+
 const refSearchName = ref('')
 const refStatusFilter = ref('todos')
 const refLevelFilter = ref('todos')
 const showRefMenuDropdown = ref(false)
 
+// Paginação da Tabela de Indicados
+const itemsPerPage = ref(5)
+const currentPage = ref(1)
+
 const rawReferrals = ref([])
+
+// Reseta para a primeira página sempre que alterar qualquer filtro ou limite por página
+watch([refSearchName, refStatusFilter, refLevelFilter, itemsPerPage], () => {
+  currentPage.value = 1
+})
+
+const clearRefFilters = () => {
+  refSearchName.value = ''
+  refStatusFilter.value = 'todos'
+  refLevelFilter.value = 'todos'
+  itemsPerPage.value = 5
+  currentPage.value = 1
+}
 
 // Modal de hierarquia da rede (árvore) do próprio usuário.
 const showReferralTreeModal = ref(false)
@@ -363,7 +393,8 @@ const openReferralTree = async () => {
   if (referralTree.value) return
   referralTreeLoading.value = true
   try {
-    referralTree.value = await api.get('/referrals/tree')
+    const data = await api.get('/referrals/tree')
+    referralTree.value = data || null
   } catch {
     referralTree.value = null
   } finally {
@@ -372,13 +403,38 @@ const openReferralTree = async () => {
 }
 
 const filteredReferrals = computed(() => {
+  const term = (refSearchName.value || '').trim().toLowerCase()
   return rawReferrals.value.filter(item => {
-    const matchName = item.name.toLowerCase().includes(refSearchName.value.toLowerCase())
+    const matchSearch = !term ||
+      (item.name && item.name.toLowerCase().includes(term)) ||
+      (item.email && item.email.toLowerCase().includes(term)) ||
+      (item.phone && item.phone.replace(/\D/g, '').includes(term.replace(/\D/g, '')))
     const matchStatus = refStatusFilter.value === 'todos' || item.status === refStatusFilter.value
-    const matchLevel = refLevelFilter.value === 'todos' || item.level.includes(refLevelFilter.value)
-    return matchName && matchStatus && matchLevel
+    const matchLevel = refLevelFilter.value === 'todos' || (item.level && item.level.includes(refLevelFilter.value))
+    return matchSearch && matchStatus && matchLevel
   })
 })
+
+const totalPages = computed(() => Math.ceil(filteredReferrals.value.length / itemsPerPage.value) || 1)
+
+const paginatedReferrals = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value
+  return filteredReferrals.value.slice(start, start + itemsPerPage.value)
+})
+
+const paginationInfo = computed(() => {
+  const total = filteredReferrals.value.length
+  if (total === 0) return { start: 0, end: 0, total: 0 }
+  const start = (currentPage.value - 1) * itemsPerPage.value + 1
+  const end = Math.min(currentPage.value * itemsPerPage.value, total)
+  return { start, end, total }
+})
+
+const setPage = (p) => {
+  if (p >= 1 && p <= totalPages.value) {
+    currentPage.value = p
+  }
+}
 
 // Árvore achatada (com profundidade) p/ renderizar a hierarquia indentada no modal.
 const referralTreeFlat = computed(() => {
@@ -890,7 +946,7 @@ watch([showCardModal, showCheckoutModal, showShareModal, showReportModal, showEd
 
 onMounted(async () => {
   try {
-    const [, referrals, links, invoicesData, summary, prices] = await Promise.all([
+    const [slidesData, referrals, links, invoicesData, summary, prices] = await Promise.all([
       api.get('/content/slides').catch(() => DEFAULT_SLIDES),
       api.get('/referrals').catch(() => []),
       api.get('/referrals/my-links').catch(() => []),
@@ -898,7 +954,7 @@ onMounted(async () => {
       api.get('/billing/summary').catch(() => ({ plan: '', monthlyValue: '', nextBillingDate: '' })),
       api.get('/content/pricing').catch(() => ({ Individual: '', Família: '' })),
     ])
-    slides.value = DEFAULT_SLIDES
+    slides.value = (slidesData && slidesData.length) ? slidesData : DEFAULT_SLIDES
     rawReferrals.value = referrals || []
     userLinks.value = links || []
     invoices.value = invoicesData || []
@@ -906,13 +962,17 @@ onMounted(async () => {
     planPrices.value = prices || { Individual: '', Família: '' }
     await loadProfile()
     try {
-      depInfo.value = await api.get('/dependents')
+      const d = await api.get('/dependents')
+      depInfo.value = d || { limit: 0, used: 0, canAdd: false }
     } catch {
-      // mantém o padrão (limite 0)
+      depInfo.value = { limit: 0, used: 0, canAdd: false }
     }
   } catch (err) {
-    slides.value = DEFAULT_SLIDES
-    emit('triggerDevModal', { title: 'Erro ao carregar dados', message: 'Não foi possível carregar seus dados agora. Tente recarregar a página.' })
+    rawReferrals.value = []
+    userLinks.value = []
+    invoices.value = []
+    billingSummary.value = { plan: '', monthlyValue: '', nextBillingDate: '' }
+    depInfo.value = { limit: 0, used: 0, canAdd: false }
   }
 })
 </script>
@@ -1322,26 +1382,26 @@ onMounted(async () => {
         <section class="metrics-grid">
           <div class="metric-card card animated-item" style="animation-delay: 0.1s;">
             <div class="metric-header">
-              <i class="ph ph-coins" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
-              <span>GANHOS TOTAIS</span>
+              <i class="ph ph-coins" style="color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #065f46;">GANHOS TOTAIS</span>
             </div>
-            <h3>{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
+            <h3 style="color: #059669;">{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
             <p>Recorrente enquanto os indicados estiverem ativos</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.15s;">
             <div class="metric-header">
-              <i class="ph ph-users" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
-              <span>TOTAL INDICADOS</span>
+              <i class="ph ph-users" style="color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #1e40af;">TOTAL INDICADOS</span>
             </div>
-            <h3>{{ referralStats.totalIndicados }}</h3>
+            <h3 style="color: #1e3a8a;">{{ referralStats.totalIndicados }}</h3>
             <p>Pessoas na sua rede</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.2s;">
             <div class="metric-header">
-              <i class="ph ph-trend-up" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
-              <span>TAXA DE ATIVAÇÃO</span>
+              <i class="ph ph-trend-up" style="color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #5b21b6;">TAXA DE ATIVAÇÃO</span>
             </div>
-            <h3>{{ referralStats.taxaAtivacao }}%</h3>
+            <h3 style="color: #6d28d9;">{{ referralStats.taxaAtivacao }}%</h3>
             <p>{{ referralStats.ativos }} de {{ referralStats.totalIndicados }} indicados ativos</p>
           </div>
         </section>
@@ -1356,7 +1416,7 @@ onMounted(async () => {
               <div class="level-row-header">
                 <div class="level-label">
                   <span class="level-badge" :class="`lvl-${lvl.level.charAt(0)}`">{{ lvl.level.charAt(0) }}</span>
-                  <span>{{ lvl.level }}</span>
+                  <span style="font-weight: 600;">{{ lvl.level }}</span>
                 </div>
                 <span class="level-count">{{ lvl.count }} {{ lvl.count === 1 ? 'pessoa' : 'pessoas' }}</span>
               </div>
@@ -1369,21 +1429,21 @@ onMounted(async () => {
           </div>
 
           <!-- Lado Direito: Ganhos por Nível -->
-          <div class="card animated-item" style="padding: 24px; display: flex; flex-direction: column; gap: 16px; animation-delay: 0.35s;">
+          <div class="card animated-item" style="padding: 24px; display: flex; flex-direction: column; gap: 14px; animation-delay: 0.35s;">
             <h3 style="font-size: 18px; color: var(--secondary);">Ganhos por Nível</h3>
 
-            <div v-for="lvl in levelBreakdown" :key="lvl.level" style="background: var(--primary-light); border-left: 4px solid var(--primary); padding: 12px 16px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+            <div v-for="lvl in levelBreakdown" :key="lvl.level" :style="{ background: getLevelStyle(lvl.level).bg, borderLeft: '4px solid ' + getLevelStyle(lvl.level).border }" style="padding: 12px 16px; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
               <div>
-                <strong style="color: var(--primary); font-size: 14px; display:block;">{{ lvl.level }}</strong>
-                <span style="font-size: 12px; color: var(--primary-hover);">{{ lvl.count }} {{ lvl.count === 1 ? 'pessoa' : 'pessoas' }}</span>
+                <strong :style="{ color: getLevelStyle(lvl.level).text }" style="font-size: 14px; display:block;">{{ lvl.level }}</strong>
+                <span style="font-size: 12px; color: var(--text-gray);">{{ lvl.count }} {{ lvl.count === 1 ? 'pessoa' : 'pessoas' }} • {{ lvl.ativos }} ativa(s)</span>
               </div>
-              <strong style="color: var(--primary);">{{ formatCurrency(lvl.total) }}</strong>
+              <strong :style="{ color: getLevelStyle(lvl.level).text }" style="font-size: 15px;">{{ formatCurrency(lvl.total) }}</strong>
             </div>
             <p v-if="levelBreakdown.length === 0" style="color: var(--text-gray); font-size: 13px;">Nenhum ganho registrado ainda.</p>
 
-            <div style="background: var(--primary-light); padding: 16px; border-radius: var(--radius-sm); text-align: center; border: 1px solid var(--border-color); margin-top: auto;">
-              <span style="font-size: 12px; color: var(--text-gray); display:block; margin-bottom: 4px;">Total recorrente</span>
-              <strong style="font-size: 24px; color: var(--primary);">{{ formatCurrency(referralStats.ganhosTotais) }}</strong>
+            <div style="background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%); padding: 16px; border-radius: var(--radius-md); text-align: center; border: 1px solid #bbf7d0; margin-top: auto;">
+              <span style="font-size: 12px; color: #475569; display:block; margin-bottom: 4px; font-weight: 600;">Total recorrente</span>
+              <strong style="font-size: 24px; color: #059669; font-weight: 800;">{{ formatCurrency(referralStats.ganhosTotais) }}</strong>
             </div>
           </div>
         </div>
@@ -1397,7 +1457,10 @@ onMounted(async () => {
                 <div class="user-avatar-mini">{{ getUserInitials(ref.name) }}</div>
                 <div>
                   <strong style="color: var(--text-dark); display:block; font-size: 14px;">{{ ref.name }}</strong>
-                  <span style="font-size: 12px; color: var(--text-gray);">Indicado(a) em {{ ref.date }} • {{ ref.level }} • <span :class="['badge', ref.status === 'ativo' ? 'badge-success' : 'badge-warning']" style="font-size:10px; padding: 2px 6px;">{{ ref.status.charAt(0).toUpperCase() + ref.status.slice(1) }}</span></span>
+                  <span style="font-size: 12px; color: var(--text-gray); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px;">
+                    Indicado(a) em {{ ref.date }} • {{ ref.level }} •
+                    <span :class="['status-badge-ref', ref.status]">{{ ref.status.charAt(0).toUpperCase() + ref.status.slice(1) }}</span>
+                  </span>
                 </div>
               </div>
               <div style="text-align: right;">
@@ -1422,22 +1485,27 @@ onMounted(async () => {
           </button>
         </header>
 
-        <!-- Filtros -->
-        <div class="card animated-item" style="padding: 16px; margin-bottom: 24px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; animation-delay: 0.1s;">
-          <input 
-            v-model="refSearchName" 
-            type="text" 
-            placeholder="Buscar por nome..." 
-            class="form-control" 
-            style="flex: 1; min-width: 200px;" 
-          />
-          <select v-model="refStatusFilter" class="form-control" style="width: auto; min-width: 150px;">
+        <!-- Filtros Dinâmicos -->
+        <div class="card animated-item" style="padding: 16px 20px; margin-bottom: 24px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; animation-delay: 0.1s;">
+          <div style="position: relative; flex: 1; min-width: 220px;">
+            <i class="ph ph-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-gray); font-size: 16px;"></i>
+            <input 
+              v-model="refSearchName" 
+              type="text" 
+              placeholder="Buscar por nome, email ou telefone..." 
+              class="form-control" 
+              style="padding-left: 38px;" 
+            />
+          </div>
+
+          <select v-model="refStatusFilter" class="form-control" style="width: auto; min-width: 140px;">
             <option value="todos">Todos os status</option>
             <option value="ativo">Ativo</option>
             <option value="pendente">Pendente</option>
             <option value="inativo">Inativo</option>
           </select>
-          <select v-model="refLevelFilter" class="form-control" style="width: auto; min-width: 150px;">
+
+          <select v-model="refLevelFilter" class="form-control" style="width: auto; min-width: 140px;">
             <option value="todos">Todos os níveis</option>
             <option value="1">1º Nível</option>
             <option value="2">2º Nível</option>
@@ -1445,14 +1513,33 @@ onMounted(async () => {
             <option value="4">4º Nível</option>
             <option value="5">5º Nível</option>
           </select>
-          <button class="btn btn-outline" @click="refSearchName = ''; refStatusFilter = 'todos'; refLevelFilter = 'todos';">
-            Limpar Filtros
+
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size: 12px; color: var(--text-gray); white-space: nowrap;">Limite:</span>
+            <select v-model="itemsPerPage" class="form-control" style="width: auto; min-width: 75px;">
+              <option :value="5">5</option>
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+            </select>
+          </div>
+
+          <button class="btn btn-outline" @click="clearRefFilters" title="Limpar todos os filtros">
+            <i class="ph ph-arrow-counter-clockwise"></i> Limpar
           </button>
         </div>
 
-        <!-- Tabela -->
+        <!-- Tabela com Paginação -->
         <div class="card animated-item" style="overflow-x: auto; padding: 20px 0 0; animation-delay: 0.15s;">
-          <p style="font-size: 13px; color: var(--text-gray); margin: 0 20px 16px; padding: 0;">Clique em um indicado para ver a hierarquia da rede.</p>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin: 0 20px 16px; flex-wrap:wrap; gap:10px;">
+            <p style="font-size: 13px; color: var(--text-gray); margin: 0; padding: 0;">
+              Clique em uma linha para ver a hierarquia completa da rede.
+            </p>
+            <span style="font-size: 12px; color: var(--text-gray); font-weight: 600;">
+              Total filtrado: {{ filteredReferrals.length }} {{ filteredReferrals.length === 1 ? 'indicado' : 'indicados' }}
+            </span>
+          </div>
+
           <table class="referral-table">
             <thead>
               <tr>
@@ -1467,7 +1554,7 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(refItem, index) in filteredReferrals" :key="index" class="animated-item ref-row-clickable" :style="{ 'animation-delay': (0.2 + index * 0.05) + 's' }" @click="openReferralTree">
+              <tr v-for="(refItem, index) in paginatedReferrals" :key="index" class="animated-item ref-row-clickable" :style="{ 'animation-delay': (0.1 + index * 0.03) + 's' }" @click="openReferralTree">
                 <td>
                   <div class="referral-user">
                     <div class="user-avatar-mini">{{ getUserInitials(refItem.name) }}</div>
@@ -1489,12 +1576,69 @@ onMounted(async () => {
                 </td>
               </tr>
               <tr v-if="filteredReferrals.length === 0">
-                <td colspan="8" style="text-align: center; padding: 24px; color: var(--text-gray);">
+                <td colspan="8" style="text-align: center; padding: 32px 16px; color: var(--text-gray);">
+                  <i class="ph ph-magnifying-glass" style="font-size: 32px; display:block; margin-bottom: 8px; opacity: 0.5;"></i>
                   Nenhum indicado encontrado com os filtros aplicados.
                 </td>
               </tr>
             </tbody>
           </table>
+
+          <!-- Barra de Paginação -->
+          <div v-if="filteredReferrals.length > 0" class="table-pagination-footer">
+            <div class="pagination-info">
+              Mostrando <strong>{{ paginationInfo.start }}</strong> a <strong>{{ paginationInfo.end }}</strong> de <strong>{{ paginationInfo.total }}</strong> registros
+            </div>
+
+            <div class="pagination-actions">
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="currentPage === 1" 
+                @click="setPage(1)" 
+                title="Primeira Página"
+              >
+                <i class="ph ph-caret-double-left"></i>
+              </button>
+              
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="currentPage === 1" 
+                @click="setPage(currentPage - 1)" 
+                title="Página Anterior"
+              >
+                <i class="ph ph-caret-left"></i> Anterior
+              </button>
+
+              <div class="pagination-pages">
+                <button 
+                  v-for="page in totalPages" 
+                  :key="page" 
+                  :class="['btn-page-number', { active: page === currentPage }]" 
+                  @click="setPage(page)"
+                >
+                  {{ page }}
+                </button>
+              </div>
+
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="currentPage === totalPages" 
+                @click="setPage(currentPage + 1)" 
+                title="Próxima Página"
+              >
+                Próxima <i class="ph ph-caret-right"></i>
+              </button>
+
+              <button 
+                class="btn-pagination-nav" 
+                :disabled="currentPage === totalPages" 
+                @click="setPage(totalPages)" 
+                title="Última Página"
+              >
+                <i class="ph ph-caret-double-right"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1508,26 +1652,26 @@ onMounted(async () => {
         <section class="metrics-grid">
           <div class="metric-card card animated-item" style="animation-delay: 0.1s;">
             <div class="metric-header">
-              <i class="ph ph-hand-coins" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
-              <span>GANHOS ACUMULADOS</span>
+              <i class="ph ph-hand-coins" style="color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #065f46;">GANHOS ACUMULADOS</span>
             </div>
-            <h3>{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
+            <h3 style="color: #059669;">{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
             <p>Recorrente enquanto os indicados estiverem ativos</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.15s;">
             <div class="metric-header">
-              <i class="ph ph-users" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
-              <span>INDICADOS ATIVOS</span>
+              <i class="ph ph-users" style="color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #1e40af;">INDICADOS ATIVOS</span>
             </div>
-            <h3>{{ referralStats.ativos }}</h3>
+            <h3 style="color: #1e3a8a;">{{ referralStats.ativos }}</h3>
             <p>De {{ referralStats.totalIndicados }} indicados no total</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.2s;">
             <div class="metric-header">
-              <i class="ph ph-trend-up" style="color: var(--primary); background: var(--primary-light); padding: 8px; border-radius: var(--radius-sm);"></i>
-              <span>TAXA DE ATIVAÇÃO</span>
+              <i class="ph ph-trend-up" style="color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #5b21b6;">TAXA DE ATIVAÇÃO</span>
             </div>
-            <h3>{{ referralStats.taxaAtivacao }}%</h3>
+            <h3 style="color: #6d28d9;">{{ referralStats.taxaAtivacao }}%</h3>
             <p>Dos seus indicados estão ativos</p>
           </div>
         </section>
@@ -2529,13 +2673,14 @@ onMounted(async () => {
 /* Abas de "Minha Conta" */
 .account-tabs {
   display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 4px;
 }
 .account-tabs::-webkit-scrollbar {
   display: none;
@@ -2543,30 +2688,30 @@ onMounted(async () => {
   height: 0;
 }
 .account-tab {
-  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-gray);
+  padding: 10px 16px 12px 16px;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-white, #fff);
-  color: var(--text-gray);
-  border-radius: var(--radius-full, 999px);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   transition: var(--transition);
+  white-space: nowrap;
 }
-.account-tab i { font-size: 16px; }
+.account-tab i {
+  font-size: 16px;
+}
 .account-tab.active {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
+  color: var(--secondary);
+  border-bottom-color: var(--secondary);
 }
-@media (max-width: 520px) {
-  .account-tab span { display: none; }
-  .account-tab { padding: 10px 14px; }
+.account-tab:hover {
+  color: var(--secondary);
 }
 
 .shortcut-card {
@@ -3345,4 +3490,86 @@ onMounted(async () => {
 .consultas-opt i { font-size: 34px; color: var(--secondary); }
 .consultas-opt span { font-weight: 600; color: var(--text-dark); font-size: 14px; }
 .consultas-opt small { color: var(--text-gray); font-size: 11px; }
+
+/* Paginação da Tabela */
+.table-pagination-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  background: #fcfdfe;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-gray);
+}
+.pagination-info strong {
+  color: var(--text-dark);
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-pagination-nav {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  color: var(--text-dark);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.btn-pagination-nav:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.btn-pagination-nav:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-page-number {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: var(--text-dark);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.btn-page-number:hover:not(.active) {
+  background: #f1f5f9;
+}
+.btn-page-number.active {
+  background: var(--secondary);
+  color: #fff;
+  border-color: var(--secondary);
+}
 </style>
