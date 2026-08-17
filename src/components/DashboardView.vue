@@ -107,6 +107,13 @@ const DEFAULT_SLIDES = [
     description: 'Agende consultas e exames pelo app Nipomed no seu celular.',
     image: '/saude_banner.png',
     benefit: 'Consultas e exames'
+  },
+  {
+    tag: 'KIDS & JOGOS',
+    title: 'Viva Mais Kids 🎮',
+    description: 'Jogos educativos, lousa de desenho livre e livro de pintura para seus filhos.',
+    image: '/clube_banner.png',
+    benefit: 'Viva Mais Kids'
   }
 ]
 const slides = ref([...DEFAULT_SLIDES])
@@ -118,7 +125,9 @@ const nextSlide = () => {
 
 const handleSlideAction = (slide) => {
   const benefit = slide.benefit || slide.title || ''
-  if (benefit.toLowerCase().includes('consultas') || benefit.toLowerCase().includes('nipomed') || benefit.toLowerCase().includes('exames')) {
+  if (benefit.toLowerCase().includes('kids')) {
+    emit('changeTab', 'kids')
+  } else if (benefit.toLowerCase().includes('consultas') || benefit.toLowerCase().includes('nipomed') || benefit.toLowerCase().includes('exames')) {
     showConsultasModal.value = true
   } else if (benefit.toLowerCase().includes('indicaç') || benefit.toLowerCase().includes('afilia')) {
     emit('changeTab', 'indicacoes')
@@ -1124,7 +1133,21 @@ onMounted(async () => {
               <i class="ph ph-caret-right action-arrow"></i>
             </div>
 
-            <div class="shortcut-card animated-item" style="animation-delay: 0.8s;" @click="emit('changeTab', 'indicacoes')">
+            <div class="shortcut-card animated-item" style="animation-delay: 0.65s; border: 2px solid rgba(0, 185, 181, 0.35); background: linear-gradient(135deg, #ffffff 0%, #f4fbfd 100%);" @click="emit('changeTab', 'kids')">
+              <div class="shortcut-icon" style="background: linear-gradient(135deg, #00b9b5 0%, #052453 100%); color: #ffffff; font-size: 22px;">
+                <i class="ph ph-game-controller"></i>
+              </div>
+              <div class="shortcut-details">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <h3 style="color: #052453; font-weight: 800;">Viva Mais Kids 🎮</h3>
+                  <span style="background: #00b9b5; color: white; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 20px;">NOVO</span>
+                </div>
+                <p>Jogos infantis, lousa de desenho livre e livro de pintura mágica</p>
+              </div>
+              <i class="ph ph-caret-right action-arrow" style="color: #00b9b5;"></i>
+            </div>
+
+            <div class="shortcut-card animated-item" style="animation-delay: 0.7s;" @click="emit('changeTab', 'indicacoes')">
               <div class="shortcut-icon icon-teal">
                 <i class="ph ph-users-three"></i>
               </div>

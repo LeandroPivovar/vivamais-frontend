@@ -7,6 +7,7 @@ import DependentesView from './components/DependentesView.vue'
 import SuporteView from './components/SuporteView.vue'
 import ChatAoVivoView from './components/ChatAoVivoView.vue'
 import CheckoutView from './components/CheckoutView.vue'
+import KidsView from './components/kids/KidsView.vue'
 import { api, getToken, clearToken } from './services/api'
 import { getSocket, disconnectSocket } from './services/socket'
 
@@ -131,6 +132,24 @@ const navigateTo = (tab) => {
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
+  if (tab === 'kids' || tab === 'kids-dashboard') {
+    if (!isLoggedIn.value) {
+      currentTab.value = 'kids-auth'
+      showDropdown.value = false
+      window.history.pushState({ tab: 'kids-auth' }, '', '/kids/auth')
+      return
+    }
+    currentTab.value = 'kids-dashboard'
+    showDropdown.value = false
+    window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
+    return
+  }
+  if (tab === 'kids-auth') {
+    currentTab.value = 'kids-auth'
+    showDropdown.value = false
+    window.history.pushState({ tab: 'kids-auth' }, '', '/kids/auth')
+    return
+  }
   currentTab.value = tab
   showDropdown.value = false
 
@@ -193,6 +212,22 @@ const handleRouting = () => {
 
   if (path === '/admin' || hash === '#/admin') {
     currentTab.value = 'admin'
+  } else if (path === '/kids/auth' || hash === '#/kids/auth') {
+    currentTab.value = 'kids-auth'
+  } else if (path === '/kids/dashboard' || hash === '#/kids/dashboard') {
+    if (!isLoggedIn.value) {
+      currentTab.value = 'kids-auth'
+      window.history.replaceState({}, '', '/kids/auth')
+    } else {
+      currentTab.value = 'kids-dashboard'
+    }
+  } else if (path.startsWith('/kids') || hash.startsWith('#/kids')) {
+    if (!isLoggedIn.value) {
+      currentTab.value = 'kids-auth'
+      window.history.replaceState({}, '', '/kids/auth')
+    } else {
+      currentTab.value = 'kids-dashboard'
+    }
   } else if (path === '/indicacoes' || hash === '#/indicacoes') {
     currentTab.value = 'indicacoes'
   } else if (path === '/meu-perfil' || hash === '#/meu-perfil') {
@@ -278,6 +313,18 @@ onBeforeUnmount(() => {
   <!-- Restaurando sessão a partir do token salvo -->
   <div v-if="restoringSession" class="session-loading">Carregando...</div>
 
+  <!-- Rota Viva Mais Kids (/kids, /kids/auth, /kids/dashboard) -->
+  <KidsView
+    v-else-if="currentTab === 'kids-dashboard' || currentTab === 'kids-auth'"
+    :user="currentUser"
+    :isLoggedIn="isLoggedIn"
+    :subRoute="currentTab === 'kids-auth' ? 'auth' : 'dashboard'"
+    @goHome="navigateTo('home')"
+    @login="handleLogin"
+    @logout="handleLogout"
+    @triggerDevModal="openDevModal"
+  />
+
   <!-- Visitante via link de indicação: checkout público (cadastro + pagamento) -->
   <CheckoutView v-else-if="!isLoggedIn && showPublicCheckout" @goLogin="showPublicCheckout = false" />
 
@@ -316,6 +363,9 @@ onBeforeUnmount(() => {
               
               <button class="dropdown-item" @click="navigateTo('home')">
                 <i class="ph ph-squares-four"></i> Visão Geral
+              </button>
+              <button class="dropdown-item" @click="navigateTo('kids')">
+                <i class="ph ph-game-controller" style="color: #f59e0b;"></i> Viva Mais Kids 🎮
               </button>
               <button class="dropdown-item" @click="navigateTo('perfil')">
                 <i class="ph ph-user"></i> Minha Conta
