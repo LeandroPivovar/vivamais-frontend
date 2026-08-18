@@ -153,6 +153,51 @@ const openNipomedStore = (platform) => {
   })
 }
 
+// Modal de Seleção de Paciente para Telemedicina
+const showTelemedicinaModal = ref(false)
+const selectedTelemedTarget = ref('titular')
+const telemedLoading = ref(false)
+
+
+const openTelemedicinaSelection = async () => {
+  selectedTelemedTarget.value = 'titular'
+  showTelemedicinaModal.value = true
+  if (!depInfo.value?.dependents) {
+    try {
+      const d = await api.get('/dependents')
+      depInfo.value = d || { limit: 0, used: 0, canAdd: false, dependents: [] }
+    } catch {
+      // segue
+    }
+  }
+}
+
+const confirmTelemedicina = async () => {
+  telemedLoading.value = true
+  const win = window.open('about:blank', '_blank')
+  try {
+    await api.post('/sso/telehealth') // auditoria
+  } catch {
+    // segue
+  }
+  try {
+    const { redirectUrl } = await api.get('/telemedicina/sso')
+    showTelemedicinaModal.value = false
+    telemedLoading.value = false
+    if (win) win.location.href = redirectUrl
+    else window.open(redirectUrl, '_blank', 'noopener')
+  } catch (err) {
+    telemedLoading.value = false
+    if (win) win.close()
+    emit('triggerDevModal', {
+      title: 'Telemedicina',
+      message: err?.status === 503
+        ? 'Seu acesso à Telemedicina ainda está sendo processado. Tente novamente em alguns minutos.'
+        : 'Não foi possível conectar à Telemedicina agora. Tente novamente em instantes.',
+    })
+  }
+}
+
 const triggerRedirect = async (benefitName) => {
   // Bloqueia acesso aos serviços com pagamento pendente ou fatura atrasada.
   if (accessBlocked.value) {
@@ -197,28 +242,9 @@ const triggerRedirect = async (benefitName) => {
     return
   }
 
-  // Telemedicina tem SSO real: abre a aba já no clique (evita bloqueio de popup)
-  // e navega para o portal do parceiro assim que o SSO devolve a redirectUrl.
-  if (slug === 'telehealth') {
-    const win = window.open('about:blank', '_blank')
-    try {
-      await api.post(`/sso/${slug}`) // registra o acesso no feed de atividades
-    } catch {
-      // acesso segue mesmo se o registro de auditoria falhar
-    }
-    try {
-      const { redirectUrl } = await api.get('/telemedicina/sso')
-      if (win) win.location.href = redirectUrl
-      else window.open(redirectUrl, '_blank', 'noopener')
-    } catch (err) {
-      if (win) win.close()
-      emit('triggerDevModal', {
-        title: 'Telemedicina',
-        message: err?.status === 503
-          ? 'Seu acesso à Telemedicina ainda está sendo processado. Tente novamente em alguns minutos.'
-          : 'Não foi possível conectar à Telemedicina agora. Tente novamente em instantes.',
-      })
-    }
+  // Telemedicina abre o modal de seleção do paciente (titular ou dependente)
+  if (slug === 'telehealth' || (benefitName && benefitName.toLowerCase().includes('telemedicina'))) {
+    openTelemedicinaSelection()
     return
   }
 
@@ -259,19 +285,28 @@ const uf = ref('')
 const zipCode = ref('')
 
 const loadProfile = async () => {
-  const profile = await api.get('/users/me')
-  name.value = profile.name
-  email.value = profile.email
-  phone.value = profile.phone ?? ''
-  cpf.value = profile.cpf
-  memberSince.value = profile.memberSince
-  address.value = profile.address ?? ''
-  neighborhood.value = profile.neighborhood ?? ''
-  complement.value = profile.complement ?? ''
-  city.value = profile.city ?? ''
-  uf.value = profile.state ?? ''
-  zipCode.value = profile.zipCode ?? ''
-  refCodeInput.value = `${slugify(profile.name)}-${profile.id}`
+  try {
+    const profile = await api.get('/users/me')
+    name.value = profile.name
+    email.value = profile.email
+    phone.value = profile.phone ?? ''
+    cpf.value = profile.cpf
+    memberSince.value = profile.memberSince
+    address.value = profile.address ?? ''
+    neighborhood.value = profile.neighborhood ?? ''
+    complement.value = profile.complement ?? ''
+    city.value = profile.city ?? ''
+    uf.value = profile.state ?? ''
+    zipCode.value = profile.zipCode ?? ''
+    refCodeInput.value = `${slugify(profile.name)}-${profile.id}`
+  } catch {
+    name.value = props.user?.name || ''
+    email.value = props.user?.email || ''
+    phone.value = props.user?.phone || ''
+    cpf.value = props.user?.cpf || ''
+    memberSince.value = props.user?.memberSince || ''
+    refCodeInput.value = props.user?.name ? `${slugify(props.user.name)}-${props.user.id || ''}` : ''
+  }
 }
 
 const saveProfile = async () => {
@@ -622,7 +657,11 @@ const refCodeInput = ref('')
 const selectedPayment = ref('ambos')
 
 function maskCpf(value) {
-  if (!value) return ''
+  if (!value) return '—'
+  const digits = String(value).replace(/\D/g, '')
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
+  }
   return value.replace(/^(\d{3}\.)\d{3}\.\d{3}(-\d{2})$/, '$1***.***$2')
 }
 
@@ -954,7 +993,7 @@ onMounted(async () => {
       api.get('/billing/summary').catch(() => ({ plan: '', monthlyValue: '', nextBillingDate: '' })),
       api.get('/content/pricing').catch(() => ({ Individual: '', Família: '' })),
     ])
-    slides.value = (slidesData && slidesData.length) ? slidesData : DEFAULT_SLIDES
+    slides.value = DEFAULT_SLIDES
     rawReferrals.value = referrals || []
     userLinks.value = links || []
     invoices.value = invoicesData || []
@@ -2316,12 +2355,91 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- MODAL REDIRECIONAMENTO SIMULADO (Apenas você está sendo redirecionado...) -->
-    <div v-if="showRedirectModal" class="sso-overlay-custom">
-      <div class="sso-modal-box">
-        <div class="loader-circle"></div>
-        <h3>Você está sendo redirecionado...</h3>
-        <p>Por favor, aguarde enquanto conectamos você com segurança ao portal da {{ activeRedirect }}.</p>
+    <!-- MODAL: SELEÇÃO DE PACIENTE (TELEMEDICINA 24H) -->
+    <div v-if="showTelemedicinaModal" class="sso-overlay-custom" @click.self="showTelemedicinaModal = false">
+      <div class="telemed-modal-card">
+        <div class="modal-close" @click="showTelemedicinaModal = false"><i class="ph ph-x"></i></div>
+        
+        <div class="telemed-modal-header">
+          <div class="telemed-icon-badge">
+            <i class="ph ph-first-aid"></i>
+          </div>
+          <div>
+            <h3 class="telemed-title">Agendar Telemedicina 24h</h3>
+            <p class="telemed-subtitle">Selecione quem passará pelo atendimento médico:</p>
+          </div>
+        </div>
+
+        <div class="telemed-beneficiaries-list">
+          <!-- Titular -->
+          <div 
+            class="telemed-patient-card" 
+            :class="{ active: selectedTelemedTarget === 'titular' }"
+            @click="selectedTelemedTarget = 'titular'"
+          >
+            <div class="patient-avatar-circle">
+              {{ (user?.name || 'U').split(' ').filter(Boolean).slice(0, 2).map(n => n[0].toUpperCase()).join('') }}
+            </div>
+            <div class="patient-info">
+              <div class="patient-name-row">
+                <strong>{{ user?.name }}</strong>
+                <span class="patient-role-badge holder">Titular</span>
+              </div>
+              <span class="patient-doc">CPF: {{ maskCpf(cpf || user?.cpf) }}</span>
+            </div>
+            <div class="patient-radio">
+              <i v-if="selectedTelemedTarget === 'titular'" class="ph ph-check-circle-fill" style="color: #00b9b5; font-size: 24px;"></i>
+              <div v-else class="radio-circle"></div>
+            </div>
+          </div>
+
+          <!-- Dependentes -->
+          <template v-if="depInfo?.dependents && depInfo.dependents.length > 0">
+            <div 
+              v-for="dep in depInfo.dependents" 
+              :key="dep.id"
+              class="telemed-patient-card"
+              :class="{ active: selectedTelemedTarget === dep.id }"
+              @click="selectedTelemedTarget = dep.id"
+            >
+              <div class="patient-avatar-circle dep">
+                {{ (dep.name || 'D').split(' ').filter(Boolean).slice(0, 2).map(n => n[0].toUpperCase()).join('') }}
+              </div>
+              <div class="patient-info">
+                <div class="patient-name-row">
+                  <strong>{{ dep.name }}</strong>
+                  <span class="patient-role-badge">Dependente</span>
+                </div>
+                <span class="patient-doc">CPF: {{ maskCpf(dep.cpf) }}</span>
+              </div>
+              <div class="patient-radio">
+                <i v-if="selectedTelemedTarget === dep.id" class="ph ph-check-circle-fill" style="color: #00b9b5; font-size: 24px;"></i>
+                <div v-else class="radio-circle"></div>
+              </div>
+            </div>
+          </template>
+
+          <div v-else-if="!user?.isDependent" class="telemed-no-deps-hint">
+            <i class="ph ph-info"></i>
+            <span>Nenhum dependente cadastrado no plano. O atendimento será aberto para o titular.</span>
+          </div>
+        </div>
+
+        <div class="telemed-modal-footer">
+          <button class="btn btn-outline" @click="showTelemedicinaModal = false" :disabled="telemedLoading">
+            Cancelar
+          </button>
+          <button class="btn btn-primary" @click="confirmTelemedicina" :disabled="telemedLoading">
+            <i v-if="telemedLoading" class="mini-spinner"></i>
+            <i v-else class="ph ph-video-camera"></i>
+            {{ telemedLoading ? 'Conectando...' : 'Iniciar Atendimento' }}
+          </button>
+        </div>
+
+        <div class="telemed-security-note">
+          <i class="ph ph-shield-check"></i>
+          <span>Atendimento médico 100% online, seguro e confidencial.</span>
+        </div>
       </div>
     </div>
 
@@ -3572,5 +3690,193 @@ onMounted(async () => {
   background: var(--secondary);
   color: #fff;
   border-color: var(--secondary);
+}
+
+/* Modal de Seleção de Paciente Telemedicina */
+.telemed-modal-card {
+  position: relative;
+  background: #ffffff;
+  border-radius: var(--radius-lg, 16px);
+  padding: 30px 26px;
+  max-width: 460px;
+  width: 90%;
+  box-shadow: var(--shadow-lg, 0 20px 40px rgba(0,0,0,0.15));
+  animation: modalFadeIn 0.2s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.telemed-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.telemed-icon-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(0, 185, 181, 0.12);
+  color: var(--primary, #00b9b5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.telemed-title {
+  color: var(--secondary, #052453);
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.telemed-subtitle {
+  color: var(--text-gray, #64748b);
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.telemed-beneficiaries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+  max-height: 270px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.telemed-patient-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: var(--radius-md, 12px);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  background: #ffffff;
+  user-select: none;
+}
+
+.telemed-patient-card:hover {
+  border-color: var(--primary, #00b9b5);
+  background: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.telemed-patient-card.active {
+  border-color: var(--primary, #00b9b5);
+  background: rgba(0, 185, 181, 0.05);
+}
+
+.patient-avatar-circle {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--secondary, #052453);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.patient-avatar-circle.dep {
+  background: var(--primary, #00b9b5);
+}
+
+.patient-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.patient-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.patient-name-row strong {
+  font-size: 14px;
+  color: var(--text-dark, #0f172a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.patient-role-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #0284c7;
+  text-transform: uppercase;
+}
+
+.patient-role-badge.holder {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.patient-doc {
+  font-size: 12px;
+  color: var(--text-gray, #64748b);
+  margin-top: 3px;
+  display: block;
+}
+
+.patient-radio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+}
+
+.radio-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+}
+
+.telemed-no-deps-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-gray, #64748b);
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px dashed #cbd5e1;
+}
+
+.telemed-modal-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.telemed-security-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  justify-content: center;
+  text-align: center;
 }
 </style>

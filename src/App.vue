@@ -127,7 +127,6 @@ const handleLogout = async () => {
     // token já pode estar expirado — segue com o logout local de qualquer forma
   }
   clearToken()
-  localStorage.removeItem('vivamais_mock_user')
   disconnectSocket()
   chatSock = null
   showChatPanel.value = false
