@@ -8,6 +8,7 @@ import SuporteView from './components/SuporteView.vue'
 import ChatAoVivoView from './components/ChatAoVivoView.vue'
 import CheckoutView from './components/CheckoutView.vue'
 import KidsView from './components/kids/KidsView.vue'
+import TeenView from './components/teen/TeenView.vue'
 import { api, getToken, clearToken } from './services/api'
 import { getSocket, disconnectSocket } from './services/socket'
 
@@ -101,7 +102,21 @@ watch(showDevModal, (val) => {
 const handleLogin = (userData) => {
   currentUser.value = userData
   isLoggedIn.value = true
-  currentTab.value = 'home'
+
+  const path = window.location.pathname
+  const hash = window.location.hash
+
+  if (currentTab.value === 'teen-auth' || currentTab.value === 'teen' || path.startsWith('/teen') || hash.startsWith('#/teen')) {
+    currentTab.value = 'teen-dashboard'
+    window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
+  } else if (currentTab.value === 'kids-auth' || currentTab.value === 'kids' || path.startsWith('/kids') || hash.startsWith('#/kids')) {
+    currentTab.value = 'kids-dashboard'
+    window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
+  } else {
+    currentTab.value = 'home'
+    window.history.pushState({ tab: 'home' }, '', '/')
+  }
+
   initFloatingChat()
 }
 
@@ -148,6 +163,24 @@ const navigateTo = (tab) => {
     currentTab.value = 'kids-auth'
     showDropdown.value = false
     window.history.pushState({ tab: 'kids-auth' }, '', '/kids/auth')
+    return
+  }
+  if (tab === 'teen' || tab === 'teen-dashboard') {
+    if (!isLoggedIn.value) {
+      currentTab.value = 'teen-auth'
+      showDropdown.value = false
+      window.history.pushState({ tab: 'teen-auth' }, '', '/teen/auth')
+      return
+    }
+    currentTab.value = 'teen-dashboard'
+    showDropdown.value = false
+    window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
+    return
+  }
+  if (tab === 'teen-auth') {
+    currentTab.value = 'teen-auth'
+    showDropdown.value = false
+    window.history.pushState({ tab: 'teen-auth' }, '', '/teen/auth')
     return
   }
   currentTab.value = tab
@@ -227,6 +260,22 @@ const handleRouting = () => {
       window.history.replaceState({}, '', '/kids/auth')
     } else {
       currentTab.value = 'kids-dashboard'
+    }
+  } else if (path === '/teen/auth' || hash === '#/teen/auth') {
+    currentTab.value = 'teen-auth'
+  } else if (path === '/teen/dashboard' || hash === '#/teen/dashboard') {
+    if (!isLoggedIn.value) {
+      currentTab.value = 'teen-auth'
+      window.history.replaceState({}, '', '/teen/auth')
+    } else {
+      currentTab.value = 'teen-dashboard'
+    }
+  } else if (path.startsWith('/teen') || hash.startsWith('#/teen')) {
+    if (!isLoggedIn.value) {
+      currentTab.value = 'teen-auth'
+      window.history.replaceState({}, '', '/teen/auth')
+    } else {
+      currentTab.value = 'teen-dashboard'
     }
   } else if (path === '/indicacoes' || hash === '#/indicacoes') {
     currentTab.value = 'indicacoes'
@@ -315,10 +364,22 @@ onBeforeUnmount(() => {
 
   <!-- Rota Viva Mais Kids (/kids, /kids/auth, /kids/dashboard) -->
   <KidsView
-    v-else-if="currentTab === 'kids-dashboard' || currentTab === 'kids-auth'"
+    v-else-if="currentTab === 'kids-dashboard' || currentTab === 'kids-auth' || currentTab === 'kids'"
     :user="currentUser"
     :isLoggedIn="isLoggedIn"
-    :subRoute="currentTab === 'kids-auth' ? 'auth' : 'dashboard'"
+    :subRoute="(!isLoggedIn || currentTab === 'kids-auth') ? 'auth' : 'dashboard'"
+    @goHome="navigateTo('home')"
+    @login="handleLogin"
+    @logout="handleLogout"
+    @triggerDevModal="openDevModal"
+  />
+
+  <!-- Rota Viva Mais Teen (/teen, /teen/auth, /teen/dashboard) -->
+  <TeenView
+    v-else-if="currentTab === 'teen-dashboard' || currentTab === 'teen-auth' || currentTab === 'teen'"
+    :user="currentUser"
+    :isLoggedIn="isLoggedIn"
+    :subRoute="(!isLoggedIn || currentTab === 'teen-auth') ? 'auth' : 'dashboard'"
     @goHome="navigateTo('home')"
     @login="handleLogin"
     @logout="handleLogout"
@@ -363,6 +424,9 @@ onBeforeUnmount(() => {
               
               <button class="dropdown-item" @click="navigateTo('home')">
                 <i class="ph ph-squares-four"></i> Visão Geral
+              </button>
+              <button class="dropdown-item" @click="navigateTo('teen')">
+                <i class="ph ph-headphones" style="color: #38bdf8;"></i> Viva Mais Teen 🎧
               </button>
               <button class="dropdown-item" @click="navigateTo('kids')">
                 <i class="ph ph-game-controller" style="color: #f59e0b;"></i> Viva Mais Kids 🎮

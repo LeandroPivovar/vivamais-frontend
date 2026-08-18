@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { api, lookupCep, uploadFile } from '../services/api'
 import { getSocket } from '../services/socket'
+import TeenAdminView from './teen/TeenAdminView.vue'
 
 const props = defineProps({
   layoutMode: {
@@ -787,6 +788,12 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
         <span v-if="chatConvs.some(c => c.unreadForAdmin > 0)" class="chat-nav-dot"></span>
       </button>
+      <button
+        :class="['admin-tab-btn', { active: activeAdminTab === 'teen' }]"
+        @click="activeAdminTab = 'teen'"
+      >
+        <i class="ph ph-headphones" style="color: #2563eb;"></i> Viva Mais Teen (Idiomas)
+      </button>
     </div>
 
     <!-- ABA 1: GESTÃO DE USUÁRIOS -->
@@ -1366,6 +1373,15 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           </template>
         </div>
       </div>
+    </div>
+
+    <!-- ABA 5: VIVA MAIS TEEN (GESTÃO DE IDIOMAS, MÓDULOS, AULAS & MATERIAIS) -->
+    <div v-if="activeAdminTab === 'teen'" class="tab-content-admin">
+      <TeenAdminView 
+        :layoutMode="layoutMode" 
+        :embedded="false" 
+        @triggerDevModal="(d) => emit('triggerDevModal', d)" 
+      />
     </div>
 
     <!-- MODAL 1: CADASTRAR USUÁRIO -->
