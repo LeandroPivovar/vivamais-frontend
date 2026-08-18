@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { api, setToken, clearToken, getToken } from '../../services/api'
+import { api, clearToken } from '../../services/api'
 import { kidsAudio } from './services/audio'
 import { COLORING_TEMPLATES } from './data/drawings'
 import { GAMES_CATALOG } from './data/games'
@@ -116,36 +116,50 @@ function switchProfile(profileId) {
   showToast(5, `Perfil trocado para ${kidUser.name}!`)
 }
 
-// --- LOGIN INTERNO NO KIDS (/kids/auth) ---
-const loginUsername = ref('')
-const loginPassword = ref('')
+// --- LOGIN INTERNO NO KIDS (/kids/auth) — apenas CPF, sem senha ---
+const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
+const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
+const kidsTeenSession = ref(null)
+
+function loadKidsTeenSession() {
+  try {
+    const saved = localStorage.getItem(KIDS_TEEN_SESSION_KEY)
+    if (saved) kidsTeenSession.value = JSON.parse(saved)
+  } catch {
+    kidsTeenSession.value = null
+  }
+}
+loadKidsTeenSession()
+
+const hasKidsAccess = computed(() => props.isLoggedIn || !!kidsTeenSession.value)
 
 async function handleKidsLogin() {
-  if (!loginUsername.value || !loginPassword.value) {
-    loginError.value = 'Preencha seu CPF ou e-mail e senha de assinante.'
+  const cpf = loginCpf.value.replace(/\D/g, '')
+  if (cpf.length !== 11) {
+    loginError.value = 'Informe um CPF válido (11 números).'
     return
   }
   loginError.value = ''
   loginLoading.value = true
   try {
-    const data = await api.post('/auth/login', {
-      username: loginUsername.value.trim(),
-      password: loginPassword.value.trim()
-    })
+    const data = await api.post('/auth/login-kids', { cpf })
     if (data?.token) {
-      setToken(data.token)
-      emit('login', data.user)
+      kidsTeenSession.value = { token: data.token, user: data.user }
+      localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
+      kidUser.name = data.user?.name ? data.user.name.split(' ')[0] : kidUser.name
+      saveKidProfile()
       kidsAudio.playVictory()
       triggerConfetti()
     }
   } catch (err) {
-    loginError.value = err?.message || 'Usuário ou senha incorretos no Viva Mais Club.'
+    loginError.value = err?.message || 'CPF não encontrado ou assinatura inativa.'
   } finally {
     loginLoading.value = false
   }
 }
+
 
 function handleGuestMode() {
   kidUser.name = 'Explorador'
@@ -625,7 +639,13 @@ function toggleAudio() {
 }
 
 function handleLogout() {
-  clearToken()
+  if (kidsTeenSession.value) {
+    kidsTeenSession.value = null
+    localStorage.removeItem(KIDS_TEEN_SESSION_KEY)
+  }
+  if (props.isLoggedIn) {
+    clearToken()
+  }
   emit('logout')
 }
 
@@ -658,32 +678,23 @@ watch(() => props.user, () => {
     <!-- ========================================================= -->
     <!-- TELA DE LOGIN / ACESSO KIDS (/kids/auth ou Não Logado)    -->
     <!-- ========================================================= -->
-    <section v-if="!props.isLoggedIn || props.subRoute === 'auth'" class="kids-login-view">
+    <section v-if="!hasKidsAccess || props.subRoute === 'auth'" class="kids-login-view">
       <div class="kids-login-card">
         <div class="kids-badge-top">
           <img src="/favicon.png" alt="Viva Mais" class="mini-logo" />
           <span>ACESSO INTEGRADO VIVA MAIS CLUB</span>
         </div>
         <h1>Bem-vindo ao Viva Kids! 🚀</h1>
-        <p>Acesse com sua conta de assinante Viva Mais Club para liberar jogos, desenhos e salvar o progresso dos seus filhos:</p>
+        <p>Digite o CPF do titular ou dependente com assinatura ativa para liberar jogos, desenhos e salvar o progresso:</p>
 
         <form @submit.prevent="handleKidsLogin" class="kids-form">
           <div class="input-group">
-            <label>CPF ou E-mail do Titular:</label>
+            <label>CPF:</label>
             <input
-              v-model="loginUsername"
+              v-model="loginCpf"
               type="text"
-              placeholder="000.000.000-00 ou seu@email.com"
-              required
-            />
-          </div>
-
-          <div class="input-group">
-            <label>Senha de Acesso:</label>
-            <input
-              v-model="loginPassword"
-              type="password"
-              placeholder="••••••••"
+              inputmode="numeric"
+              placeholder="000.000.000-00"
               required
             />
           </div>
@@ -796,7 +807,7 @@ watch(() => props.user, () => {
               <button class="dropdown-item" @click="emit('goHome')">
                 🏥 Voltar ao Portal Viva Mais
               </button>
-              <button v-if="props.isLoggedIn" class="dropdown-item text-danger" @click="handleLogout">
+              <button v-if="hasKidsAccess" class="dropdown-item text-danger" @click="handleLogout">
                 🚪 Sair da Conta
               </button>
             </div>

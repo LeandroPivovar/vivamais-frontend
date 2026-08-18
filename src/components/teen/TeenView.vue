@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { api, setToken, getToken } from '../../services/api'
+import { api, getToken, clearToken } from '../../services/api'
 import { teenStorage } from './services/teenStorage'
 import TeenAdminView from './TeenAdminView.vue'
 
@@ -77,10 +77,24 @@ const activeProfile = ref({
 
 const studentProfileId = computed(() => activeProfile.value?.id || props.user?.id || 'default_teen')
 
-// Login Teen State
-const loginForm = ref({ email: '', password: '' })
+// Login Teen State — apenas CPF, sem senha (mesma sessão local do Kids)
+const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
+const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
+const kidsTeenSession = ref(null)
+
+function loadKidsTeenSession() {
+  try {
+    const saved = localStorage.getItem(KIDS_TEEN_SESSION_KEY)
+    if (saved) kidsTeenSession.value = JSON.parse(saved)
+  } catch {
+    kidsTeenSession.value = null
+  }
+}
+loadKidsTeenSession()
+
+const hasTeenAccess = computed(() => props.isLoggedIn || !!kidsTeenSession.value)
 
 function getInitials(name) {
   if (!name) return 'UN'
@@ -90,7 +104,7 @@ function getInitials(name) {
 }
 
 async function fetchDependentsAndSetupProfiles() {
-  const current = props.user || {}
+  const current = props.user || kidsTeenSession.value?.user || {}
   const list = [
     {
       id: current.id ? `user-${current.id}` : 'titular',
@@ -364,29 +378,38 @@ function sendChatMessage() {
   scrollChatToBottom()
 }
 
-// --- LOGIN TEEN ---
+// --- LOGIN TEEN — apenas CPF, sem senha ---
 async function handleTeenLogin() {
-  if (!loginForm.value.email || !loginForm.value.password) {
-    loginError.value = 'Preencha seu e-mail ou CPF e sua senha de acesso.'
+  const cpf = loginCpf.value.replace(/\D/g, '')
+  if (cpf.length !== 11) {
+    loginError.value = 'Informe um CPF válido (11 números).'
     return
   }
   loginLoading.value = true
   loginError.value = ''
   try {
-    const data = await api.post('/auth/login', {
-      username: loginForm.value.email.trim(),
-      password: loginForm.value.password.trim()
-    })
-    if (data?.token) setToken(data.token)
-    if (data?.user) {
-      emit('login', data.user)
+    const data = await api.post('/auth/login-kids', { cpf })
+    if (data?.token) {
+      kidsTeenSession.value = { token: data.token, user: data.user }
+      localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
       fetchDependentsAndSetupProfiles()
     }
   } catch (err) {
-    loginError.value = err.status === 401 ? 'CPF/e-mail ou senha incorretos.' : (err?.message || 'Falha ao autenticar. Verifique suas credenciais.')
+    loginError.value = err.status === 401 ? 'CPF não encontrado ou assinatura inativa.' : (err?.message || 'Falha ao autenticar. Tente novamente.')
   } finally {
     loginLoading.value = false
   }
+}
+
+function handleTeenLogout() {
+  if (kidsTeenSession.value) {
+    kidsTeenSession.value = null
+    localStorage.removeItem(KIDS_TEEN_SESSION_KEY)
+  }
+  if (props.isLoggedIn) {
+    clearToken()
+  }
+  emit('logout')
 }
 </script>
 
@@ -396,7 +419,7 @@ async function handleTeenLogin() {
     <!-- ================================================================= -->
     <!-- TELA DE AUTH / LOGIN TEEN (CASO DESLOGADO) -->
     <!-- ================================================================= -->
-    <div v-if="!isLoggedIn || subRoute === 'auth'" class="teen-auth-screen">
+    <div v-if="!hasTeenAccess || subRoute === 'auth'" class="teen-auth-screen">
       <div class="teen-auth-card">
         <div class="auth-logo-row">
           <img src="/logo.png" alt="Viva Mais Club" class="auth-logo-img" />
@@ -404,7 +427,7 @@ async function handleTeenLogin() {
         </div>
 
         <h2>Aulas de Idiomas Ao Vivo</h2>
-        <p>Acesse com sua conta Viva Mais para assistir às aulas ao vivo e consultar o cronograma.</p>
+        <p>Digite o CPF do titular ou dependente com assinatura ativa para assistir às aulas ao vivo e consultar o cronograma.</p>
 
         <div v-if="loginError" class="alert-error-box">
           <i class="ph ph-warning-circle"></i> {{ loginError }}
@@ -412,18 +435,10 @@ async function handleTeenLogin() {
 
         <form @submit.prevent="handleTeenLogin" class="teen-auth-form">
           <div class="form-group">
-            <label>E-mail ou CPF</label>
+            <label>CPF</label>
             <div class="input-icon-box">
               <i class="ph ph-user"></i>
-              <input v-model="loginForm.email" type="text" placeholder="seuemail@exemplo.com ou CPF" required />
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>Senha de Acesso</label>
-            <div class="input-icon-box">
-              <i class="ph ph-lock"></i>
-              <input v-model="loginForm.password" type="password" placeholder="••••••••" required />
+              <input v-model="loginCpf" type="text" inputmode="numeric" placeholder="000.000.000-00" required />
             </div>
           </div>
 
@@ -516,7 +531,7 @@ async function handleTeenLogin() {
                 <button class="dropdown-option-btn text-primary" @click="emit('goHome')">
                   <i class="ph ph-house"></i> Voltar ao Viva Mais Club
                 </button>
-                <button class="dropdown-option-btn text-danger" @click="emit('logout')">
+                <button class="dropdown-option-btn text-danger" @click="handleTeenLogout">
                   <i class="ph ph-sign-out"></i> Sair da Conta
                 </button>
               </div>
@@ -593,9 +608,9 @@ async function handleTeenLogin() {
               <i class="ph ph-arrow-left"></i> Voltar ao Viva Mais Club
             </button>
 
-            <button 
-              class="drawer-nav-btn text-danger" 
-              @click="emit('logout'); showMobileDrawer = false"
+            <button
+              class="drawer-nav-btn text-danger"
+              @click="handleTeenLogout(); showMobileDrawer = false"
             >
               <i class="ph ph-sign-out"></i> Sair
             </button>
