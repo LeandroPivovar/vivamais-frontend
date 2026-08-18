@@ -518,11 +518,15 @@ const referralStats = computed(() => {
   const total = rawReferrals.value.length
   const ativos = rawReferrals.value.filter(r => r.status === 'ativo').length
   const ganhosTotais = rawReferrals.value.reduce((sum, r) => sum + parseGain(r.gain), 0)
+  const bonusTotal = rawReferrals.value.reduce((sum, r) => sum + parseGain(r.bonus), 0)
+  const bonusCount = rawReferrals.value.filter(r => r.bonus).length
   return {
     totalIndicados: total,
     ativos,
     taxaAtivacao: total > 0 ? Math.round((ativos / total) * 100) : 0,
     ganhosTotais,
+    bonusTotal,
+    bonusCount,
   }
 })
 
@@ -1457,6 +1461,14 @@ onMounted(async () => {
             <h3 style="color: #6d28d9;">{{ referralStats.taxaAtivacao }}%</h3>
             <p>{{ referralStats.ativos }} de {{ referralStats.totalIndicados }} indicados ativos</p>
           </div>
+          <div class="metric-card card animated-item" style="animation-delay: 0.25s;">
+            <div class="metric-header">
+              <i class="ph ph-gift" style="color: #d97706; background: #fffbeb; border: 1px solid #fde68a; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #92400e;">BÔNUS DE INDICAÇÕES NOVAS</span>
+            </div>
+            <h3 style="color: #d97706;">{{ formatCurrency(referralStats.bonusTotal) }}</h3>
+            <p>+R$30 no 1º mês de cada indicação nova ({{ referralStats.bonusCount }})</p>
+          </div>
         </section>
 
         <!-- Grid de Crescimento e Ganhos por Nível -->
@@ -1604,6 +1616,7 @@ onMounted(async () => {
                 <th>Status</th>
                 <th>Data</th>
                 <th>Ganho/Mês</th>
+                <th>Bônus</th>
               </tr>
             </thead>
             <tbody>
@@ -1627,9 +1640,15 @@ onMounted(async () => {
                 <td :style="{ color: refItem.gain !== '-' && refItem.gain !== 'R$ 0,00' ? '#16a34a' : 'inherit', fontWeight: 'bold' }">
                   {{ refItem.gain }}
                 </td>
+                <td>
+                  <span v-if="refItem.bonus" class="badge" style="font-size:11px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; font-weight:700;">
+                    <i class="ph ph-gift"></i> +{{ refItem.bonus }}
+                  </span>
+                  <span v-else style="color: var(--text-gray);">—</span>
+                </td>
               </tr>
               <tr v-if="filteredReferrals.length === 0">
-                <td colspan="8" style="text-align: center; padding: 32px 16px; color: var(--text-gray);">
+                <td colspan="9" style="text-align: center; padding: 32px 16px; color: var(--text-gray);">
                   <i class="ph ph-magnifying-glass" style="font-size: 32px; display:block; margin-bottom: 8px; opacity: 0.5;"></i>
                   Nenhum indicado encontrado com os filtros aplicados.
                 </td>
@@ -1819,6 +1838,10 @@ onMounted(async () => {
             <div class="sharing-metric-box">
               <span>Comissão Gerada</span>
               <strong style="color: #16a34a;">{{ linkItem.comissao }}</strong>
+            </div>
+            <div class="sharing-metric-box" v-if="linkItem.bonus && linkItem.bonus !== 'R$ 0,00'">
+              <span>Bônus Indicações Novas</span>
+              <strong style="color: #d97706;">{{ linkItem.bonus }}</strong>
             </div>
           </div>
 
@@ -2268,6 +2291,10 @@ onMounted(async () => {
             <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
               <span style="font-size: 13px; color: #cbd5e1 !important; font-weight:500;">Comissão Gerada:</span>
               <strong style="font-size: 14px; color: #4ade80 !important;">{{ selectedLink.comissao }}</strong>
+            </div>
+            <div v-if="selectedLink.bonus && selectedLink.bonus !== 'R$ 0,00'" style="display:flex; justify-content:space-between; margin-bottom: 8px;">
+              <span style="font-size: 13px; color: #cbd5e1 !important; font-weight:500;">Bônus Indicações Novas:</span>
+              <strong style="font-size: 14px; color: #fbbf24 !important;">{{ selectedLink.bonus }}</strong>
             </div>
             <div style="display:flex; justify-content:space-between;">
               <span style="font-size: 13px; color: #cbd5e1 !important; font-weight:500;">Taxa de Conversão:</span>
