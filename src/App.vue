@@ -425,12 +425,6 @@ onBeforeUnmount(() => {
               <button class="dropdown-item" @click="navigateTo('home')">
                 <i class="ph ph-squares-four"></i> Visão Geral
               </button>
-              <button class="dropdown-item" @click="navigateTo('teen')">
-                <i class="ph ph-headphones" style="color: #38bdf8;"></i> Viva Mais Teen 🎧
-              </button>
-              <button class="dropdown-item" @click="navigateTo('kids')">
-                <i class="ph ph-game-controller" style="color: #f59e0b;"></i> Viva Mais Kids 🎮
-              </button>
               <button class="dropdown-item" @click="navigateTo('perfil')">
                 <i class="ph ph-user"></i> Minha Conta
               </button>
