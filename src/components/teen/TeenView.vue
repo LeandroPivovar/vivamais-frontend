@@ -388,7 +388,7 @@ async function handleTeenLogin() {
   loginLoading.value = true
   loginError.value = ''
   try {
-    const data = await api.post('/auth/login-kids', { cpf })
+    const data = await api.post('/auth/login-kids', { cpf, module: 'teen' })
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))

@@ -158,10 +158,12 @@ const showTelemedicinaModal = ref(false)
 const selectedTelemedTarget = ref('titular')
 const telemedLoading = ref(false)
 
+// Só dependentes kids (até 10) ou teen (11-17) aparecem como opção de agendamento.
+const telemedDependents = computed(() =>
+  (depInfo.value?.dependents || []).filter((d) => d.ageGroup === 'kids' || d.ageGroup === 'teen')
+)
 
 const openTelemedicinaSelection = async () => {
-  selectedTelemedTarget.value = 'titular'
-  showTelemedicinaModal.value = true
   if (!depInfo.value?.dependents) {
     try {
       const d = await api.get('/dependents')
@@ -170,6 +172,16 @@ const openTelemedicinaSelection = async () => {
       // segue
     }
   }
+
+  // Sem dependente kid/teen: agenda direto pro titular, sem exibir o modal de escolha.
+  if (telemedDependents.value.length === 0) {
+    selectedTelemedTarget.value = 'titular'
+    await confirmTelemedicina()
+    return
+  }
+
+  selectedTelemedTarget.value = 'titular'
+  showTelemedicinaModal.value = true
 }
 
 const confirmTelemedicina = async () => {
@@ -181,7 +193,8 @@ const confirmTelemedicina = async () => {
     // segue
   }
   try {
-    const { redirectUrl } = await api.get('/telemedicina/sso')
+    const query = selectedTelemedTarget.value !== 'titular' ? `?dependentId=${selectedTelemedTarget.value}` : ''
+    const { redirectUrl } = await api.get(`/telemedicina/sso${query}`)
     showTelemedicinaModal.value = false
     telemedLoading.value = false
     if (win) win.location.href = redirectUrl
@@ -2393,10 +2406,10 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- Dependentes -->
-          <template v-if="depInfo?.dependents && depInfo.dependents.length > 0">
-            <div 
-              v-for="dep in depInfo.dependents" 
+          <!-- Dependentes (só kids/teen) -->
+          <template v-if="telemedDependents.length > 0">
+            <div
+              v-for="dep in telemedDependents"
               :key="dep.id"
               class="telemed-patient-card"
               :class="{ active: selectedTelemedTarget === dep.id }"
@@ -2408,7 +2421,7 @@ onMounted(async () => {
               <div class="patient-info">
                 <div class="patient-name-row">
                   <strong>{{ dep.name }}</strong>
-                  <span class="patient-role-badge">Dependente</span>
+                  <span class="patient-role-badge">{{ dep.ageGroup === 'kids' ? 'Kids' : 'Teen' }}</span>
                 </div>
                 <span class="patient-doc">CPF: {{ maskCpf(dep.cpf) }}</span>
               </div>
@@ -2418,11 +2431,6 @@ onMounted(async () => {
               </div>
             </div>
           </template>
-
-          <div v-else-if="!user?.isDependent" class="telemed-no-deps-hint">
-            <i class="ph ph-info"></i>
-            <span>Nenhum dependente cadastrado no plano. O atendimento será aberto para o titular.</span>
-          </div>
         </div>
 
         <div class="telemed-modal-footer">
