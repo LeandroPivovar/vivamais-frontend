@@ -1,8 +1,10 @@
-// Gerenciador de Armazenamento Local e Estado do Viva Mais Teen
-import { DEFAULT_TEEN_COURSES, TEEN_ACHIEVEMENTS } from '../data/coursesData'
+// Gerenciador de Armazenamento Local e Estado do Viva Mais Teen (Aulas Ao Vivo & Presença)
+import { DEFAULT_TEEN_COURSES, DEMO_CHAT_MESSAGES, DEMO_LIVE_PARTICIPANTS } from '../data/coursesData'
 
 const STORAGE_COURSES_KEY = 'viva_teen_courses_db'
 const STORAGE_PROGRESS_KEY = 'viva_teen_user_progress'
+const STORAGE_ATTENDANCE_KEY = 'viva_teen_user_attendance'
+const STORAGE_CHAT_KEY = 'viva_teen_live_chat'
 
 export const teenStorage = {
   // --- CARREGAMENTO E SALVAMENTO DE CURSOS ---
@@ -11,30 +13,28 @@ export const teenStorage = {
       const saved = localStorage.getItem(STORAGE_COURSES_KEY)
       if (saved) {
         const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed
         }
       }
     } catch (e) {
-      console.warn('Erro ao carregar cursos do localStorage, usando padrões:', e)
+      console.warn('Erro ao carregar cursos do localStorage:', e)
     }
-    // Inicializa com os cursos padrão e salva
-    this.saveCourses(DEFAULT_TEEN_COURSES)
-    return JSON.parse(JSON.stringify(DEFAULT_TEEN_COURSES))
+    return []
   },
 
   saveCourses(courses) {
     try {
-      localStorage.setItem(STORAGE_COURSES_KEY, JSON.stringify(courses))
-      window.dispatchEvent(new CustomEvent('teen-courses-updated', { detail: courses }))
+      localStorage.setItem(STORAGE_COURSES_KEY, JSON.stringify(courses || []))
+      window.dispatchEvent(new CustomEvent('teen-courses-updated', { detail: courses || [] }))
     } catch (e) {
       console.error('Erro ao salvar cursos no localStorage:', e)
     }
   },
 
   resetToDefault() {
-    this.saveCourses(DEFAULT_TEEN_COURSES)
-    return JSON.parse(JSON.stringify(DEFAULT_TEEN_COURSES))
+    this.saveCourses([])
+    return []
   },
 
   // --- CRUD DE CURSOS ---
@@ -94,7 +94,7 @@ export const teenStorage = {
     return courses
   },
 
-  // --- CRUD DE AULAS ---
+  // --- CRUD DE AULAS AO VIVO ---
   saveLesson(courseId, moduleId, lessonData) {
     const courses = this.getCourses()
     const course = courses.find(c => c.id === courseId)
@@ -109,7 +109,11 @@ export const teenStorage = {
     } else {
       moduleItem.lessons.push({
         id: lessonData.id || `les-${Date.now()}`,
-        vocabulary: [],
+        status: lessonData.status || 'agendada',
+        liveDate: lessonData.liveDate || '2026-08-20T19:00',
+        formattedDate: lessonData.formattedDate || '20/08 às 19:00',
+        viewersCount: lessonData.viewersCount || 0,
+        materials: [],
         ...lessonData
       })
     }
@@ -158,6 +162,86 @@ export const teenStorage = {
     return courses
   },
 
+  // --- PRESENÇA / CHECK-IN NAS AULAS AO VIVO ---
+  getAttendance(userId = 'default_teen') {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_ATTENDANCE_KEY}_${userId}`)
+      if (saved) return JSON.parse(saved)
+    } catch (e) {
+      console.warn('Erro ao ler presenças:', e)
+    }
+    return ['les-en-demo-1-1'] // Inicial com 1 presença marcada
+  },
+
+  hasAttended(userId = 'default_teen', lessonId) {
+    const list = this.getAttendance(userId)
+    return list.includes(lessonId)
+  },
+
+  markAttendance(userId = 'default_teen', lessonId, userName = 'Você') {
+    let list = this.getAttendance(userId)
+    const alreadyAttended = list.includes(lessonId)
+    if (!alreadyAttended) {
+      list.push(lessonId)
+      localStorage.setItem(`${STORAGE_ATTENDANCE_KEY}_${userId}`, JSON.stringify(list))
+      
+      // Adiciona mensagem automática no chat de presença
+      this.addChatMessage(lessonId, {
+        author: userName,
+        role: 'student',
+        avatar: '🎓',
+        text: `✋ Marcou presença na aula ao vivo!`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })
+
+      window.dispatchEvent(new CustomEvent('teen-attendance-updated', { detail: { userId, lessonId, list } }))
+    }
+    return { attended: true, list }
+  },
+
+  unmarkAttendance(userId = 'default_teen', lessonId) {
+    let list = this.getAttendance(userId)
+    list = list.filter(id => id !== lessonId)
+    localStorage.setItem(`${STORAGE_ATTENDANCE_KEY}_${userId}`, JSON.stringify(list))
+    window.dispatchEvent(new CustomEvent('teen-attendance-updated', { detail: { userId, lessonId, list } }))
+    return { attended: false, list }
+  },
+
+  // --- CHAT AO VIVO DA AULA ---
+  getChatMessages(lessonId = 'les-en-demo-1-1') {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_CHAT_KEY}_${lessonId}`)
+      if (saved) return JSON.parse(saved)
+    } catch (e) {
+      console.warn('Erro ao ler chat:', e)
+    }
+    return [...DEMO_CHAT_MESSAGES]
+  },
+
+  addChatMessage(lessonId, messageObj) {
+    const msgs = this.getChatMessages(lessonId)
+    const newMsg = {
+      id: `msg-${Date.now()}`,
+      author: messageObj.author || 'Estudante',
+      role: messageObj.role || 'student',
+      avatar: messageObj.avatar || '🎓',
+      text: messageObj.text || '',
+      time: messageObj.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+    msgs.push(newMsg)
+    try {
+      localStorage.setItem(`${STORAGE_CHAT_KEY}_${lessonId}`, JSON.stringify(msgs))
+      window.dispatchEvent(new CustomEvent('teen-chat-updated', { detail: { lessonId, messages: msgs } }))
+    } catch (e) {
+      console.error('Erro ao salvar chat:', e)
+    }
+    return msgs
+  },
+
+  getLiveParticipants(lessonId = 'les-en-demo-1-1') {
+    return [...DEMO_LIVE_PARTICIPANTS]
+  },
+
   // --- GESTÃO DE PROGRESSO DO ALUNO & GAMIFICAÇÃO ---
   getProgress(userId = 'default_teen') {
     try {
@@ -167,12 +251,10 @@ export const teenStorage = {
       console.warn('Erro ao carregar progresso teen:', e)
     }
     return {
-      completedLessons: ['les-en-1-1'], // Inicial com 1 aula concluída
-      xp: 280,
-      streakDays: 4,
-      level: 'Nível 3 (Explorer)',
-      notes: {},
-      achievements: TEEN_ACHIEVEMENTS
+      completedLessons: ['les-en-demo-1-1'],
+      xp: 350,
+      streakDays: 5,
+      level: 'Nível 3 (Explorer)'
     }
   },
 
@@ -183,40 +265,5 @@ export const teenStorage = {
     } catch (e) {
       console.error('Erro ao salvar progresso:', e)
     }
-  },
-
-  toggleLessonComplete(userId = 'default_teen', lessonId, xpGain = 50) {
-    const progress = this.getProgress(userId)
-    const list = progress.completedLessons || []
-    const isCompleted = list.includes(lessonId)
-
-    if (isCompleted) {
-      progress.completedLessons = list.filter(id => id !== lessonId)
-      progress.xp = Math.max(0, (progress.xp || 0) - xpGain)
-    } else {
-      progress.completedLessons = [...list, lessonId]
-      progress.xp = (progress.xp || 0) + xpGain
-      // Checa conquista primeira aula
-      const firstAch = progress.achievements?.find(a => a.id === 'first_lesson')
-      if (firstAch) firstAch.unlocked = true
-    }
-
-    this.saveProgress(userId, progress)
-    return { isCompleted: !isCompleted, xp: progress.xp, completedLessons: progress.completedLessons }
-  },
-
-  saveLessonNote(userId = 'default_teen', lessonId, noteText) {
-    const progress = this.getProgress(userId)
-    if (!progress.notes) progress.notes = {}
-    progress.notes[lessonId] = noteText
-    
-    // Desbloqueia conquista de anotações
-    const noteAch = progress.achievements?.find(a => a.id === 'note_taker')
-    if (noteAch && noteText.trim().length > 5) {
-      noteAch.unlocked = true
-    }
-
-    this.saveProgress(userId, progress)
-    return progress
   }
 }

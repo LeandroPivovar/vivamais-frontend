@@ -28,54 +28,21 @@ const isAudioMuted = ref(false)
 const showHeaderMenu = ref(false)
 const headerMenuRef = ref(null)
 
-// --- GESTÃO DE USUÁRIO & DEPENDENTES COM DADOS MOCADOS COMPLETOS ---
-const MOCK_DEPENDENTS = [
-  { id: 'dep-lucas', name: 'Lucas Pivovar (8 anos)', email: 'lucas@vivamaisclub.com.br', avatar: '🧒' },
-  { id: 'dep-sofia', name: 'Sofia Pivovar (5 anos)', email: 'sofia@vivamaisclub.com.br', avatar: '👧' },
-  { id: 'dep-theo', name: 'Theo Pivovar (3 anos)', email: 'theo@vivamaisclub.com.br', avatar: '👶' }
-]
-
-const dependentsList = ref([...MOCK_DEPENDENTS])
+// --- GESTÃO DE USUÁRIO & DEPENDENTES ---
+const dependentsList = ref([])
 const activeProfileId = ref(localStorage.getItem('viva_kids_active_profile') || 'titular')
 
-const defaultArtworks = [
-  {
-    id: 101,
-    type: 'pintura',
-    title: 'Sonic',
-    dataUrl: '/kids/desenhos-svg/desenho-do-sonic-para-colorir-20-6.svg',
-    serverUrl: '/kids/desenhos-svg/desenho-do-sonic-para-colorir-20-6.svg',
-    date: '17/08/2026'
-  },
-  {
-    id: 102,
-    type: 'pintura',
-    title: 'Hello Kitty',
-    dataUrl: '/kids/desenhos-svg/colorindo-hello-kitty-1-jpeg.svg',
-    serverUrl: '/kids/desenhos-svg/colorindo-hello-kitty-1-jpeg.svg',
-    date: '16/08/2026'
-  },
-  {
-    id: 103,
-    type: 'desenho',
-    title: 'Bobbie Goods',
-    dataUrl: '/kids/desenhos-svg/bobbie-goods-para-imprimir-12.svg',
-    serverUrl: '/kids/desenhos-svg/bobbie-goods-para-imprimir-12.svg',
-    date: '15/08/2026'
-  }
-]
-
 const defaultUserData = {
-  name: 'Lucas Pivovar',
-  email: 'lucas@vivamaisclub.com.br',
-  avatar: '🧒',
-  stars: 140,
-  artworks: defaultArtworks,
+  name: props.user?.name ? props.user.name.split(' ')[0] : 'Estudante',
+  email: props.user?.email || '',
+  avatar: '⭐',
+  stars: 0,
+  artworks: [],
   achievements: [
     { id: 'first_login', title: 'Acesso Viva Mais', icon: '⭐', unlocked: true, desc: 'Acessou a plataforma Kids' },
-    { id: 'draw_artist', title: 'Pequeno Artista', icon: '🎨', unlocked: true, desc: 'Salvou uma obra na lousa' },
-    { id: 'game_master', title: 'Campeão dos Jogos', icon: '🎮', unlocked: true, desc: 'Jogou mais de 5 partidas na vitrine' },
-    { id: 'paint_hero', title: 'Mestre das Cores', icon: '🖌️', unlocked: true, desc: 'Completou um quadro no livro de pintura' }
+    { id: 'draw_artist', title: 'Pequeno Artista', icon: '🎨', unlocked: false, desc: 'Salvou uma obra na lousa' },
+    { id: 'game_master', title: 'Campeão dos Jogos', icon: '🎮', unlocked: false, desc: 'Jogou mais de 5 partidas na vitrine' },
+    { id: 'paint_hero', title: 'Mestre das Cores', icon: '🖌️', unlocked: false, desc: 'Completou um quadro no livro de pintura' }
   ]
 }
 
@@ -93,26 +60,19 @@ function loadKidProfile(profileId = 'titular') {
   }
   if (!data) data = { ...defaultUserData }
 
-  if (profileId === 'dep-sofia') {
-    kidUser.name = 'Sofia Pivovar'
-    kidUser.avatar = '👧'
-    kidUser.stars = 95
-  } else if (profileId === 'dep-theo') {
-    kidUser.name = 'Theo Pivovar'
-    kidUser.avatar = '👶'
-    kidUser.stars = 40
-  } else if (profileId === 'dep-lucas') {
-    kidUser.name = 'Lucas Pivovar'
-    kidUser.avatar = '🧒'
-    kidUser.stars = 140
+  const dep = dependentsList.value.find(d => String(d.id) === String(profileId))
+  if (dep) {
+    kidUser.name = dep.name.split(' ')[0]
+    kidUser.avatar = dep.avatar || '🧒'
+    kidUser.stars = Number(data.stars || 0)
   } else {
-    kidUser.name = props.user?.name ? props.user.name.split(' ')[0] : (data.name || 'Leandro')
+    kidUser.name = props.user?.name ? props.user.name.split(' ')[0] : (data.name || 'Estudante')
     kidUser.avatar = '⭐'
-    kidUser.stars = Number(data.stars || 140)
+    kidUser.stars = Number(data.stars || 0)
   }
 
-  kidUser.email = data.email || props.user?.email || 'leandro@vivamaisclub.com.br'
-  kidUser.artworks = data.artworks || defaultArtworks
+  kidUser.email = data.email || props.user?.email || ''
+  kidUser.artworks = data.artworks || []
   kidUser.achievements = data.achievements || defaultUserData.achievements
 }
 
@@ -125,13 +85,15 @@ async function fetchDependents() {
   if (!props.isLoggedIn) return
   try {
     const data = await api.get('/dependents')
-    if (data?.dependents && data.dependents.length > 0) {
+    if (data?.dependents && Array.isArray(data.dependents)) {
       dependentsList.value = data.dependents
+    } else if (Array.isArray(data)) {
+      dependentsList.value = data
     } else {
-      dependentsList.value = [...MOCK_DEPENDENTS]
+      dependentsList.value = []
     }
   } catch {
-    dependentsList.value = [...MOCK_DEPENDENTS]
+    dependentsList.value = []
   }
 }
 

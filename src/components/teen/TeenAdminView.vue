@@ -61,20 +61,14 @@ const moduleForm = ref({
 const lessonForm = ref({
   id: '',
   title: '',
-  duration: '15 min',
-  durationSeconds: 900,
+  duration: '45 min',
+  durationSeconds: 2700,
   videoUrl: 'https://www.youtube.com/embed/juKd26qkNAw',
   thumbnail: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop&q=80',
   description: '',
-  transcript: '',
-  vocabularyRaw: 'Clutch | Ganhar rodada difícil\nCarry | Carregar o time\nSick | Incrível',
-  quizQuestion: '',
-  quizOption0: '',
-  quizOption1: '',
-  quizOption2: '',
-  quizOption3: '',
-  quizCorrectIndex: 0,
-  quizExplanation: ''
+  liveDate: '2026-08-20T19:00',
+  formattedDate: '20/08 às 19:00',
+  status: 'agendada' // 'ao_vivo' | 'agendada' | 'concluida'
 })
 
 const materialForm = ref({
@@ -239,27 +233,21 @@ function deleteModule(mod) {
   }
 }
 
-// --- MÉTODOS DE AULA ---
+// --- MÉTODOS DE AULA AO VIVO ---
 function openNewLessonModal(modId) {
   selectedModuleId.value = modId
   isEditing.value = false
   lessonForm.value = {
     id: `les-${Date.now()}`,
     title: '',
-    duration: '15 min',
-    durationSeconds: 900,
+    duration: '45 min',
+    durationSeconds: 2700,
     videoUrl: 'https://www.youtube.com/embed/juKd26qkNAw',
     thumbnail: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop&q=80',
     description: '',
-    transcript: '',
-    vocabularyRaw: 'Termo 1 | Significado e exemplo\nTermo 2 | Significado e exemplo',
-    quizQuestion: 'O que você aprendeu nesta aula?',
-    quizOption0: 'Opção A (Correta)',
-    quizOption1: 'Opção B',
-    quizOption2: 'Opção C',
-    quizOption3: 'Opção D',
-    quizCorrectIndex: 0,
-    quizExplanation: 'Explicação detalhada da resposta correta.'
+    liveDate: '2026-08-20T19:00',
+    formattedDate: '20/08 às 19:00',
+    status: 'agendada'
   }
   showLessonModal.value = true
 }
@@ -267,86 +255,48 @@ function openNewLessonModal(modId) {
 function openEditLessonModal(modId, lesson) {
   selectedModuleId.value = modId
   isEditing.value = true
-  
-  // Converte array de vocabulário em texto
-  let vocabText = ''
-  if (Array.isArray(lesson.vocabulary)) {
-    vocabText = lesson.vocabulary.map(v => `${v.term} | ${v.meaning}${v.example ? ' | ' + v.example : ''}`).join('\n')
-  }
 
   lessonForm.value = {
     id: lesson.id,
     title: lesson.title,
-    duration: lesson.duration || '15 min',
-    durationSeconds: lesson.durationSeconds || 900,
+    duration: lesson.duration || '45 min',
+    durationSeconds: lesson.durationSeconds || 2700,
     videoUrl: lesson.videoUrl || '',
     thumbnail: lesson.thumbnail || '',
     description: lesson.description || '',
-    transcript: lesson.transcript || '',
-    vocabularyRaw: vocabText,
-    quizQuestion: lesson.quiz?.question || '',
-    quizOption0: lesson.quiz?.options?.[0] || '',
-    quizOption1: lesson.quiz?.options?.[1] || '',
-    quizOption2: lesson.quiz?.options?.[2] || '',
-    quizOption3: lesson.quiz?.options?.[3] || '',
-    quizCorrectIndex: lesson.quiz?.correctIndex ?? 0,
-    quizExplanation: lesson.quiz?.explanation || ''
+    liveDate: lesson.liveDate || '2026-08-20T19:00',
+    formattedDate: lesson.formattedDate || '20/08 às 19:00',
+    status: lesson.status || 'agendada'
   }
   showLessonModal.value = true
 }
 
 function saveLesson() {
   if (!lessonForm.value.title.trim()) {
-    alert('Por favor, informe o título da aula.')
+    alert('Por favor, informe o título da aula ao vivo.')
     return
-  }
-
-  // Parse vocabulário
-  const lines = lessonForm.value.vocabularyRaw.split('\n').filter(l => l.trim().length > 0)
-  const vocabulary = lines.map(l => {
-    const parts = l.split('|').map(p => p.trim())
-    return {
-      term: parts[0] || '',
-      meaning: parts[1] || '',
-      example: parts[2] || ''
-    }
-  })
-
-  // Parse quiz
-  let quiz = null
-  if (lessonForm.value.quizQuestion.trim()) {
-    quiz = {
-      question: lessonForm.value.quizQuestion,
-      options: [
-        lessonForm.value.quizOption0 || 'Opção 1',
-        lessonForm.value.quizOption1 || 'Opção 2',
-        lessonForm.value.quizOption2 || 'Opção 3',
-        lessonForm.value.quizOption3 || 'Opção 4'
-      ],
-      correctIndex: Number(lessonForm.value.quizCorrectIndex),
-      explanation: lessonForm.value.quizExplanation || 'Resposta correta!'
-    }
   }
 
   const lessonData = {
     id: lessonForm.value.id,
     title: lessonForm.value.title,
-    duration: lessonForm.value.duration,
-    durationSeconds: Number(lessonForm.value.durationSeconds) || 900,
+    duration: lessonForm.value.duration || '45 min',
+    durationSeconds: Number(lessonForm.value.durationSeconds) || 2700,
     videoUrl: lessonForm.value.videoUrl,
     thumbnail: lessonForm.value.thumbnail,
     description: lessonForm.value.description,
-    transcript: lessonForm.value.transcript,
-    vocabulary,
-    quiz
+    liveDate: lessonForm.value.liveDate,
+    formattedDate: lessonForm.value.formattedDate,
+    status: lessonForm.value.status || 'agendada',
+    viewersCount: lessonForm.value.status === 'ao_vivo' ? 45 : 0
   }
 
   teenStorage.saveLesson(selectedCourse.value.id, selectedModuleId.value, lessonData)
   showLessonModal.value = false
   loadData()
   emit('triggerDevModal', {
-    title: 'Aula Salva!',
-    message: `A aula "${lessonData.title}" foi salva com sucesso no módulo.`
+    title: 'Aula Ao Vivo Salva!',
+    message: `A aula "${lessonData.title}" foi salva com sucesso no cronograma do curso.`
   })
 }
 
@@ -634,11 +584,11 @@ function resetAllData() {
             <table v-if="mod.lessons && mod.lessons.length > 0" class="admin-lessons-table">
               <thead>
                 <tr>
-                  <th>Aula / Título</th>
+                  <th>Aula Ao Vivo / Título</th>
+                  <th>Status Live</th>
+                  <th>Data Agendada</th>
                   <th>Duração</th>
-                  <th>Vídeo Embed / URL</th>
-                  <th>Vocabulário</th>
-                  <th>Quiz</th>
+                  <th>Link do Vídeo</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -656,21 +606,28 @@ function resetAllData() {
                     </div>
                   </td>
                   <td>
+                    <span v-if="lesson.status === 'ao_vivo'" class="badge-quiz-yes" style="background: #FEE2E2; color: #DC2626; border: 1px solid #FCA5A5;">
+                      <i class="ph ph-broadcast"></i> AO VIVO
+                    </span>
+                    <span v-else-if="lesson.status === 'agendada'" class="badge-quiz-no" style="background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D;">
+                      <i class="ph ph-lock"></i> Agendada
+                    </span>
+                    <span v-else class="badge-quiz-no">
+                      <i class="ph ph-video"></i> Concluída
+                    </span>
+                  </td>
+                  <td>
+                    <span class="duration-badge" style="font-weight: 600;">
+                      <i class="ph ph-calendar"></i> {{ lesson.formattedDate || lesson.liveDate }}
+                    </span>
+                  </td>
+                  <td>
                     <span class="duration-badge"><i class="ph ph-timer"></i> {{ lesson.duration }}</span>
                   </td>
                   <td>
                     <a :href="lesson.videoUrl" target="_blank" class="video-link-preview" :title="lesson.videoUrl">
-                      <i class="ph ph-youtube-logo"></i> Link do Vídeo
+                      <i class="ph ph-youtube-logo"></i> Link do Stream
                     </a>
-                  </td>
-                  <td>
-                    <span class="badge-count" :class="{ 'badge-empty': !lesson.vocabulary?.length }">
-                      {{ lesson.vocabulary?.length || 0 }} termos
-                    </span>
-                  </td>
-                  <td>
-                    <span v-if="lesson.quiz" class="badge-quiz-yes"><i class="ph ph-check"></i> Configurado</span>
-                    <span v-else class="badge-quiz-no">Sem Quiz</span>
                   </td>
                   <td>
                     <div class="table-actions">
@@ -986,11 +943,11 @@ function resetAllData() {
             </div>
 
             <div class="form-group">
-              <label>Duração da Aula (Ex: 15 min)</label>
+              <label>Duração da Aula (Ex: 45 min)</label>
               <input 
                 v-model="lessonForm.duration" 
                 type="text" 
-                placeholder="15 min"
+                placeholder="45 min"
                 class="form-control"
               />
             </div>
@@ -998,7 +955,29 @@ function resetAllData() {
 
           <div class="form-row-2">
             <div class="form-group">
-              <label>URL do Vídeo (Embed YouTube ou MP4) *</label>
+              <label>Status da Aula Ao Vivo *</label>
+              <select v-model="lessonForm.status" class="form-control">
+                <option value="agendada">🔒 Agendada (Bloqueada até a live)</option>
+                <option value="ao_vivo">🔴 AO VIVO AGORA (Liberada)</option>
+                <option value="concluida">📹 Concluída (Gravação Disponível)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Data e Horário de Exibição / Live *</label>
+              <input 
+                v-model="lessonForm.formattedDate" 
+                type="text" 
+                placeholder="Ex: Hoje às 19:00 ou 20/08 às 19:30"
+                class="form-control"
+                required
+              />
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>URL do Vídeo / Live Stream (Embed YouTube ou MP4) *</label>
               <input 
                 v-model="lessonForm.videoUrl" 
                 type="url" 
@@ -1020,88 +999,19 @@ function resetAllData() {
           </div>
 
           <div class="form-group">
-            <label>Descrição / Objetivos da Aula</label>
+            <label>Descrição / Tópicos da Aula Ao Vivo</label>
             <textarea 
               v-model="lessonForm.description" 
-              rows="2" 
-              placeholder="O que o aluno vai praticar nesta aula..."
+              rows="3" 
+              placeholder="Explique o que será abordado na transmissão ao vivo com os alunos..."
               class="form-control"
             ></textarea>
-          </div>
-
-          <div class="form-group">
-            <label>Vocabulário em Destaque (Um por linha no formato: <code>Termo | Significado | Exemplo</code>)</label>
-            <textarea 
-              v-model="lessonForm.vocabularyRaw" 
-              rows="3" 
-              placeholder="Clutch | Ganhar rodada difícil sozinho | That was an insane clutch!"
-              class="form-control monospace-font"
-            ></textarea>
-          </div>
-
-          <!-- Seção de Quiz da Aula -->
-          <div class="quiz-config-card">
-            <h4><i class="ph ph-brain"></i> Quiz Rápido de Fixação da Aula</h4>
-            
-            <div class="form-group">
-              <label>Pergunta do Quiz</label>
-              <input 
-                v-model="lessonForm.quizQuestion" 
-                type="text" 
-                placeholder="Ex: O que significa a expressão 'No cap'?"
-                class="form-control"
-              />
-            </div>
-
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Opção 1 (Índice 0)</label>
-                <input v-model="lessonForm.quizOption0" type="text" class="form-control" placeholder="Opção 1" />
-              </div>
-              <div class="form-group">
-                <label>Opção 2 (Índice 1)</label>
-                <input v-model="lessonForm.quizOption1" type="text" class="form-control" placeholder="Opção 2" />
-              </div>
-            </div>
-
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Opção 3 (Índice 2)</label>
-                <input v-model="lessonForm.quizOption2" type="text" class="form-control" placeholder="Opção 3" />
-              </div>
-              <div class="form-group">
-                <label>Opção 4 (Índice 3)</label>
-                <input v-model="lessonForm.quizOption3" type="text" class="form-control" placeholder="Opção 4" />
-              </div>
-            </div>
-
-            <div class="form-row-2">
-              <div class="form-group">
-                <label>Qual é a Opção Correta?</label>
-                <select v-model.number="lessonForm.quizCorrectIndex" class="form-control">
-                  <option :value="0">Opção 1</option>
-                  <option :value="1">Opção 2</option>
-                  <option :value="2">Opção 3</option>
-                  <option :value="3">Opção 4</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label>Explicação do Gabarito</label>
-                <input 
-                  v-model="lessonForm.quizExplanation" 
-                  type="text" 
-                  placeholder="Explique por que esta opção é a certa..."
-                  class="form-control"
-                />
-              </div>
-            </div>
           </div>
 
           <div class="teen-modal-actions">
             <button type="button" class="btn btn-outline" @click="showLessonModal = false">Cancelar</button>
             <button type="submit" class="btn btn-teen-primary">
-              <i class="ph ph-floppy-disk"></i> Salvar Aula
+              <i class="ph ph-floppy-disk"></i> Salvar Aula Ao Vivo
             </button>
           </div>
         </form>

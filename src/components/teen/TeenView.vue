@@ -1,6 +1,6 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { api, setToken, getToken, clearToken } from '../../services/api'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { api, setToken, getToken } from '../../services/api'
 import { teenStorage } from './services/teenStorage'
 import TeenAdminView from './TeenAdminView.vue'
 
@@ -15,57 +15,79 @@ const props = defineProps({
   },
   subRoute: {
     type: String,
-    default: 'dashboard' // 'auth' | 'dashboard'
+    default: 'dashboard'
   }
 })
 
 const emit = defineEmits(['goHome', 'login', 'logout', 'triggerDevModal'])
 
 // --- NAVEGAÇÃO PRINCIPAL TEEN ---
-// 'home' | 'courses' | 'watch' | 'materials'
-const currentTeenTab = ref('home')
+// 'courses' | 'course-detail' | 'watch' | 'calendar'
+const currentTeenTab = ref('courses')
 const showAdminPanel = ref(false)
-const showCelebrationModal = ref(false)
 const showProfileMenu = ref(false)
 const showMobileDrawer = ref(false)
 
-// Cursos e Seleção
+// Abas internas da Página do Curso: 'live' | 'recorded' | 'materials'
+const courseInternalTab = ref('live')
+
+// Cursos e Seleção de Curso & Aula
 const courses = ref([])
 const activeCourse = ref(null)
 const activeModule = ref(null)
 const activeLesson = ref(null)
-const lessonActiveTab = ref('vocabulary') // 'vocabulary' | 'materials' | 'quiz' | 'notes'
 
-// Controle de Dropdown dos Módulos (Abrir / Fechar)
-const openModules = reactive({})
+// Painel Lateral da Sala de Aula: 'chat' | 'people'
+const livePanelTab = ref('chat')
 
 // Filtros do Catálogo
-const selectedLanguage = ref('todos')
-const selectedCategory = ref('todos')
-const selectedLevel = ref('todos')
 const searchKeyword = ref('')
 
-// Progresso e Gamificação
+// Agenda / Calendário State (Mês Corrente)
+const calendarYear = ref(2026)
+const calendarMonth = ref(7) // 0 = Jan, 7 = Agosto
+const selectedCalendarDay = ref(18)
+
+const monthNames = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+]
+const weekDayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+// Chat Ao Vivo State
+const chatMessages = ref([])
+const newChatMessage = ref('')
+const chatScrollRef = ref(null)
+
+// Pessoas Conectadas
+const liveParticipants = ref([])
+
+// Presenças Confirmadas (Array de IDs de aulas - usado na agenda)
+const attendedLessons = ref([])
+
+// Perfil Ativo
 const availableProfiles = ref([])
 const activeProfile = ref({
   id: 'titular',
   name: props.user?.name || 'Estudante',
   email: props.user?.email || '',
-  avatar: '🎓',
+  initials: 'ES',
   level: props.user?.plan || 'Viva Mais Idiomas'
 })
 
 const studentProfileId = computed(() => activeProfile.value?.id || props.user?.id || 'default_teen')
-const studentProgress = ref(teenStorage.getProgress(studentProfileId.value))
-const currentNoteText = ref('')
-const quizSelectedOption = ref(null)
-const quizAnswered = ref(false)
-const quizIsCorrect = ref(false)
 
 // Login Teen State
 const loginForm = ref({ email: '', password: '' })
 const loginLoading = ref(false)
 const loginError = ref('')
+
+function getInitials(name) {
+  if (!name) return 'UN'
+  const parts = name.trim().split(' ')
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
 
 async function fetchDependentsAndSetupProfiles() {
   const current = props.user || {}
@@ -74,7 +96,7 @@ async function fetchDependentsAndSetupProfiles() {
       id: current.id ? `user-${current.id}` : 'titular',
       name: current.name || 'Titular',
       email: current.email || '',
-      avatar: '🎓',
+      initials: getInitials(current.name || 'Titular'),
       role: current.role || 'user',
       isDependent: false,
       level: current.plan ? `Plano ${current.plan}` : 'Titular'
@@ -90,7 +112,7 @@ async function fetchDependentsAndSetupProfiles() {
             id: `dep-${dep.id}`,
             name: dep.name,
             email: dep.email || '',
-            avatar: '🧑‍🎓',
+            initials: getInitials(dep.name),
             role: 'dependent',
             isDependent: true,
             level: 'Dependente'
@@ -98,7 +120,7 @@ async function fetchDependentsAndSetupProfiles() {
         })
       }
     } catch {
-      // Falha silenciosa se offline
+      // offline fallback
     }
   }
 
@@ -119,208 +141,230 @@ function selectStudentProfile(profile) {
 
 function loadAllData() {
   courses.value = teenStorage.getCourses()
-  studentProgress.value = teenStorage.getProgress(studentProfileId.value)
+  attendedLessons.value = teenStorage.getAttendance(studentProfileId.value)
+
   if (!activeCourse.value && courses.value.length > 0) {
     activeCourse.value = courses.value[0]
-    if (courses.value[0].modules?.length > 0) {
-      activeModule.value = courses.value[0].modules[0]
-      openModules[courses.value[0].modules[0].id] = true
-      if (courses.value[0].modules[0].lessons?.length > 0) {
-        activeLesson.value = courses.value[0].modules[0].lessons[0]
-      }
-    }
+  } else if (activeCourse.value) {
+    const updated = courses.value.find(c => c.id === activeCourse.value.id)
+    if (updated) activeCourse.value = updated
   }
+
+  if (activeLesson.value) {
+    loadChatAndParticipants(activeLesson.value.id)
+  }
+}
+
+function loadChatAndParticipants(lessonId) {
+  chatMessages.value = teenStorage.getChatMessages(lessonId)
+  liveParticipants.value = teenStorage.getLiveParticipants(lessonId)
+  scrollChatToBottom()
+}
+
+function scrollChatToBottom() {
+  nextTick(() => {
+    if (chatScrollRef.value) {
+      chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
+    }
+  })
 }
 
 onMounted(() => {
   courses.value = teenStorage.getCourses()
-  if (!courses.value.some(c => c.id === 'course-en-demo') || courses.value.length > 2) {
-    teenStorage.resetToDefault()
-  }
   fetchDependentsAndSetupProfiles()
+
   window.addEventListener('teen-courses-updated', loadAllData)
-  window.addEventListener('teen-progress-updated', loadAllData)
+  window.addEventListener('teen-attendance-updated', () => {
+    attendedLessons.value = teenStorage.getAttendance(studentProfileId.value)
+  })
+  window.addEventListener('teen-chat-updated', (e) => {
+    if (activeLesson.value && e.detail?.lessonId === activeLesson.value.id) {
+      chatMessages.value = e.detail.messages
+      scrollChatToBottom()
+    }
+  })
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('teen-courses-updated', loadAllData)
-  window.removeEventListener('teen-progress-updated', loadAllData)
 })
 
 watch(() => props.user, () => {
   fetchDependentsAndSetupProfiles()
 })
 
-// Computados
+// Todas as aulas cadastradas
+const allScheduledLessons = computed(() => {
+  const list = []
+  for (const course of courses.value) {
+    for (const mod of (course.modules || [])) {
+      for (const lesson of (mod.lessons || [])) {
+        list.push({
+          ...lesson,
+          courseId: course.id,
+          courseTitle: course.title,
+          courseLanguage: course.language,
+          courseFlag: course.flag || 'ID',
+          instructor: course.instructor,
+          moduleTitle: mod.title,
+          isAttended: attendedLessons.value.includes(lesson.id)
+        })
+      }
+    }
+  }
+  return list
+})
+
+// Próxima aula ao vivo do curso ativo
+const activeCourseNextLesson = computed(() => {
+  if (!activeCourse.value) return null
+  const courseLessons = []
+  const modules = activeCourse.value.modules || []
+  for (const m of modules) {
+    for (const l of (m.lessons || [])) {
+      courseLessons.push({ ...l, moduleTitle: m.title, moduleOrder: m.order })
+    }
+  }
+  if (courseLessons.length === 0) return null
+  const liveNow = courseLessons.find(l => l.status === 'ao_vivo')
+  if (liveNow) return liveNow
+  return courseLessons.find(l => l.status === 'agendada') || courseLessons[0]
+})
+
+// Cursos Filtrados
 const filteredCourses = computed(() => {
   let list = courses.value || []
-  if (selectedCategory.value !== 'todos') {
-    list = list.filter(c => c.category?.toLowerCase().includes(selectedCategory.value.toLowerCase()))
-  }
-  if (selectedLanguage.value !== 'todos') {
-    list = list.filter(c => c.language === selectedLanguage.value)
-  }
-  if (selectedLevel.value !== 'todos') {
-    list = list.filter(c => c.level.toLowerCase().includes(selectedLevel.value.toLowerCase()))
-  }
   if (searchKeyword.value.trim()) {
     const s = searchKeyword.value.toLowerCase()
     list = list.filter(c => 
       c.title.toLowerCase().includes(s) || 
       c.description?.toLowerCase().includes(s) ||
-      c.category?.toLowerCase().includes(s)
+      c.language?.toLowerCase().includes(s)
     )
   }
   return list
 })
 
-const allMaterialsList = computed(() => {
-  const mats = []
-  courses.value.forEach(c => {
-    if (c.materials) {
-      c.materials.forEach(m => {
-        mats.push({
-          ...m,
-          courseTitle: c.title,
-          courseLanguage: c.language,
-          courseFlag: c.flag
-        })
-      })
-    }
-  })
-  return mats
-})
-
-const isCurrentLessonCompleted = computed(() => {
-  if (!activeLesson.value) return false
-  return (studentProgress.value.completedLessons || []).includes(activeLesson.value.id)
-})
-
-// Toggle Accordion do Módulo (Abrir / Fechar)
-function toggleModule(modId) {
-  openModules[modId] = !openModules[modId]
-}
-
-function isModuleOpen(modId) {
-  return openModules[modId] !== false // Abre por padrão o ativo ou true
-}
-
-function isModuleCompleted(mod) {
-  if (!mod.lessons || mod.lessons.length === 0) return false
-  return mod.lessons.every(l => (studentProgress.value.completedLessons || []).includes(l.id))
-}
-
-// AÇÃO: ASSISTIR CURSO
-function watchCourse(course, startMod = null, startLes = null) {
-  activeCourse.value = course
-  if (startMod && startLes) {
-    activeModule.value = startMod
-    activeLesson.value = startLes
-    openModules[startMod.id] = true
-  } else if (course.modules && course.modules.length > 0) {
-    activeModule.value = course.modules[0]
-    openModules[course.modules[0].id] = true
-    activeLesson.value = course.modules[0].lessons?.[0] || null
-  } else {
-    activeModule.value = null
-    activeLesson.value = null
+// --- LÓGICA DO CALENDÁRIO / AGENDA DE 30/31 DIAS ---
+const calendarDaysGrid = computed(() => {
+  const daysInMonth = 31 // Agosto tem 31 dias
+  const firstDayOfWeek = 6 // 1º de Agosto de 2026 é Sábado (índice 6)
+  
+  const cells = []
+  // Células em branco antes do dia 1
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    cells.push({ day: null, isCurrentMonth: false, lessons: [] })
   }
 
-  currentNoteText.value = activeLesson.value ? (studentProgress.value.notes?.[activeLesson.value.id] || '') : ''
-  quizSelectedOption.value = null
-  quizAnswered.value = false
-  lessonActiveTab.value = 'vocabulary'
-  
+  // Dias de 1 a 31
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayLessons = allScheduledLessons.value.filter(l => {
+      if (l.dayOfMonth) return l.dayOfMonth === d
+      const datePart = l.liveDate?.split('T')[0]
+      if (datePart) {
+        const dayNum = parseInt(datePart.split('-')[2], 10)
+        return dayNum === d
+      }
+      return false
+    })
+
+    cells.push({
+      day: d,
+      isCurrentMonth: true,
+      isToday: d === 18,
+      lessons: dayLessons
+    })
+  }
+
+  return cells
+})
+
+// Aulas do dia selecionado no calendário
+const selectedDayLessons = computed(() => {
+  const day = selectedCalendarDay.value
+  return allScheduledLessons.value.filter(l => {
+    if (l.dayOfMonth) return l.dayOfMonth === day
+    const datePart = l.liveDate?.split('T')[0]
+    if (datePart) {
+      return parseInt(datePart.split('-')[2], 10) === day
+    }
+    return false
+  })
+})
+
+// --- NAVEGAÇÃO ---
+function selectCourse(course) {
+  activeCourse.value = course
+  courseInternalTab.value = 'live'
+  if (course.modules?.length > 0) {
+    activeModule.value = course.modules[0]
+  }
+  currentTeenTab.value = 'course-detail'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function enterLiveClass(course, module, lesson) {
+  activeCourse.value = course || activeCourse.value
+  activeModule.value = module || (activeCourse.value?.modules?.[0])
+  activeLesson.value = lesson
+  loadChatAndParticipants(lesson.id)
   currentTeenTab.value = 'watch'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-// Seleciona aula
-function selectLesson(mod, lesson) {
-  activeModule.value = mod
-  activeLesson.value = lesson
-  openModules[mod.id] = true
-  currentNoteText.value = studentProgress.value.notes?.[lesson.id] || ''
-  quizSelectedOption.value = null
-  quizAnswered.value = false
+function openRecordedLesson(lesson) {
+  activeLesson.value = {
+    ...lesson,
+    status: 'concluida',
+    formattedDate: lesson.recordedDate || 'Gravação'
+  }
+  loadChatAndParticipants(lesson.id)
+  currentTeenTab.value = 'watch'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function navigateNextLesson() {
-  if (!activeCourse.value || !activeModule.value || !activeLesson.value) return
-  const currentLessons = activeModule.value.lessons || []
-  const currentIndex = currentLessons.findIndex(l => l.id === activeLesson.value.id)
-  
-  if (currentIndex >= 0 && currentIndex < currentLessons.length - 1) {
-    selectLesson(activeModule.value, currentLessons[currentIndex + 1])
-  } else {
-    const modIndex = activeCourse.value.modules.findIndex(m => m.id === activeModule.value.id)
-    if (modIndex >= 0 && modIndex < activeCourse.value.modules.length - 1) {
-      const nextMod = activeCourse.value.modules[modIndex + 1]
-      if (nextMod.lessons && nextMod.lessons.length > 0) {
-        selectLesson(nextMod, nextMod.lessons[0])
-      }
+function openLessonFromCalendar(lesson) {
+  const course = courses.value.find(c => c.id === lesson.courseId) || courses.value[0]
+  let targetMod = null
+  for (const m of (course.modules || [])) {
+    if ((m.lessons || []).some(l => l.id === lesson.id)) {
+      targetMod = m
+      break
     }
   }
+  enterLiveClass(course, targetMod, lesson)
 }
 
-function navigatePrevLesson() {
-  if (!activeCourse.value || !activeModule.value || !activeLesson.value) return
-  const currentLessons = activeModule.value.lessons || []
-  const currentIndex = currentLessons.findIndex(l => l.id === activeLesson.value.id)
+// --- CONFIRMAR PRESENÇA (NA AGENDA) ---
+function toggleAttendance(lesson) {
+  if (!lesson) return
+  const isAttended = attendedLessons.value.includes(lesson.id)
   
-  if (currentIndex > 0) {
-    selectLesson(activeModule.value, currentLessons[currentIndex - 1])
+  if (isAttended) {
+    teenStorage.unmarkAttendance(studentProfileId.value, lesson.id)
+    attendedLessons.value = teenStorage.getAttendance(studentProfileId.value)
+  } else {
+    teenStorage.markAttendance(studentProfileId.value, lesson.id, activeProfile.value.name)
+    attendedLessons.value = teenStorage.getAttendance(studentProfileId.value)
   }
 }
 
-function toggleCompleteLesson() {
-  if (!activeLesson.value) return
-  const res = teenStorage.toggleLessonComplete(studentProfileId.value, activeLesson.value.id, 0)
-  studentProgress.value = teenStorage.getProgress(studentProfileId.value)
-  
-  if (res.isCompleted) {
-    showCelebrationModal.value = true
-    setTimeout(() => {
-      showCelebrationModal.value = false
-    }, 2800)
-  }
+// --- CHAT AO VIVO ---
+function sendChatMessage() {
+  if (!newChatMessage.value.trim() || !activeLesson.value) return
+  const text = newChatMessage.value.trim()
+  teenStorage.addChatMessage(activeLesson.value.id, {
+    author: activeProfile.value.name,
+    role: activeProfile.value.role === 'admin' ? 'admin' : 'student',
+    avatarText: activeProfile.value.initials || 'AL',
+    text
+  })
+  newChatMessage.value = ''
+  chatMessages.value = teenStorage.getChatMessages(activeLesson.value.id)
+  scrollChatToBottom()
 }
 
-function speakPronunciation(term) {
-  if (!('speechSynthesis' in window)) {
-    alert(`Pronúncia: "${term}"`)
-    return
-  }
-  window.speechSynthesis.cancel()
-  const utterance = new SpeechSynthesisUtterance(term)
-  const codeMap = {
-    'Inglês': 'en-US',
-    'Espanhol': 'es-ES',
-    'Japonês': 'ja-JP',
-    'Francês': 'fr-FR',
-    'Alemão': 'de-DE',
-    'Italiano': 'it-IT',
-    'Coreano': 'ko-KR',
-    'Mandarim': 'zh-CN'
-  }
-  utterance.lang = codeMap[activeCourse.value?.language || 'Inglês'] || 'en-US'
-  utterance.rate = 0.9
-  window.speechSynthesis.speak(utterance)
-}
-
-function handleSaveNote() {
-  if (!activeLesson.value) return
-  teenStorage.saveLessonNote(studentProfileId.value, activeLesson.value.id, currentNoteText.value)
-  studentProgress.value = teenStorage.getProgress(studentProfileId.value)
-}
-
-function submitQuizAnswer() {
-  if (quizSelectedOption.value === null || !activeLesson.value?.quiz) return
-  quizAnswered.value = true
-  quizIsCorrect.value = quizSelectedOption.value === activeLesson.value.quiz.correctIndex
-}
-
+// --- LOGIN TEEN ---
 async function handleTeenLogin() {
   if (!loginForm.value.email || !loginForm.value.password) {
     loginError.value = 'Preencha seu e-mail ou CPF e sua senha de acesso.'
@@ -333,15 +377,13 @@ async function handleTeenLogin() {
       username: loginForm.value.email.trim(),
       password: loginForm.value.password.trim()
     })
-    if (data?.token) {
-      setToken(data.token)
-    }
+    if (data?.token) setToken(data.token)
     if (data?.user) {
       emit('login', data.user)
       fetchDependentsAndSetupProfiles()
     }
   } catch (err) {
-    loginError.value = err?.message || 'Falha ao autenticar. Verifique suas credenciais.'
+    loginError.value = err.status === 401 ? 'CPF/e-mail ou senha incorretos.' : (err?.message || 'Falha ao autenticar. Verifique suas credenciais.')
   } finally {
     loginLoading.value = false
   }
@@ -352,7 +394,7 @@ async function handleTeenLogin() {
   <div class="teen-app-wrapper">
     
     <!-- ================================================================= -->
-    <!-- TELA DE LOGIN / AUTH TEEN (CASO DESLOGADO OU ROTA /teen/auth) -->
+    <!-- TELA DE AUTH / LOGIN TEEN (CASO DESLOGADO) -->
     <!-- ================================================================= -->
     <div v-if="!isLoggedIn || subRoute === 'auth'" class="teen-auth-screen">
       <div class="teen-auth-card">
@@ -361,10 +403,10 @@ async function handleTeenLogin() {
           <span class="badge-teen-tag">TEEN</span>
         </div>
 
-        <h2>Plataforma de Cursos de Idiomas</h2>
-        <p>Acesse com sua conta Viva Mais para assistir aulas de Inglês, Espanhol, Japonês, Francês, Alemão, Mandarim e Italiano.</p>
+        <h2>Aulas de Idiomas Ao Vivo</h2>
+        <p>Acesse com sua conta Viva Mais para assistir às aulas ao vivo e consultar o cronograma.</p>
 
-        <div v-if="loginError" class="alert-error-box" style="margin-bottom: 16px; padding: 10px 14px; background: #fee2e2; color: #b91c1c; border-radius: 8px; font-size: 13px;">
+        <div v-if="loginError" class="alert-error-box">
           <i class="ph ph-warning-circle"></i> {{ loginError }}
         </div>
 
@@ -386,7 +428,7 @@ async function handleTeenLogin() {
           </div>
 
           <button type="submit" class="btn btn-primary btn-full-teen" :disabled="loginLoading">
-            <span>{{ loginLoading ? 'Autenticando...' : 'Entrar no Viva Mais Teen' }}</span>
+            <span>{{ loginLoading ? 'Autenticando...' : 'Entrar na Plataforma' }}</span>
           </button>
         </form>
 
@@ -397,53 +439,52 @@ async function handleTeenLogin() {
     </div>
 
     <!-- ================================================================= -->
-    <!-- PORTAL VIVA MAIS TEEN (LOGADO) - TEMA BRANCO PADRÃO VIVA MAIS CLUB -->
+    <!-- PORTAL VIVA MAIS TEEN (LOGADO) -->
     <!-- ================================================================= -->
     <div v-else class="teen-main-portal">
       
-      <!-- NAVBAR SUPERIOR LIMPA: APENAS LOGO, NAV E PERFIL -->
+      <!-- NAVBAR SUPERIOR TEEN -->
       <header class="teen-topbar">
         <div class="teen-topbar-container">
           
-          <!-- 1. LOGO OFICIAL COM BADGE TEEN -->
-          <div class="teen-logo-area" @click="currentTeenTab = 'home'">
+          <div class="teen-logo-area" @click="currentTeenTab = 'courses'">
             <img src="/logo.png" alt="Viva Mais Club" class="teen-brand-logo" />
             <span class="badge-teen-tag">TEEN</span>
           </div>
 
-          <!-- 2. NAVEGAÇÃO PRINCIPAL (DESKTOP) -->
+          <!-- NAVEGAÇÃO PRINCIPAL SIMPLES -->
           <nav class="teen-nav-menu desktop-only-nav">
             <button 
               class="nav-tab-link" 
-              :class="{ active: currentTeenTab === 'home' }"
-              @click="currentTeenTab = 'home'"
-            >
-              <i class="ph ph-house"></i> Início
-            </button>
-
-            <button 
-              class="nav-tab-link" 
-              :class="{ active: currentTeenTab === 'courses' || currentTeenTab === 'watch' }"
+              :class="{ active: currentTeenTab === 'courses' || currentTeenTab === 'course-detail' }"
               @click="currentTeenTab = 'courses'"
             >
-              <i class="ph ph-books"></i> Cursos de Idiomas
+              <i class="ph ph-books"></i> Cursos
             </button>
 
             <button 
               class="nav-tab-link" 
-              :class="{ active: currentTeenTab === 'materials' }"
-              @click="currentTeenTab = 'materials'"
+              :class="{ active: currentTeenTab === 'calendar' }"
+              @click="currentTeenTab = 'calendar'"
             >
-              <i class="ph ph-file-pdf"></i> Materiais de Apoio
+              <i class="ph ph-calendar"></i> Agenda
+            </button>
+
+            <button 
+              v-if="activeLesson"
+              class="nav-tab-link highlight-live-tab" 
+              :class="{ active: currentTeenTab === 'watch' }"
+              @click="currentTeenTab = 'watch'"
+            >
+              <span class="live-dot-pulse"></span> Sala Ao Vivo
             </button>
           </nav>
 
-          <!-- 3. AÇÕES DIREITA: PERFIL & BOTÃO HAMBURGUER MOBILE -->
+          <!-- AÇÕES DIREITA: PERFIL & MENU -->
           <div class="teen-topbar-actions">
-            <!-- Dropdown do Aluno -->
             <div class="teen-profile-dropdown-wrapper">
               <div class="teen-user-avatar-btn" @click="showProfileMenu = !showProfileMenu">
-                <span class="avatar-emoji">{{ activeProfile.avatar }}</span>
+                <span class="avatar-initials">{{ activeProfile.initials || 'AL' }}</span>
                 <span class="user-first-name">{{ activeProfile.name.split(' ')[0] }}</span>
                 <i class="ph ph-caret-down"></i>
               </div>
@@ -454,27 +495,23 @@ async function handleTeenLogin() {
                   <small>{{ activeProfile.level }}</small>
                 </div>
 
-                <!-- Se houver múltiplos perfis (titular + dependentes), exibe switcher -->
                 <div v-if="availableProfiles.length > 1">
                   <div class="dropdown-divider"></div>
-                  <div style="padding: 4px 12px; font-size: 11px; font-weight: 700; color: #5A6A7B; text-transform: uppercase;">
-                    Trocar Aluno / Perfil
-                  </div>
+                  <div class="dropdown-section-title">Trocar Aluno</div>
                   <button 
                     v-for="prof in availableProfiles" 
                     :key="prof.id"
                     class="dropdown-option-btn"
                     :class="{ active: prof.id === activeProfile.id }"
                     @click="selectStudentProfile(prof)"
-                    style="font-size: 12px;"
                   >
-                    <span>{{ prof.avatar }}</span> {{ prof.name }}
+                    <span class="avatar-initials-mini">{{ prof.initials }}</span> {{ prof.name }}
                   </button>
                 </div>
 
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-option-btn text-purple" @click="showAdminPanel = true; showProfileMenu = false">
-                  <i class="ph ph-gear"></i> Painel Admin (Cursos & Aulas)
+                  <i class="ph ph-gear"></i> Painel Admin (Aulas e Cursos)
                 </button>
                 <button class="dropdown-option-btn text-primary" @click="emit('goHome')">
                   <i class="ph ph-house"></i> Voltar ao Viva Mais Club
@@ -485,7 +522,6 @@ async function handleTeenLogin() {
               </div>
             </div>
 
-            <!-- Botão Menu Hamburguer Mobile -->
             <button class="btn-mobile-hamburger" @click="showMobileDrawer = true" aria-label="Abrir Menu">
               <i class="ph ph-list"></i>
             </button>
@@ -494,70 +530,51 @@ async function handleTeenLogin() {
         </div>
       </header>
 
-      <!-- MENU GAVETA LATERAL MOBILE (DRAWER) -->
+      <!-- DRAWER MOBILE -->
       <div v-if="showMobileDrawer" class="mobile-drawer-overlay" @click.self="showMobileDrawer = false">
-        <div class="mobile-drawer-card animated-slide-left">
+        <div class="mobile-drawer-card">
           <div class="drawer-header">
-            <div class="teen-logo-area" @click="currentTeenTab = 'home'; showMobileDrawer = false">
+            <div class="teen-logo-area" @click="currentTeenTab = 'courses'; showMobileDrawer = false">
               <img src="/logo.png" alt="Viva Mais Club" class="teen-brand-logo" />
               <span class="badge-teen-tag">TEEN</span>
             </div>
-            <button class="btn-close-drawer" @click="showMobileDrawer = false" aria-label="Fechar Menu">
+            <button class="btn-close-drawer" @click="showMobileDrawer = false">
               <i class="ph ph-x"></i>
             </button>
           </div>
 
           <div class="drawer-profile-box">
-            <span class="avatar-emoji-large">{{ activeProfile.avatar }}</span>
+            <span class="avatar-initials-lg">{{ activeProfile.initials }}</span>
             <div>
               <strong>{{ activeProfile.name }}</strong>
               <small>{{ activeProfile.level }}</small>
             </div>
           </div>
 
-          <!-- Switcher de perfil no Drawer Mobile -->
-          <div v-if="availableProfiles.length > 1" style="margin-bottom: 16px;">
-            <div style="font-size: 11px; font-weight: 700; color: #5A6A7B; text-transform: uppercase; margin-bottom: 6px;">
-              Trocar Perfil / Dependente
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-              <button 
-                v-for="prof in availableProfiles" 
-                :key="prof.id"
-                class="dropdown-option-btn"
-                :class="{ active: prof.id === activeProfile.id }"
-                @click="selectStudentProfile(prof)"
-                style="font-size: 12px; padding: 6px 10px; background: #F7FAFC; border-radius: 6px;"
-              >
-                <span>{{ prof.avatar }}</span> {{ prof.name }}
-              </button>
-            </div>
-            <div class="drawer-divider"></div>
-          </div>
-
           <nav class="drawer-nav-list">
             <button 
               class="drawer-nav-btn" 
-              :class="{ active: currentTeenTab === 'home' }"
-              @click="currentTeenTab = 'home'; showMobileDrawer = false"
-            >
-              <i class="ph ph-house"></i> Início
-            </button>
-
-            <button 
-              class="drawer-nav-btn" 
-              :class="{ active: currentTeenTab === 'courses' || currentTeenTab === 'watch' }"
+              :class="{ active: currentTeenTab === 'courses' }"
               @click="currentTeenTab = 'courses'; showMobileDrawer = false"
             >
-              <i class="ph ph-books"></i> Cursos de Idiomas
+              <i class="ph ph-books"></i> Cursos
             </button>
 
             <button 
               class="drawer-nav-btn" 
-              :class="{ active: currentTeenTab === 'materials' }"
-              @click="currentTeenTab = 'materials'; showMobileDrawer = false"
+              :class="{ active: currentTeenTab === 'calendar' }"
+              @click="currentTeenTab = 'calendar'; showMobileDrawer = false"
             >
-              <i class="ph ph-file-pdf"></i> Materiais de Apoio
+              <i class="ph ph-calendar"></i> Agenda
+            </button>
+
+            <button 
+              v-if="activeLesson"
+              class="drawer-nav-btn text-danger" 
+              :class="{ active: currentTeenTab === 'watch' }"
+              @click="currentTeenTab = 'watch'; showMobileDrawer = false"
+            >
+              <i class="ph ph-broadcast"></i> Sala Ao Vivo
             </button>
 
             <div class="drawer-divider"></div>
@@ -566,7 +583,7 @@ async function handleTeenLogin() {
               class="drawer-nav-btn text-purple" 
               @click="showAdminPanel = true; showMobileDrawer = false"
             >
-              <i class="ph ph-gear"></i> Painel Admin (Cursos & Aulas)
+              <i class="ph ph-gear"></i> Painel Admin
             </button>
 
             <button 
@@ -580,7 +597,7 @@ async function handleTeenLogin() {
               class="drawer-nav-btn text-danger" 
               @click="emit('logout'); showMobileDrawer = false"
             >
-              <i class="ph ph-sign-out"></i> Sair da Conta
+              <i class="ph ph-sign-out"></i> Sair
             </button>
           </nav>
         </div>
@@ -592,7 +609,7 @@ async function handleTeenLogin() {
           <div class="modal-admin-top">
             <div class="admin-modal-title">
               <i class="ph ph-shield-check"></i>
-              <strong>Gestão de Cursos de Idiomas, Módulos & Aulas</strong>
+              <strong>Gestão de Aulas Ao Vivo e Cursos</strong>
             </div>
             <button class="btn-close-modal-admin" @click="showAdminPanel = false">
               <i class="ph ph-x"></i> Fechar
@@ -605,511 +622,599 @@ async function handleTeenLogin() {
       </div>
 
       <!-- =============================================================== -->
-      <!-- 1. PÁGINA INICIAL (HOME COM ATALHOS PARA OS CURSOS) -->
-      <!-- =============================================================== -->
-      <main v-if="currentTeenTab === 'home'" class="teen-content-container animated-fade">
-        
-        <!-- Banner de Boas-Vindas Clean & Moderno -->
-        <section class="teen-welcome-banner">
-          <div class="welcome-left-col">
-            <div class="welcome-tag">
-              <i class="ph ph-globe"></i> VIVA MAIS TEEN • IDIOMAS
-            </div>
-            <h1>Cursos de Idiomas: Estudantil, Viagens & Empresarial 🌍</h1>
-            <p>Aprenda <strong>Inglês, Espanhol, Francês, Alemão, Italiano, Mandarim e Japonês</strong> com aulas em vídeo práticas focadas em intercâmbio, viagens internacionais e carreira global.</p>
-            
-            <div class="welcome-buttons-row">
-              <button 
-                v-if="courses.length > 0" 
-                class="btn btn-primary btn-cta-main" 
-                @click="watchCourse(courses[0])"
-              >
-                <i class="ph ph-play-fill"></i> Assistir: {{ courses[0].title }}
-              </button>
-
-              <button class="btn btn-secondary-clean" @click="currentTeenTab = 'courses'">
-                <i class="ph ph-books"></i> Ver Todos os Cursos ({{ courses.length }})
-              </button>
-            </div>
-          </div>
-
-          <div class="welcome-right-col">
-            <div class="info-pill-box">
-              <div class="info-pill-item">
-                <i class="ph ph-briefcase icon-blue"></i>
-                <div>
-                  <strong>Empresarial & Carreira</strong>
-                  <small>Reuniões, e-mails e negociações</small>
-                </div>
-              </div>
-              <div class="info-pill-item">
-                <i class="ph ph-airplane-tilt icon-green"></i>
-                <div>
-                  <strong>Viagens & Turismo</strong>
-                  <small>Aeroporto, alfândega e hotéis</small>
-                </div>
-              </div>
-              <div class="info-pill-item">
-                <i class="ph ph-graduation-cap icon-orange"></i>
-                <div>
-                  <strong>Estudantil & Acadêmico</strong>
-                  <small>Intercâmbio e universidades</small>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Atalhos Rápidos dos Cursos -->
-        <section class="home-courses-showcase">
-          <div class="section-heading-row">
-            <div>
-              <h2>Cursos em Destaque 🌟</h2>
-              <p>Escolha um curso abaixo e clique em <strong>Assistir Curso</strong> para acessar as aulas e módulos.</p>
-            </div>
-            <button class="btn-link-clean" @click="currentTeenTab = 'courses'">
-              Ver catálogo completo <i class="ph ph-arrow-right"></i>
-            </button>
-          </div>
-
-          <div class="courses-white-grid">
-            <div 
-              v-for="course in courses.slice(0, 4)" 
-              :key="course.id" 
-              class="course-white-card"
-            >
-              <div class="card-cover-image" :style="{ backgroundImage: `url(${course.banner})` }">
-                <span class="cover-flag-pill">{{ course.flag }} {{ course.language }}</span>
-                <span class="cover-tag-pill">{{ course.tag }}</span>
-              </div>
-
-              <div class="card-main-body">
-                <div class="card-meta-row">
-                  <span class="meta-badge"><i class="ph ph-chart-line"></i> {{ course.levelBadge }}</span>
-                  <span class="meta-badge"><i class="ph ph-clock"></i> {{ course.totalHours }}</span>
-                  <span class="meta-badge star-badge"><i class="ph ph-star-fill"></i> {{ course.rating }}</span>
-                </div>
-
-                <h3 class="course-card-title">{{ course.title }}</h3>
-                <p class="course-card-desc">{{ course.description }}</p>
-
-                <div class="course-stats-bar">
-                  <span><i class="ph ph-folder"></i> {{ course.modules?.length || 0 }} Módulos</span>
-                  <span>
-                    <i class="ph ph-video"></i> 
-                    {{ (course.modules || []).reduce((acc, m) => acc + (m.lessons?.length || 0), 0) }} Aulas
-                  </span>
-                  <span><i class="ph ph-file-pdf"></i> {{ course.materials?.length || 0 }} PDFs</span>
-                </div>
-
-                <div class="card-footer-box">
-                  <div class="instructor-mini-profile">
-                    <img :src="course.instructor?.avatar" :alt="course.instructor?.name" />
-                    <div>
-                      <strong>{{ course.instructor?.name }}</strong>
-                      <small>{{ course.instructor?.role }}</small>
-                    </div>
-                  </div>
-
-                  <button class="btn btn-primary btn-block-watch" @click="watchCourse(course)">
-                    <i class="ph ph-play-circle-fill"></i> Assistir Curso
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-      </main>
-
-      <!-- =============================================================== -->
-      <!-- 2. CATÁLOGO COMPLETO DE CURSOS DE IDIOMAS -->
+      <!-- 1. TELA DE CURSOS (CATÁLOGO INICIAL) -->
       <!-- =============================================================== -->
       <main v-if="currentTeenTab === 'courses'" class="teen-content-container animated-fade">
         
-        <div class="section-heading-row" style="margin-bottom: 20px;">
+        <div class="page-simple-header">
           <div>
-            <h2>Catálogo de Cursos de Idiomas 🌍</h2>
-            <p>Filtre por objetivo (Empresarial, Viagens, Estudantil) ou idioma.</p>
+            <h1>Cursos de Idiomas</h1>
+            <p>Selecione um curso para acessar as aulas ao vivo, gravações e materiais.</p>
+          </div>
+
+          <div class="search-simple-box">
+            <i class="ph ph-magnifying-glass"></i>
+            <input v-model="searchKeyword" type="text" placeholder="Buscar curso..." />
           </div>
         </div>
 
-        <!-- Barra de Filtros por Categoria & Idioma -->
-        <div class="filters-white-bar">
-          <div class="filters-top-row">
-            <div class="categories-pills-row">
-              <button 
-                class="btn-filter-pill" 
-                :class="{ active: selectedCategory === 'todos' }"
-                @click="selectedCategory = 'todos'"
-              >
-                Todos os Objetivos ({{ courses.length }})
-              </button>
-              <button 
-                class="btn-filter-pill" 
-                :class="{ active: selectedCategory === 'Empresarial' }"
-                @click="selectedCategory = 'Empresarial'"
-              >
-                💼 Empresarial & Carreira
-              </button>
-              <button 
-                class="btn-filter-pill" 
-                :class="{ active: selectedCategory === 'Viagens' }"
-                @click="selectedCategory = 'Viagens'"
-              >
-                ✈️ Viagens & Turismo
-              </button>
-              <button 
-                class="btn-filter-pill" 
-                :class="{ active: selectedCategory === 'Estudantil' }"
-                @click="selectedCategory = 'Estudantil'"
-              >
-                🎓 Estudantil & Acadêmico
-              </button>
-            </div>
-
-            <div class="search-input-box">
-              <i class="ph ph-magnifying-glass"></i>
-              <input v-model="searchKeyword" type="text" placeholder="Buscar por tema ou curso..." />
-            </div>
-          </div>
-
-          <div class="lang-pills-row">
-            <button 
-              class="btn-filter-pill" 
-              :class="{ active: selectedLanguage === 'todos' }"
-              @click="selectedLanguage = 'todos'"
-            >
-              Todos os Idiomas ({{ courses.length }})
-            </button>
-            <button 
-              v-for="lang in Array.from(new Set(courses.map(c => c.language)))"
-              :key="lang"
-              class="btn-filter-pill" 
-              :class="{ active: selectedLanguage === lang }" 
-              @click="selectedLanguage = lang"
-            >
-              {{ courses.find(c => c.language === lang)?.flag || '🌐' }} {{ lang }}
-            </button>
-          </div>
-        </div>
-
-        <!-- Grid de Cursos -->
-        <div class="courses-white-grid">
+        <!-- GRID DE CARDS DE CURSOS -->
+        <div v-if="filteredCourses.length > 0" class="courses-white-grid">
           <div 
             v-for="course in filteredCourses" 
             :key="course.id" 
-            class="course-white-card"
+            class="course-card-interactive"
+            @click="selectCourse(course)"
           >
             <div class="card-cover-image" :style="{ backgroundImage: `url(${course.banner})` }">
-              <span class="cover-flag-pill">{{ course.flag }} {{ course.language }}</span>
+              <span class="cover-flag-pill">{{ course.language }}</span>
               <span class="cover-tag-pill">{{ course.tag }}</span>
             </div>
 
             <div class="card-main-body">
               <div class="card-meta-row">
-                <span class="meta-badge"><i class="ph ph-chart-line"></i> {{ course.levelBadge }}</span>
-                <span class="meta-badge"><i class="ph ph-clock"></i> {{ course.totalHours }}</span>
-                <span class="meta-badge star-badge"><i class="ph ph-star-fill"></i> {{ course.rating }}</span>
+                <span class="meta-badge">{{ course.levelBadge }}</span>
+                <span class="meta-badge">{{ course.totalHours }}</span>
               </div>
 
               <h3 class="course-card-title">{{ course.title }}</h3>
               <p class="course-card-desc">{{ course.description }}</p>
 
-              <div class="course-stats-bar">
-                <span><i class="ph ph-folder"></i> {{ course.modules?.length || 0 }} Módulos</span>
-                <span>
-                  <i class="ph ph-video"></i> 
-                  {{ (course.modules || []).reduce((acc, m) => acc + (m.lessons?.length || 0), 0) }} Aulas
-                </span>
-                <span><i class="ph ph-file-pdf"></i> {{ course.materials?.length || 0 }} PDFs</span>
+              <!-- Próxima Aula em Destaque no Card -->
+              <div v-if="course.nextLivePreview" class="course-next-live-pill">
+                <div class="next-live-left">
+                  <span class="live-dot-pulse"></span>
+                  <div>
+                    <strong class="next-live-countdown">{{ course.nextLivePreview.countdownText }}</strong>
+                    <span class="next-live-name">{{ course.nextLivePreview.lessonTitle }}</span>
+                  </div>
+                </div>
               </div>
 
-                <div class="card-footer-box">
-                  <div class="instructor-mini-profile">
-                    <img :src="course.instructor?.avatar" :alt="course.instructor?.name" />
-                    <div>
-                      <strong>{{ course.instructor?.name }}</strong>
-                      <small>{{ course.instructor?.role }}</small>
-                    </div>
+              <div class="card-footer-box">
+                <div class="instructor-mini-profile">
+                  <img :src="course.instructor?.avatar" :alt="course.instructor?.name" />
+                  <div>
+                    <strong>{{ course.instructor?.name }}</strong>
+                    <small>{{ course.instructor?.role }}</small>
                   </div>
-
-                  <button class="btn btn-primary btn-block-watch" @click="watchCourse(course)">
-                    <i class="ph ph-play-circle-fill"></i> Assistir Curso
-                  </button>
                 </div>
+
+                <button class="btn btn-primary btn-enter-course" @click.stop="selectCourse(course)">
+                  <span>Acessar</span>
+                  <i class="ph ph-arrow-right"></i>
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+
+        <!-- ESTADO VAZIO CASO NÃO HAJA CURSOS -->
+        <div v-else class="empty-courses-box">
+          <div class="empty-courses-icon-circle">
+            <i class="ph ph-books"></i>
+          </div>
+          <h3>Nenhum Curso Disponível</h3>
+          <p>Os cursos e transmissões de idiomas aparecerão aqui assim que cadastrados.</p>
+          <button v-if="props.user?.role === 'admin' || activeProfile.role === 'admin'" class="btn btn-primary btn-admin-empty" @click="showAdminPanel = true">
+            <i class="ph ph-plus-circle"></i> Cadastrar Primeiro Curso
+          </button>
         </div>
 
       </main>
 
       <!-- =============================================================== -->
-      <!-- 3. TELA DE ASSISTIR CURSO (VÍDEO + MÓDULOS & AULAS EM DROPDOWN) -->
+      <!-- 2. PÁGINA DO CURSO SELECIONADO (COM ABAS: AO VIVO, GRAVADAS, MATERIAIS) -->
       <!-- =============================================================== -->
-      <main v-if="currentTeenTab === 'watch' && activeCourse" class="teen-content-container animated-fade">
+      <main v-if="currentTeenTab === 'course-detail' && activeCourse" class="teen-content-container animated-fade">
         
-        <!-- Header da Tela de Aulas -->
-        <div class="watch-top-bar">
-          <button class="btn btn-outline btn-sm-back" @click="currentTeenTab = 'courses'">
-            <i class="ph ph-arrow-left"></i> Voltar aos Cursos
+        <div class="course-detail-header-nav">
+          <button class="btn-back-courses" @click="currentTeenTab = 'courses'">
+            <i class="ph ph-arrow-left"></i> Voltar para Todos os Cursos
+          </button>
+        </div>
+
+        <!-- Banner do Curso com CARD DA PRÓXIMA AULA -->
+        <div class="course-hero-banner">
+          <div class="course-hero-info">
+            <span class="course-hero-tag">{{ activeCourse.language }} • {{ activeCourse.levelBadge }}</span>
+            <h1 class="hero-white-title">{{ activeCourse.title }}</h1>
+            <p class="hero-white-desc">{{ activeCourse.description }}</p>
+
+            <div class="course-instructor-hero">
+              <img :src="activeCourse.instructor?.avatar" :alt="activeCourse.instructor?.name" />
+              <div>
+                <strong class="instructor-white-name">{{ activeCourse.instructor?.name }}</strong>
+                <span class="instructor-white-role">{{ activeCourse.instructor?.role }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD DA PRÓXIMA AULA -->
+          <div v-if="activeCourseNextLesson" class="next-lesson-highlight-card">
+            <div class="next-lesson-card-head">
+              <span class="badge-next-live">
+                <span class="live-dot-pulse"></span> PROXIMA AULA AO VIVO
+              </span>
+              <span class="countdown-badge-pill">
+                {{ activeCourseNextLesson.countdownText || activeCourseNextLesson.formattedDate }}
+              </span>
+            </div>
+
+            <div class="next-lesson-card-body">
+              <h3>{{ activeCourseNextLesson.title }}</h3>
+              <p>{{ activeCourseNextLesson.description }}</p>
+
+              <div class="next-lesson-meta">
+                <span><i class="ph ph-clock"></i> {{ activeCourseNextLesson.duration }}</span>
+                <span><i class="ph ph-calendar"></i> {{ activeCourseNextLesson.formattedDate }}</span>
+              </div>
+
+              <div class="next-lesson-actions">
+                <button 
+                  class="btn btn-primary btn-join-live"
+                  @click="enterLiveClass(activeCourse, null, activeCourseNextLesson)"
+                >
+                  <i :class="activeCourseNextLesson.status === 'ao_vivo' ? 'ph ph-broadcast' : 'ph ph-play'"></i>
+                  <span>{{ activeCourseNextLesson.status === 'ao_vivo' ? 'Entrar na Sala Ao Vivo' : 'Abrir Aula' }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ABAS DO CURSO: AULAS AO VIVO, GRAVADAS E MATERIAIS -->
+        <div class="course-tabs-bar">
+          <button 
+            class="course-tab-btn" 
+            :class="{ active: courseInternalTab === 'live' }"
+            @click="courseInternalTab = 'live'"
+          >
+            <i class="ph ph-broadcast"></i> Aulas Ao Vivo
           </button>
 
-          <div class="watch-course-heading">
-            <span class="badge-lang-clean">{{ activeCourse.flag }} {{ activeCourse.language }}</span>
-            <h2>{{ activeCourse.title }}</h2>
-          </div>
+          <button 
+            class="course-tab-btn" 
+            :class="{ active: courseInternalTab === 'recorded' }"
+            @click="courseInternalTab = 'recorded'"
+          >
+            <i class="ph ph-video"></i> Aulas Gravadas ({{ activeCourse.recordedLessons?.length || 0 }})
+          </button>
+
+          <button 
+            class="course-tab-btn" 
+            :class="{ active: courseInternalTab === 'materials' }"
+            @click="courseInternalTab = 'materials'"
+          >
+            <i class="ph ph-file-pdf"></i> Materiais de Apoio ({{ activeCourse.materials?.length || 0 }})
+          </button>
         </div>
 
-        <!-- Grid: Player de Vídeo à Esquerda + Módulos & Aulas à Direita -->
-        <div class="watch-layout-grid">
-          
-          <!-- LADO ESQUERDO: PLAYER DE VÍDEO + ABAS DA AULA -->
-          <div class="watch-player-section">
-            
-            <!-- Video Player Box -->
-            <div class="video-display-card">
-              <iframe 
-                v-if="activeLesson && activeLesson.videoUrl"
-                :src="activeLesson.videoUrl" 
-                title="Aula de Idioma" 
-                frameborder="0" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                allowfullscreen
-                class="video-iframe-embed"
-              ></iframe>
-              <div v-else class="video-empty-notice">
-                <i class="ph ph-video-camera"></i>
-                <p>Selecione uma aula na lista ao lado para assistir.</p>
-              </div>
-            </div>
-
-            <!-- Título e Ações da Aula -->
-            <div v-if="activeLesson" class="lesson-info-bar card">
-              <div class="lesson-title-box">
-                <span class="module-indicator">{{ activeModule?.title }}</span>
-                <h3>{{ activeLesson.title }}</h3>
-                <div class="lesson-meta-badges-line">
-                  <small><i class="ph ph-clock"></i> Duração: {{ activeLesson.duration }}</small>
-                  <span v-if="isCurrentLessonCompleted" class="badge-completed-pill">
-                    <i class="ph ph-check-circle-fill"></i> Concluída
-                  </span>
-                </div>
+        <!-- ABA 1: AULAS AO VIVO / CRONOGRAMA -->
+        <div v-if="courseInternalTab === 'live'" class="course-tab-content-pane">
+          <div class="modules-vertical-stack">
+            <div 
+              v-for="mod in activeCourse.modules" 
+              :key="mod.id" 
+              class="module-group-card"
+            >
+              <div class="module-group-header">
+                <h3>{{ mod.title }}</h3>
+                <span class="module-lessons-count">{{ mod.lessons?.length || 0 }} Aulas Ao Vivo</span>
               </div>
 
-              <div class="lesson-actions-group">
-                <button 
-                  class="btn btn-complete-toggle" 
-                  :class="{ is_completed: isCurrentLessonCompleted }"
-                  @click="toggleCompleteLesson"
+              <div class="lessons-vertical-column">
+                <div 
+                  v-for="lesson in mod.lessons" 
+                  :key="lesson.id" 
+                  class="lesson-item-card"
+                  :class="{ 
+                    'is-live-now': lesson.status === 'ao_vivo', 
+                    'is-locked': lesson.status === 'agendada'
+                  }"
                 >
-                  <i v-if="isCurrentLessonCompleted" class="ph ph-check-circle-fill"></i>
-                  <i v-else class="ph ph-circle"></i>
-                  <span>{{ isCurrentLessonCompleted ? 'Aula Concluída' : 'Marcar como Concluída' }}</span>
-                </button>
+                  <div class="lesson-thumb-col" :style="{ backgroundImage: `url(${lesson.thumbnail || activeCourse.banner})` }">
+                    <span v-if="lesson.status === 'ao_vivo'" class="thumb-status-pill status-live">
+                      <span class="live-dot-pulse"></span> AO VIVO
+                    </span>
+                    <span v-else-if="lesson.status === 'agendada'" class="thumb-status-pill status-locked">
+                      <i class="ph ph-lock"></i> Agendada
+                    </span>
+                    <span v-else class="thumb-status-pill status-recorded">
+                      Gravação
+                    </span>
+                  </div>
 
-                <div class="nav-arrows-box">
-                  <button class="btn-arrow" @click="navigatePrevLesson" title="Aula Anterior">
-                    <i class="ph ph-caret-left"></i>
-                  </button>
-                  <button class="btn-arrow" @click="navigateNextLesson" title="Próxima Aula">
-                    <i class="ph ph-caret-right"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
+                  <div class="lesson-info-col">
+                    <div class="lesson-timing-row">
+                      <span class="lesson-countdown-tag" :class="{ 'tag-live': lesson.status === 'ao_vivo' }">
+                        {{ lesson.countdownText || lesson.formattedDate }}
+                      </span>
+                      <span class="lesson-duration-badge"><i class="ph ph-timer"></i> {{ lesson.duration }}</span>
+                    </div>
 
-            <!-- Abas da Aula: Vocabulário, Materiais, Quiz, Anotações -->
-            <div v-if="activeLesson" class="lesson-tabs-card card">
-              <div class="tabs-header-bar">
-                <button 
-                  class="tab-nav-btn" 
-                  :class="{ active: lessonActiveTab === 'vocabulary' }"
-                  @click="lessonActiveTab = 'vocabulary'"
-                >
-                  <i class="ph ph-translate"></i> Vocabulário & Pronúncia
-                </button>
+                    <h4 class="lesson-title">{{ lesson.title }}</h4>
+                    <p class="lesson-desc">{{ lesson.description }}</p>
 
-                <button 
-                  class="tab-nav-btn" 
-                  :class="{ active: lessonActiveTab === 'materials' }"
-                  @click="lessonActiveTab = 'materials'"
-                >
-                  <i class="ph ph-file-pdf"></i> Materiais do Curso ({{ activeCourse.materials?.length || 0 }})
-                </button>
-
-                <button 
-                  class="tab-nav-btn" 
-                  :class="{ active: lessonActiveTab === 'quiz' }"
-                  @click="lessonActiveTab = 'quiz'"
-                >
-                  <i class="ph ph-brain"></i> Quiz Rápido
-                </button>
-
-                <button 
-                  class="tab-nav-btn" 
-                  :class="{ active: lessonActiveTab === 'notes' }"
-                  @click="lessonActiveTab = 'notes'"
-                >
-                  <i class="ph ph-notebook"></i> Anotações
-                </button>
-              </div>
-
-              <!-- ABA VOCABULÁRIO COM SÍNTESE DE VOZ -->
-              <div v-if="lessonActiveTab === 'vocabulary'" class="tab-body-wrapper">
-                <h4>Vocabulário e Termos em Destaque</h4>
-                <div v-if="activeLesson.vocabulary && activeLesson.vocabulary.length > 0" class="vocab-clean-grid">
-                  <div v-for="(v, i) in activeLesson.vocabulary" :key="i" class="vocab-item-card">
-                    <div class="vocab-item-header">
-                      <strong>{{ v.term }}</strong>
-                      <button class="btn-audio-speak-clean" @click="speakPronunciation(v.term)" title="Ouvir Pronúncia">
-                        <i class="ph ph-speaker-high"></i> Ouvir Pronúncia
+                    <div class="lesson-footer-actions">
+                      <button 
+                        class="btn btn-sm btn-primary" 
+                        @click="enterLiveClass(activeCourse, mod, lesson)"
+                      >
+                        <i :class="lesson.status === 'ao_vivo' ? 'ph ph-broadcast' : 'ph ph-play'"></i>
+                        <span>{{ lesson.status === 'ao_vivo' ? 'Entrar na Sala' : 'Abrir Aula' }}</span>
                       </button>
                     </div>
-                    <p class="vocab-definition">{{ v.meaning }}</p>
-                    <small v-if="v.example" class="vocab-example-quote">"{{ v.example }}"</small>
                   </div>
                 </div>
-                <p v-else class="text-gray-clean">Acompanhe as explicações no vídeo da aula.</p>
               </div>
 
-              <!-- ABA MATERIAIS DE APOIO DO CURSO -->
-              <div v-if="lessonActiveTab === 'materials'" class="tab-body-wrapper">
-                <h4>Materiais de Apoio e Apostilas em PDF</h4>
-                <div v-if="activeCourse.materials && activeCourse.materials.length > 0" class="materials-list-clean">
-                  <div v-for="mat in activeCourse.materials" :key="mat.id" class="material-row-card">
-                    <div class="mat-left-info">
-                      <div class="mat-icon-square">
-                        <i class="ph ph-file-pdf"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- ABA 2: AULAS GRAVADAS -->
+        <div v-else-if="courseInternalTab === 'recorded'" class="course-tab-content-pane">
+          <div v-if="activeCourse.recordedLessons && activeCourse.recordedLessons.length > 0" class="recorded-lessons-grid">
+            <div 
+              v-for="rec in activeCourse.recordedLessons" 
+              :key="rec.id" 
+              class="recorded-card-item"
+            >
+              <div class="recorded-thumb" :style="{ backgroundImage: `url(${rec.thumbnail || activeCourse.banner})` }">
+                <span class="recorded-badge"><i class="ph ph-play-circle"></i> Gravação</span>
+                <span class="recorded-duration">{{ rec.duration }}</span>
+              </div>
+
+              <div class="recorded-info">
+                <span class="recorded-date">Disponibilizada em {{ rec.recordedDate }}</span>
+                <h4>{{ rec.title }}</h4>
+                <p>{{ rec.description }}</p>
+
+                <button class="btn btn-sm btn-primary btn-watch-recorded" @click="openRecordedLesson(rec)">
+                  <i class="ph ph-play"></i> Assistir Gravação
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="empty-tab-box">
+            <i class="ph ph-video"></i>
+            <h4>Nenhuma aula gravada ainda</h4>
+            <p>As transmissões ao vivo encerradas ficarão disponíveis nesta seção.</p>
+          </div>
+        </div>
+
+        <!-- ABA 3: MATERIAIS DE APOIO -->
+        <div v-else-if="courseInternalTab === 'materials'" class="course-tab-content-pane">
+          <div v-if="activeCourse.materials && activeCourse.materials.length > 0" class="materials-list-grid">
+            <div 
+              v-for="mat in activeCourse.materials" 
+              :key="mat.id" 
+              class="material-item-card"
+            >
+              <div class="material-pdf-icon">
+                <i class="ph ph-file-pdf"></i>
+              </div>
+              <div class="material-item-details">
+                <h4>{{ mat.title }}</h4>
+                <p>{{ mat.description }}</p>
+                <small class="mat-size-badge">{{ mat.size }} • Documento PDF</small>
+              </div>
+              <a :href="mat.downloadUrl" target="_blank" class="btn btn-sm btn-secondary-clean-dark">
+                <i class="ph ph-download-simple"></i> Download
+              </a>
+            </div>
+          </div>
+
+          <div v-else class="empty-tab-box">
+            <i class="ph ph-file-pdf"></i>
+            <h4>Nenhum material cadastrado</h4>
+            <p>Apostilas e guias em PDF serão publicados aqui.</p>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- =============================================================== -->
+      <!-- 3. SALA DE AULA AO VIVO (LIMPA: SEM BOTÃO DE PRESENÇA) -->
+      <!-- =============================================================== -->
+      <main v-if="currentTeenTab === 'watch' && activeLesson" class="live-classroom-container animated-fade">
+        
+        <div class="classroom-topbar">
+          <div class="classroom-breadcrumb">
+            <button class="btn-back-nav" @click="currentTeenTab = 'course-detail'">
+              <i class="ph ph-arrow-left"></i> Voltar ao Curso
+            </button>
+            <span class="crumb-divider">/</span>
+            <span class="crumb-course">{{ activeCourse?.title }}</span>
+            <span class="crumb-divider">/</span>
+            <span class="crumb-lesson">{{ activeLesson?.title }}</span>
+          </div>
+
+          <div class="classroom-top-actions">
+            <span v-if="activeLesson.status === 'ao_vivo'" class="live-pill-header">
+              <span class="live-dot-pulse"></span> AO VIVO
+            </span>
+            <span v-else-if="activeLesson.status === 'agendada'" class="locked-pill-header">
+              <i class="ph ph-clock"></i> {{ activeLesson.formattedDate }}
+            </span>
+            <span v-else class="recorded-pill-header">
+              <i class="ph ph-video"></i> GRAVAÇÃO
+            </span>
+          </div>
+        </div>
+
+        <div class="classroom-split-layout">
+          
+          <!-- COLUNA ESQUERDA: PLAYER -->
+          <div class="classroom-left-col">
+            <div class="live-player-box">
+              <div v-if="activeLesson.status === 'agendada'" class="live-locked-overlay">
+                <div class="locked-content-box">
+                  <div class="lock-icon-circle">
+                    <i class="ph ph-lock-simple"></i>
+                  </div>
+                  <h3 class="locked-white-title">Aula Ao Vivo Agendada</h3>
+                  <p class="locked-white-desc">Esta transmissão estará liberada em <strong>{{ activeLesson.formattedDate }}</strong>.</p>
+                </div>
+              </div>
+
+              <iframe 
+                v-else
+                :src="activeLesson.videoUrl" 
+                class="live-iframe-player" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen
+              ></iframe>
+            </div>
+
+            <!-- DETALHES DA AULA (LIMPO E SEM PRESENÇA) -->
+            <div class="classroom-lesson-details">
+              <div class="lesson-header-row-clean">
+                <h1 class="lesson-main-title">{{ activeLesson.title }}</h1>
+                <div class="lesson-meta-chips">
+                  <span><i class="ph ph-clock"></i> {{ activeLesson.duration }}</span>
+                  <span><i class="ph ph-calendar"></i> {{ activeLesson.formattedDate }}</span>
+                </div>
+              </div>
+
+              <div class="lesson-body-section">
+                <p class="lesson-full-desc">{{ activeLesson.description }}</p>
+
+                <div class="instructor-card-row">
+                  <img :src="activeCourse?.instructor?.avatar" :alt="activeCourse?.instructor?.name" class="instructor-avatar-lg" />
+                  <div class="instructor-details">
+                    <strong>{{ activeCourse?.instructor?.name }}</strong>
+                    <span>{{ activeCourse?.instructor?.role }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- COLUNA DIREITA: CHAT & PESSOAS -->
+          <div class="classroom-right-col">
+            <div class="live-interaction-panel">
+              
+              <div class="interaction-tabs-header">
+                <button 
+                  class="tab-interact-btn" 
+                  :class="{ active: livePanelTab === 'chat' }"
+                  @click="livePanelTab = 'chat'"
+                >
+                  <i class="ph ph-chat-circle-dots"></i> Chat Ao Vivo
+                </button>
+
+                <button 
+                  class="tab-interact-btn" 
+                  :class="{ active: livePanelTab === 'people' }"
+                  @click="livePanelTab = 'people'"
+                >
+                  <i class="ph ph-users"></i> Pessoas ({{ liveParticipants.length }})
+                </button>
+              </div>
+
+              <!-- CHAT AO VIVO -->
+              <div v-if="livePanelTab === 'chat'" class="live-chat-wrapper">
+                <div ref="chatScrollRef" class="chat-messages-feed">
+                  <div 
+                    v-for="msg in chatMessages" 
+                    :key="msg.id" 
+                    class="chat-msg-row"
+                    :class="{ 'is-instructor': msg.role === 'instructor', 'is-me': msg.author === activeProfile.name }"
+                  >
+                    <span class="chat-user-initials">{{ msg.avatarText || 'AL' }}</span>
+                    <div class="chat-msg-content">
+                      <div class="chat-msg-meta">
+                        <strong class="chat-author-name">{{ msg.author }}</strong>
+                        <span v-if="msg.role === 'instructor'" class="badge-role-instructor">Professor</span>
+                        <small class="chat-time">{{ msg.time }}</small>
                       </div>
-                      <div>
-                        <strong>{{ mat.title }}</strong>
-                        <small>{{ mat.size }} • {{ mat.description }}</small>
-                      </div>
+                      <div class="chat-bubble-text">{{ msg.text }}</div>
                     </div>
-                    <a :href="mat.downloadUrl" class="btn btn-secondary btn-sm" download>
-                      <i class="ph ph-download-simple"></i> Baixar PDF
-                    </a>
                   </div>
                 </div>
-                <p v-else class="text-gray-clean">Nenhum material extra anexado a este curso.</p>
+
+                <form @submit.prevent="sendChatMessage" class="chat-input-form">
+                  <input 
+                    v-model="newChatMessage" 
+                    type="text" 
+                    placeholder="Digite sua mensagem no chat..." 
+                    class="form-control chat-input" 
+                    required 
+                  />
+                  <button type="submit" class="btn-send-chat" aria-label="Enviar">
+                    <i class="ph ph-paper-plane-right"></i>
+                  </button>
+                </form>
               </div>
 
-              <!-- ABA QUIZ -->
-              <div v-if="lessonActiveTab === 'quiz'" class="tab-body-wrapper">
-                <div v-if="activeLesson.quiz" class="quiz-clean-box">
-                  <h4>{{ activeLesson.quiz.question }}</h4>
-                  <div class="quiz-options-grid">
-                    <button 
-                      v-for="(opt, idx) in activeLesson.quiz.options" 
-                      :key="idx"
-                      class="quiz-option-pill"
+              <!-- ABA DE PESSOAS -->
+              <div v-else class="live-people-wrapper">
+                <div class="people-list-scroll">
+                  <div class="person-row is-me">
+                    <span class="person-initials">{{ activeProfile.initials || 'VO' }}</span>
+                    <div class="person-info">
+                      <strong>{{ activeProfile.name }}</strong>
+                      <small><span class="status-dot-green"></span> Conectado</small>
+                    </div>
+                  </div>
+
+                  <div 
+                    v-for="person in liveParticipants" 
+                    :key="person.id" 
+                    class="person-row"
+                  >
+                    <span class="person-initials">{{ person.avatarText || 'AL' }}</span>
+                    <div class="person-info">
+                      <strong>{{ person.name }}</strong>
+                      <small v-if="person.isHost">Professor / Host</small>
+                      <small v-else><span class="status-dot-green"></span> Online</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+      </main>
+
+      <!-- =============================================================== -->
+      <!-- 4. AGENDA / CALENDÁRIO VISUAL GRANDE (EM BLOCO COM DETALHES EMBAIXO) -->
+      <!-- =============================================================== -->
+      <main v-if="currentTeenTab === 'calendar'" class="teen-content-container animated-fade">
+        
+        <div class="calendar-page-header">
+          <div>
+            <h1>Agenda de Aulas Ao Vivo</h1>
+            <p>Selecione um dia no calendário para visualizar as aulas agendadas e confirmar presença.</p>
+          </div>
+          <div class="calendar-month-selector">
+            <span class="month-label">{{ monthNames[calendarMonth] }} {{ calendarYear }}</span>
+          </div>
+        </div>
+
+        <!-- LAYOUT VERTICAL: CALENDÁRIO GRANDE NO TOPO + DETALHES DO DIA EMBAIXO -->
+        <div class="calendar-vertical-layout">
+          
+          <!-- 1. GRADE DO CALENDÁRIO EXPANDIDA (LARGURA TOTAL) -->
+          <div class="calendar-grid-card-large">
+            
+            <div class="calendar-weekdays-row-large">
+              <span v-for="wd in weekDayNames" :key="wd" class="weekday-header">{{ wd }}</span>
+            </div>
+
+            <div class="calendar-days-grid-large">
+              <div 
+                v-for="(cell, index) in calendarDaysGrid" 
+                :key="index"
+                class="calendar-day-cell-large"
+                :class="{ 
+                  'is-empty': !cell.day, 
+                  'is-today': cell.isToday,
+                  'is-selected': cell.day === selectedCalendarDay,
+                  'has-lessons': cell.lessons?.length > 0 
+                }"
+                @click="cell.day && (selectedCalendarDay = cell.day)"
+              >
+                <div v-if="cell.day" class="day-cell-inner-large">
+                  <div class="day-number-row">
+                    <span class="day-number-lg">{{ cell.day }}</span>
+                    <span v-if="cell.lessons?.length > 0" class="day-badge-counter-lg">
+                      {{ cell.lessons.length }}
+                    </span>
+                  </div>
+                  
+                  <div v-if="cell.lessons?.length > 0" class="day-lessons-markers-lg">
+                    <div 
+                      v-for="les in cell.lessons.slice(0, 2)" 
+                      :key="les.id" 
+                      class="day-lesson-pill-lg"
                       :class="{ 
-                        selected: quizSelectedOption === idx,
-                        correct: quizAnswered && idx === activeLesson.quiz.correctIndex,
-                        wrong: quizAnswered && quizSelectedOption === idx && idx !== activeLesson.quiz.correctIndex
+                        'pill-live': les.status === 'ao_vivo', 
+                        'pill-attended': attendedLessons.includes(les.id) 
                       }"
-                      :disabled="quizAnswered"
-                      @click="quizSelectedOption = idx"
                     >
-                      <span class="letter-badge">{{ ['A', 'B', 'C', 'D'][idx] }}</span>
-                      <span>{{ opt }}</span>
+                      <span class="pill-dot"></span>
+                      <span class="pill-text">{{ les.courseLanguage }} • {{ les.formattedDate.split(' ')[0] }}</span>
+                    </div>
+
+                    <div v-if="cell.lessons.length > 2" class="day-more-indicator">
+                      +{{ cell.lessons.length - 2 }} aula(s)
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 2. SEÇÃO DE AULAS DO DIA SELECIONADO (POSICIONADA EMBAIXO DA GRADE) -->
+          <div class="calendar-bottom-detail-section">
+            <div class="bottom-detail-header">
+              <div class="bottom-detail-title-group">
+                <h3>Aulas Agendadas para o Dia {{ selectedCalendarDay }} de {{ monthNames[calendarMonth] }}</h3>
+                <span class="bottom-detail-count">{{ selectedDayLessons.length }} Aula(s) Programada(s)</span>
+              </div>
+            </div>
+
+            <!-- Grid de Aulas do Dia Selecionado -->
+            <div v-if="selectedDayLessons.length > 0" class="bottom-day-lessons-grid">
+              <div 
+                v-for="les in selectedDayLessons" 
+                :key="les.id" 
+                class="bottom-lesson-card"
+                :class="{ 'card-live': les.status === 'ao_vivo' }"
+              >
+                <div class="bottom-card-top">
+                  <span class="lesson-flag-tag">{{ les.courseLanguage }} • {{ les.courseTitle }}</span>
+                  <span v-if="les.status === 'ao_vivo'" class="live-badge-sm">AO VIVO</span>
+                  <span v-else class="scheduled-badge-sm"><i class="ph ph-clock"></i> {{ les.formattedDate }}</span>
+                </div>
+
+                <h4 class="bottom-lesson-title">{{ les.title }}</h4>
+                <p class="bottom-lesson-desc">{{ les.description }}</p>
+
+                <div class="bottom-card-footer">
+                  <div class="instructor-mini">
+                    <img :src="les.instructor?.avatar" :alt="les.instructor?.name" />
+                    <div>
+                      <strong>{{ les.instructor?.name }}</strong>
+                      <small>{{ les.duration }}</small>
+                    </div>
+                  </div>
+
+                  <div class="bottom-card-actions">
+                    <button 
+                      class="btn-confirm-presence-bottom"
+                      :class="{ active: attendedLessons.includes(les.id) }"
+                      @click="toggleAttendance(les)"
+                    >
+                      <i :class="attendedLessons.includes(les.id) ? 'ph ph-check-circle-fill' : 'ph ph-check-circle'"></i>
+                      <span>{{ attendedLessons.includes(les.id) ? 'Presença Confirmada' : 'Confirmar Presença' }}</span>
+                    </button>
+
+                    <button 
+                      class="btn btn-sm btn-primary btn-open-live-bottom"
+                      @click="openLessonFromCalendar(les)"
+                    >
+                      <i :class="les.status === 'ao_vivo' ? 'ph ph-broadcast' : 'ph ph-play'"></i>
+                      <span>{{ les.status === 'ao_vivo' ? 'Entrar na Sala' : 'Abrir Aula' }}</span>
                     </button>
                   </div>
-
-                  <button 
-                    v-if="!quizAnswered" 
-                    class="btn btn-primary" 
-                    :disabled="quizSelectedOption === null"
-                    @click="submitQuizAnswer"
-                  >
-                    Confirmar Resposta ⚡
-                  </button>
-
-                  <div v-else class="quiz-feedback-banner" :class="{ is_correct: quizIsCorrect }">
-                    <strong>{{ quizIsCorrect ? '🎉 Resposta Correta!' : '❌ Resposta Incorreta' }}</strong>
-                    <p>{{ activeLesson.quiz.explanation }}</p>
-                  </div>
                 </div>
-                <p v-else class="text-gray-clean">Esta aula não possui quiz obrigatório.</p>
               </div>
-
-              <!-- ABA ANOTAÇÕES -->
-              <div v-if="lessonActiveTab === 'notes'" class="tab-body-wrapper">
-                <h4>Minhas Anotações desta Aula</h4>
-                <textarea 
-                  v-model="currentNoteText" 
-                  @input="handleSaveNote"
-                  rows="5" 
-                  class="form-control" 
-                  placeholder="Escreva aqui suas dúvidas e anotações (salvo automaticamente)..."
-                ></textarea>
-              </div>
-
             </div>
 
-          </div>
-
-          <!-- LADO DIREITO: MÓDULOS E AULAS DO CURSO (DROPDOWN / ACCORDION) -->
-          <div class="watch-sidebar-section">
-            <div class="course-modules-panel card">
-              <div class="modules-panel-header">
-                <div>
-                  <h4><i class="ph ph-folders"></i> Módulos do Curso</h4>
-                  <small>{{ activeCourse.modules?.length || 0 }} Módulos • Clique para abrir/fechar</small>
-                </div>
-              </div>
-
-              <div class="modules-list-scroll">
-                <div 
-                  v-for="mod in activeCourse.modules" 
-                  :key="mod.id" 
-                  class="module-accordion-group"
-                >
-                  <!-- CABEÇALHO DO MÓDULO (CLICÁVEL PARA ABRIR / FECHAR DROPDOWN) -->
-                  <div class="module-group-heading" @click="toggleModule(mod.id)">
-                    <div class="heading-left">
-                      <span class="mod-number-tag">Módulo {{ mod.order }}</span>
-                      <strong class="mod-title-text">{{ mod.title }}</strong>
-                      <span v-if="isModuleCompleted(mod)" class="mod-completed-badge">
-                        <i class="ph ph-check-circle-fill"></i> Concluído
-                      </span>
-                    </div>
-
-                    <i :class="isModuleOpen(mod.id) ? 'ph ph-caret-up' : 'ph ph-caret-down'" class="caret-toggle-icon"></i>
-                  </div>
-
-                  <!-- AULAS DO MÓDULO (ABERTAS OU FECHADAS VIA DROPDOWN) -->
-                  <div v-show="isModuleOpen(mod.id)" class="module-lessons-group">
-                    <div 
-                      v-for="les in mod.lessons" 
-                      :key="les.id" 
-                      class="lesson-click-item"
-                      :class="{ 
-                        active: activeLesson && activeLesson.id === les.id,
-                        completed: (studentProgress.completedLessons || []).includes(les.id)
-                      }"
-                      @click="selectLesson(mod, les)"
-                    >
-                      <div class="lesson-state-icon">
-                        <i v-if="(studentProgress.completedLessons || []).includes(les.id)" class="ph ph-check-circle-fill icon-green"></i>
-                        <i v-else-if="activeLesson && activeLesson.id === les.id" class="ph ph-play-circle-fill icon-blue"></i>
-                        <i v-else class="ph ph-play-circle"></i>
-                      </div>
-
-                      <div class="lesson-text-content">
-                        <strong>{{ les.title }}</strong>
-                        <div class="lesson-bottom-meta">
-                          <small><i class="ph ph-clock"></i> {{ les.duration }}</small>
-                          <span v-if="(studentProgress.completedLessons || []).includes(les.id)" class="lesson-done-tag">
-                            Concluída
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div v-else class="bottom-empty-state">
+              <i class="ph ph-calendar-blank"></i>
+              <h4>Nenhuma aula programada para o dia {{ selectedCalendarDay }} de {{ monthNames[calendarMonth] }}</h4>
+              <p>Clique em qualquer dia com marcador colorido na agenda acima para visualizar as aulas correspondentes.</p>
             </div>
           </div>
 
@@ -1117,1329 +1222,1152 @@ async function handleTeenLogin() {
 
       </main>
 
-      <!-- =============================================================== -->
-      <!-- 4. CENTRAL DE MATERIAIS DE APOIO -->
-      <!-- =============================================================== -->
-      <main v-if="currentTeenTab === 'materials'" class="teen-content-container animated-fade">
-        <div class="section-heading-row" style="margin-bottom: 24px;">
-          <div>
-            <h2>Central de Materiais de Apoio & Apostilas 📚</h2>
-            <p>Baixe materiais em PDF, áudios e guias de todos os cursos de idiomas.</p>
-          </div>
-        </div>
-
-        <div class="materials-white-grid">
-          <div v-for="mat in allMaterialsList" :key="mat.id" class="material-white-card card">
-            <div class="mat-card-header-tag">
-              <span>{{ mat.courseFlag }} {{ mat.courseLanguage }}</span>
-            </div>
-            <div class="mat-square-icon" :class="mat.type">
-              <i v-if="mat.type === 'pdf'" class="ph ph-file-pdf"></i>
-              <i v-else-if="mat.type === 'audio'" class="ph ph-speaker-high"></i>
-              <i v-else class="ph ph-file-zip"></i>
-            </div>
-            <div class="mat-card-body-text">
-              <span class="size-pill">{{ mat.size }}</span>
-              <h3>{{ mat.title }}</h3>
-              <p>{{ mat.description }}</p>
-              <small class="course-ref">Curso: {{ mat.courseTitle }}</small>
-            </div>
-            <a :href="mat.downloadUrl" class="btn btn-secondary btn-sm btn-block-mat" download>
-              <i class="ph ph-download-simple"></i> Baixar Arquivo
-            </a>
-          </div>
-        </div>
-      </main>
-
-      <!-- BARRA FIXA INFERIOR NO MOBILE -->
-      <nav class="teen-bottom-mobile-nav">
-        <button 
-          class="bottom-nav-btn" 
-          :class="{ active: currentTeenTab === 'home' }"
-          @click="currentTeenTab = 'home'"
-        >
-          <i class="ph ph-house"></i>
-          <span>Início</span>
-        </button>
-
-        <button 
-          class="bottom-nav-btn" 
-          :class="{ active: currentTeenTab === 'courses' || currentTeenTab === 'watch' }"
-          @click="currentTeenTab = 'courses'"
-        >
-          <i class="ph ph-books"></i>
-          <span>Cursos</span>
-        </button>
-
-        <button 
-          class="bottom-nav-btn" 
-          :class="{ active: currentTeenTab === 'materials' }"
-          @click="currentTeenTab = 'materials'"
-        >
-          <i class="ph ph-file-pdf"></i>
-          <span>Materiais</span>
-        </button>
-
-        <button 
-          class="bottom-nav-btn" 
-          @click="showMobileDrawer = true"
-        >
-          <i class="ph ph-list"></i>
-          <span>Menu</span>
-        </button>
-      </nav>
-
-    </div>
-
-    <!-- MODAL DE CONFIRMAÇÃO DE AULA CONCLUÍDA -->
-    <div v-if="showCelebrationModal" class="celebration-overlay">
-      <div class="celebration-white-card animated-bounce">
-        <div class="celebration-emoji-icon">🎉</div>
-        <h2>Aula Concluída com Sucesso!</h2>
-        <p>Seu progresso foi salvo nesta etapa do curso.</p>
-        <div class="badge-done-celebration">
-          <i class="ph ph-check-circle-fill"></i> Progresso Salvo
-        </div>
-      </div>
     </div>
 
   </div>
 </template>
 
 <style scoped>
-/* RESET & ESTRUTURA GERAL BRANCA */
+/* RESET & GERAL */
 .teen-app-wrapper {
   min-height: 100vh;
-  background-color: var(--bg-gray, #F7FAFC);
-  color: var(--text-gray, #5A6A7B);
-  font-family: var(--font-main, 'Poppins', sans-serif);
+  background: #F8FAFC;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #1E293B;
+  display: flex;
+  flex-direction: column;
 }
 
-/* AUTH SCREEN */
+/* AUTH */
 .teen-auth-screen {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--bg-gray, #F7FAFC);
+  background: #0F172A;
 }
 
 .teen-auth-card {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  padding: 36px 32px;
-  border-radius: 20px;
+  background: #FFFFFF;
+  border-radius: 16px;
+  padding: 36px;
   width: 100%;
-  max-width: 440px;
-  text-align: center;
-  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.05));
+  max-width: 420px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 
 .auth-logo-row {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
-.auth-logo-img {
-  max-height: 38px;
-}
+.auth-logo-img { max-height: 36px; }
 
 .badge-teen-tag {
-  background: #215cff;
-  color: white;
-  font-size: 11px;
+  background: #4F46E5;
+  color: #FFFFFF;
   font-weight: 800;
-  padding: 2px 8px;
+  font-size: 11px;
+  padding: 4px 8px;
   border-radius: 6px;
-  letter-spacing: 0.05em;
 }
 
-.teen-auth-card h2 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--primary, #0B3C82);
-  margin-bottom: 8px;
-}
+.teen-auth-card h2 { font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 8px; }
+.teen-auth-card p { font-size: 13px; color: #64748B; line-height: 1.5; margin-bottom: 20px; }
 
-.teen-auth-card p {
-  font-size: 13px;
-  color: var(--text-gray, #5A6A7B);
-  margin-bottom: 24px;
-}
-
-.teen-auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  text-align: left;
-}
-
-.teen-auth-form label {
+.admin-quick-pill {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: #F0FDF4;
+  border: 1px dashed #22C55E;
+  border-radius: 8px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--primary, #0B3C82);
-  margin-bottom: 4px;
-  display: block;
+  color: #166534;
 }
 
-.input-icon-box {
-  position: relative;
-}
+.admin-quick-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.btn-fill-admin { background: #16A34A; color: white; border: none; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-weight: 600; }
+.admin-quick-details { font-size: 11px; }
+.admin-quick-details code { background: #DCFCE7; padding: 2px 4px; border-radius: 4px; }
 
-.input-icon-box i {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #94a3b8;
-}
+.teen-auth-form .form-group { margin-bottom: 16px; }
+.teen-auth-form label { display: block; font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 6px; }
 
-.input-icon-box input {
-  width: 100%;
-  padding: 12px 14px 12px 40px;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 10px;
-  font-size: 14px;
-  outline: none;
-}
+.input-icon-box { position: relative; }
+.input-icon-box i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94A3B8; font-size: 18px; }
+.input-icon-box input { width: 100%; padding: 10px 12px 10px 38px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 14px; outline: none; }
+.input-icon-box input:focus { border-color: #4F46E5; }
 
-.btn-full-teen {
-  width: 100%;
-  padding: 12px;
-  font-weight: 700;
-  border-radius: 10px;
-}
+.btn-full-teen { width: 100%; padding: 12px; background: #4F46E5; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-back-club-link { width: 100%; background: transparent; border: none; margin-top: 16px; font-size: 13px; color: #64748B; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-.auth-guest-row {
-  margin-top: 14px;
-}
-
-.btn-back-club-link {
-  background: transparent;
-  border: none;
-  color: var(--text-gray, #5A6A7B);
-  font-size: 12px;
-  margin-top: 18px;
-  cursor: pointer;
-}
-
-/* NAVBAR LIMPA: APENAS LOGO, NAV E PERFIL */
+/* TOPBAR */
 .teen-topbar {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E2E8F0;
   position: sticky;
   top: 0;
-  z-index: 1000;
-  background: white;
-  border-bottom: 1px solid var(--border-color, #DCE7F0);
-  padding: 0 32px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  z-index: 990;
 }
 
 .teen-topbar-container {
-  max-width: 1560px;
+  max-width: 1280px;
   margin: 0 auto;
-  height: 64px;
+  padding: 12px 24px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 24px;
-}
-
-.teen-logo-area {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  cursor: pointer;
 }
 
-.teen-brand-logo {
-  max-height: 36px;
-}
+.teen-logo-area { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.teen-brand-logo { max-height: 34px; }
 
-.teen-nav-menu {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  height: 100%;
-}
-
+.teen-nav-menu { display: flex; align-items: center; gap: 8px; }
 .nav-tab-link {
   background: transparent;
   border: none;
-  border-bottom: 3px solid transparent;
-  color: var(--text-gray, #5A6A7B);
-  font-size: 14px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 0 18px;
-  height: 100%;
-  border-radius: 0;
+  color: #64748B;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s ease;
+  transition: all 0.2s;
 }
 
-.nav-tab-link:hover {
-  background: transparent;
-  color: var(--primary, #0B3C82);
+.nav-tab-link:hover { background: #F1F5F9; color: #0F172A; }
+.nav-tab-link.active { background: #EEF2FF; color: #4F46E5; }
+.highlight-live-tab { color: #EF4444; }
+.highlight-live-tab.active { background: #FEE2E2; color: #DC2626; }
+
+.live-dot-pulse {
+  width: 8px;
+  height: 8px;
+  background: #EF4444;
+  border-radius: 50%;
+  display: inline-block;
 }
 
-.nav-tab-link.active {
-  background: transparent;
-  color: var(--primary, #0B3C82);
-  font-weight: 700;
-  border-bottom: 3px solid var(--primary, #0B3C82);
-}
-
-.teen-profile-dropdown-wrapper {
-  position: relative;
-}
-
+.teen-topbar-actions { display: flex; align-items: center; gap: 12px; }
+.teen-profile-dropdown-wrapper { position: relative; }
 .teen-user-avatar-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
-  padding: 6px 14px;
-  border-radius: 999px;
+  background: #F1F5F9;
+  padding: 6px 12px;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--text-dark, #0B3C82);
   font-weight: 600;
+  border: 1px solid #E2E8F0;
+}
+
+.avatar-initials {
+  background: #4F46E5;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-initials-mini {
+  background: #E2E8F0;
+  color: #334155;
+  font-size: 10px;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-initials-lg {
+  background: #4F46E5;
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .teen-dropdown-card {
   position: absolute;
   right: 0;
-  top: 48px;
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
+  top: 110%;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
   border-radius: 12px;
-  width: 230px;
-  padding: 8px;
-  box-shadow: var(--shadow-md);
-  z-index: 9999;
+  padding: 12px;
+  width: 240px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  z-index: 1000;
 }
 
-.dropdown-head { padding: 8px 12px; }
-.dropdown-head strong { display: block; font-size: 13px; color: var(--text-dark, #0B3C82); }
-.dropdown-head small { font-size: 11px; color: var(--text-gray, #5A6A7B); }
-.dropdown-divider { height: 1px; background: var(--border-color, #DCE7F0); margin: 6px 0; }
+.dropdown-head strong { font-size: 13px; color: #0F172A; display: block; }
+.dropdown-head small { font-size: 11px; color: #64748B; }
+.dropdown-divider { height: 1px; background: #E2E8F0; margin: 6px 0; }
+.dropdown-section-title { font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase; padding: 4px 8px; }
 
 .dropdown-option-btn {
   width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: none;
   background: transparent;
-  font-size: 13px;
-  cursor: pointer;
+  border: none;
+  padding: 8px;
+  border-radius: 6px;
   text-align: left;
-}
-
-.dropdown-option-btn:hover { background: var(--bg-gray, #F7FAFC); }
-.dropdown-option-btn.text-purple { color: #7e22ce; font-weight: 600; }
-.dropdown-option-btn.text-primary { color: var(--primary, #0B3C82); font-weight: 600; }
-.dropdown-option-btn.text-danger { color: #dc2626; }
-
-/* CONTAINER PRINCIPAL AMPLO */
-.teen-content-container {
-  max-width: 1560px;
-  margin: 0 auto;
-  padding: 32px 32px 64px;
-}
-
-/* BANNER DE BOAS-VINDAS CLEAN */
-.teen-welcome-banner {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 20px;
-  padding: 44px 52px;
-  display: flex;
-  gap: 40px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 36px;
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05));
-}
-
-.welcome-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--primary-light, #E8F0FA);
-  color: var(--primary, #0B3C82);
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-
-.welcome-left-col h1 {
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--text-dark, #0B3C82);
-  margin-bottom: 8px;
-}
-
-.welcome-left-col p {
-  font-size: 14px;
-  color: var(--text-gray, #5A6A7B);
-  max-width: 580px;
-  margin-bottom: 20px;
-}
-
-.welcome-buttons-row {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.btn-cta-main {
-  font-weight: 700;
-  padding: 12px 22px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-secondary-clean {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  color: var(--primary, #0B3C82);
-  padding: 12px 20px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.btn-secondary-clean:hover { background: var(--bg-gray, #F7FAFC); }
+.dropdown-option-btn:hover { background: #F1F5F9; }
+.dropdown-option-btn.active { background: #EEF2FF; color: #4F46E5; font-weight: 700; }
+.text-purple { color: #7C3AED !important; }
+.text-primary { color: #0B3C82 !important; }
+.text-danger { color: #EF4444 !important; }
 
-.info-pill-box {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex-shrink: 0;
+.btn-mobile-hamburger { display: none; background: transparent; border: none; font-size: 24px; cursor: pointer; color: #334155; }
+@media (max-width: 860px) {
+  .desktop-only-nav { display: none; }
+  .btn-mobile-hamburger { display: block; }
 }
 
-.info-pill-item {
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
-  padding: 12px 18px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 240px;
+/* CONTAINER PRINCIPAL */
+.teen-content-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+  width: 100%;
+  flex-grow: 1;
 }
 
-.info-pill-item i { font-size: 22px; }
-.info-pill-item i.icon-blue { color: #215cff; }
-.info-pill-item i.icon-green { color: #16a34a; }
-.info-pill-item i.icon-orange { color: #d97706; }
-
-.info-pill-item strong { font-size: 13px; color: var(--text-dark, #0B3C82); display: block; }
-.info-pill-item small { font-size: 11px; color: var(--text-gray, #5A6A7B); }
-
-/* SEÇÕES DE CURSOS */
-.section-heading-row {
+.page-simple-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.section-heading-row h2 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-dark, #0B3C82);
-}
+.page-simple-header h1 { font-size: 24px; font-weight: 800; color: #0F172A; margin-bottom: 4px; }
+.page-simple-header p { font-size: 13px; color: #64748B; }
 
-.section-heading-row p {
-  font-size: 13px;
-  color: var(--text-gray, #5A6A7B);
-}
+.search-simple-box { position: relative; min-width: 240px; }
+.search-simple-box i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94A3B8; }
+.search-simple-box input { width: 100%; padding: 8px 12px 8px 34px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 12px; outline: none; }
 
-.btn-link-clean {
-  background: transparent;
-  border: none;
-  color: var(--primary, #0B3C82);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+/* GRID DE CARDS */
 .courses-white-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 24px;
 }
 
-.course-white-card {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 16px;
+.course-card-interactive {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05));
-  transition: var(--transition, all 0.2s);
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.course-white-card:hover {
+.course-card-interactive:hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.05));
-  border-color: #cbd5e1;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+  border-color: #CBD5E1;
 }
 
 .card-cover-image {
-  height: 160px;
+  height: 150px;
   background-size: cover;
   background-position: center;
-  position: relative;
   padding: 12px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
 }
 
-.card-cover-image::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(11, 60, 130, 0.6) 100%);
+.cover-flag-pill { background: rgba(15,23,42,0.85); color: white; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 6px; }
+.cover-tag-pill { background: #4F46E5; color: white; font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 6px; }
+
+.card-main-body { padding: 18px; display: flex; flex-direction: column; flex-grow: 1; }
+.card-meta-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.meta-badge { background: #F1F5F9; color: #475569; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+
+.course-card-title { font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 6px; line-height: 1.4; }
+.course-card-desc { font-size: 13px; color: #64748B; line-height: 1.5; margin-bottom: 14px; flex-grow: 1; }
+
+.course-next-live-pill {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
 }
 
-.cover-flag-pill, .cover-tag-pill {
-  position: relative;
-  z-index: 2;
-  font-size: 11px;
+.next-live-left { display: flex; align-items: center; gap: 8px; }
+.next-live-countdown { display: block; font-size: 11px; font-weight: 700; color: #4F46E5; }
+.next-live-name { display: block; font-size: 11px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+
+.card-footer-box { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid #F1F5F9; }
+.instructor-mini-profile { display: flex; align-items: center; gap: 8px; }
+.instructor-mini-profile img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+.instructor-mini-profile strong { font-size: 12px; color: #0F172A; display: block; }
+.instructor-mini-profile small { font-size: 10px; color: #94A3B8; }
+
+.btn-enter-course {
+  padding: 8px 14px;
+  font-size: 12px;
   font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 999px;
-}
-
-.cover-flag-pill {
-  background: rgba(11, 60, 130, 0.85);
-  color: white;
-}
-
-.cover-tag-pill {
-  background: #f59e0b;
-  color: #78350f;
-}
-
-.card-main-body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.card-meta-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.meta-badge {
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--bg-gray, #F7FAFC);
-  color: var(--text-gray, #5A6A7B);
-  padding: 3px 8px;
   border-radius: 6px;
+  background: #4F46E5;
+  color: white;
+  border: none;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
-.meta-badge.star-badge {
-  background: #fefce8;
-  color: #854d0e;
+.empty-courses-box {
+  background: #FFFFFF;
+  border: 1px dashed #CBD5E1;
+  border-radius: 14px;
+  padding: 56px 24px;
+  text-align: center;
+  max-width: 540px;
+  margin: 40px auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
 }
 
-.course-card-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-dark, #0B3C82);
+.empty-courses-icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #EEF2FF;
+  color: #4F46E5;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.empty-courses-box h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0F172A;
   margin-bottom: 6px;
 }
 
-.course-card-desc {
-  font-size: 12px;
-  color: var(--text-gray, #5A6A7B);
-  margin-bottom: 14px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.course-stats-bar {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--primary, #0B3C82);
-  font-weight: 600;
-  background: var(--primary-light, #E8F0FA);
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-}
-
-.card-footer-box {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: auto;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-color, #DCE7F0);
-}
-
-.instructor-mini-profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.instructor-mini-profile img {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid var(--border-color, #DCE7F0);
-}
-
-.instructor-mini-profile strong {
+.empty-courses-box p {
   font-size: 13px;
-  color: var(--text-dark, #0B3C82);
-  display: block;
-}
-
-.instructor-mini-profile small {
-  font-size: 11px;
-  color: var(--text-gray, #5A6A7B);
-  display: block;
-}
-
-.btn-block-watch {
-  width: 100%;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 10px 16px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-shadow: 0 2px 4px rgba(11, 60, 130, 0.1);
-  transition: all 0.2s ease;
-}
-
-.btn-block-watch:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(11, 60, 130, 0.15);
-}
-
-/* FILTROS */
-.filters-white-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.filters-top-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  flex-wrap: wrap;
-}
-
-.categories-pills-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.lang-pills-row {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-}
-
-.btn-filter-pill {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  color: var(--text-gray, #5A6A7B);
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn-filter-pill.active {
-  background: var(--primary, #0B3C82);
-  color: white;
-  border-color: var(--primary, #0B3C82);
-}
-
-.search-input-box {
-  position: relative;
-  min-width: 240px;
-}
-
-.search-input-box i {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #94a3b8;
-}
-
-.search-input-box input {
-  width: 100%;
-  padding: 8px 12px 8px 36px;
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 10px;
-  font-size: 13px;
-  outline: none;
-}
-
-/* ================================================================= */
-/* TELA DE ASSISTIR O CURSO (VÍDEO + MÓDULOS & AULAS EM DROPDOWN) */
-/* ================================================================= */
-.watch-top-bar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 16px;
-}
-
-.btn-sm-back {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.watch-course-heading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.badge-lang-clean {
-  background: var(--primary, #0B3C82);
-  color: white;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.watch-course-heading h2 {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-dark, #0B3C82);
-}
-
-.watch-layout-grid {
-  display: grid;
-  grid-template-columns: 1fr 440px;
-  gap: 32px;
-}
-
-/* Player Frame */
-.video-display-card {
-  position: relative;
-  padding-bottom: 56.25%;
-  height: 0;
-  background: black;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: var(--shadow-md);
-  margin-bottom: 16px;
-}
-
-.video-iframe-embed {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.video-empty-notice {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #94a3b8;
-  font-size: 14px;
-}
-
-.lesson-info-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: white;
-  padding: 16px 20px;
-  border-radius: 14px;
-  border: 1px solid var(--border-color, #DCE7F0);
+  color: #64748B;
+  line-height: 1.5;
   margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 
-.module-indicator {
-  font-size: 11px;
+.btn-admin-empty {
+  padding: 10px 20px;
+  font-size: 13px;
   font-weight: 700;
-  color: #215cff;
-  display: block;
-}
-
-.lesson-title-box h3 {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-dark, #0B3C82);
-  margin: 2px 0;
-}
-
-.lesson-meta-badges-line {
-  display: flex;
+  border-radius: 8px;
+  background: #4F46E5;
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.lesson-meta-badges-line small {
-  font-size: 11px;
-  color: var(--text-gray, #5A6A7B);
+/* ===============================================================
+   PÁGINA DO CURSO SELECIONADO
+   =============================================================== */
+.course-detail-header-nav { margin-bottom: 16px; }
+.btn-back-courses { background: transparent; border: none; color: #4F46E5; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+
+.course-hero-banner {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-radius: 14px;
+  padding: 32px;
+  margin-bottom: 24px;
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 28px;
+  align-items: center;
 }
 
-.badge-completed-pill {
+.course-hero-tag {
+  background: #4F46E5;
+  color: #FFFFFF !important;
   font-size: 11px;
   font-weight: 700;
-  background: #dcfce7;
-  color: #166534;
-  padding: 2px 8px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 10px;
 }
 
-.lesson-actions-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.hero-white-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: #FFFFFF !important;
+  margin-bottom: 10px;
+  line-height: 1.3;
 }
 
-.btn-complete-toggle {
-  background: var(--primary, #0B3C82);
-  color: white;
-  border: none;
-  font-weight: 600;
-  font-size: 12px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.hero-white-desc {
+  font-size: 14px;
+  color: #E2E8F0 !important;
+  line-height: 1.6;
+  margin-bottom: 18px;
 }
 
-.btn-complete-toggle.is_completed {
-  background: #16a34a;
+.course-instructor-hero { display: flex; align-items: center; gap: 10px; }
+.course-instructor-hero img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+.instructor-white-name { display: block; font-size: 13px; color: #FFFFFF !important; font-weight: 700; }
+.instructor-white-role { font-size: 12px; color: #CBD5E1 !important; }
+
+/* CARD DA PRÓXIMA AULA */
+.next-lesson-highlight-card {
+  background: #FFFFFF;
+  color: #0F172A;
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
-.nav-arrows-box { display: flex; gap: 4px; }
-.btn-arrow {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  color: var(--primary, #0B3C82);
-  cursor: pointer;
+.next-lesson-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.badge-next-live { background: #FEE2E2; color: #DC2626; font-size: 10px; font-weight: 800; padding: 3px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
+.countdown-badge-pill { background: #EEF2FF; color: #4F46E5; font-size: 11px; font-weight: 700; padding: 3px 6px; border-radius: 4px; }
+
+.next-lesson-card-body h3 { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 4px; }
+.next-lesson-card-body p { font-size: 12px; color: #64748B; margin-bottom: 12px; }
+.next-lesson-meta { display: flex; gap: 12px; font-size: 12px; color: #64748B; margin-bottom: 14px; }
+.next-lesson-actions { display: flex; flex-direction: column; gap: 8px; }
+
+.btn-join-live {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
 }
 
-/* Abas da Aula */
-.lesson-tabs-card {
-  background: white;
-  border-radius: 16px;
-  border: 1px solid var(--border-color, #DCE7F0);
-  overflow: hidden;
+@media (max-width: 900px) {
+  .course-hero-banner { grid-template-columns: 1fr; }
 }
 
-.tabs-header-bar {
+/* ABAS INTERNAS DO CURSO */
+.course-tabs-bar {
   display: flex;
-  gap: 4px;
-  padding: 8px 12px;
-  background: var(--bg-gray, #F7FAFC);
-  border-bottom: 1px solid var(--border-color, #DCE7F0);
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #E2E8F0;
+  padding-bottom: 8px;
   overflow-x: auto;
 }
 
-.tab-nav-btn {
-  padding: 8px 14px;
-  border: none;
+.course-tab-btn {
   background: transparent;
-  color: var(--text-gray, #5A6A7B);
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.tab-nav-btn.active {
-  background: white;
-  color: var(--primary, #0B3C82);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.tab-body-wrapper {
-  padding: 20px;
-}
-
-.tab-body-wrapper h4 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-dark, #0B3C82);
-  margin-bottom: 14px;
-}
-
-/* Vocabulário */
-.vocab-clean-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.vocab-item-card {
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 10px;
-  padding: 12px;
-}
-
-.vocab-item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.vocab-item-header strong { font-size: 14px; color: var(--primary, #0B3C82); }
-
-.btn-audio-speak-clean {
-  background: var(--primary-light, #E8F0FA);
-  border: 1px solid #bfdbfe;
-  color: var(--primary, #0B3C82);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.vocab-definition { font-size: 12px; color: var(--text-gray, #5A6A7B); margin-bottom: 4px; }
-.vocab-example-quote { font-size: 11px; color: #94a3b8; font-style: italic; display: block; }
-
-/* Materiais da Aula */
-.materials-list-clean {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.material-row-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--bg-gray, #F7FAFC);
-  padding: 12px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color, #DCE7F0);
-}
-
-.mat-left-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.mat-icon-square {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #fee2e2;
-  color: #dc2626;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-}
-
-.mat-left-info strong { display: block; font-size: 13px; color: var(--text-dark, #0B3C82); }
-.mat-left-info small { font-size: 11px; color: var(--text-gray, #5A6A7B); }
-
-/* Quiz */
-.quiz-clean-box {
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.quiz-options-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 14px 0;
-}
-
-.quiz-option-pill {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 8px;
-  color: var(--text-dark, #0B3C82);
-  cursor: pointer;
-  text-align: left;
+  border: none;
+  padding: 10px 18px;
   font-size: 13px;
-}
-
-.quiz-option-pill.selected { border-color: var(--primary, #0B3C82); background: var(--primary-light, #E8F0FA); }
-.quiz-option-pill.correct { border-color: #16a34a; background: #dcfce7; }
-.quiz-option-pill.wrong { border-color: #dc2626; background: #fee2e2; }
-
-.letter-badge {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--bg-gray, #F7FAFC);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
   font-weight: 700;
-}
-
-.quiz-feedback-banner {
-  margin-top: 12px;
-  padding: 10px;
-  border-radius: 6px;
-  background: #fee2e2;
-  color: #991b1b;
-  font-size: 12px;
-}
-
-.quiz-feedback-banner.is_correct {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.text-gray-clean { font-size: 13px; color: var(--text-gray, #5A6A7B); }
-
-/* SIDEBAR DE MÓDULOS E AULAS COM DROPDOWN INTERATIVO */
-.course-modules-panel {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 16px;
-  overflow: hidden;
-  position: sticky;
-  top: 80px;
-  box-shadow: var(--shadow-sm);
-}
-
-.modules-panel-header {
-  padding: 14px 18px;
-  background: var(--bg-gray, #F7FAFC);
-  border-bottom: 1px solid var(--border-color, #DCE7F0);
-}
-
-.modules-panel-header h4 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-dark, #0B3C82);
-}
-
-.modules-panel-header small { font-size: 11px; color: var(--text-gray, #5A6A7B); }
-
-.modules-list-scroll {
-  max-height: 580px;
-  overflow-y: auto;
-}
-
-.module-accordion-group {
-  border-bottom: 1px solid var(--border-color, #DCE7F0);
-}
-
-.module-accordion-group:last-child { border-bottom: none; }
-
-/* CABEÇALHO DO MÓDULO (CLIQUE ABRE/FECHA) */
-.module-group-heading {
-  padding: 12px 16px;
-  background: var(--bg-gray, #F7FAFC);
+  color: #64748B;
+  border-radius: 8px;
   cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: var(--transition, all 0.2s);
-  user-select: none;
-}
-
-.module-group-heading:hover {
-  background: #eef4fb;
-}
-
-.heading-left {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-
-.mod-number-tag {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--primary, #0B3C82);
-  background: var(--primary-light, #E8F0FA);
-  padding: 2px 6px;
-  border-radius: 4px;
-  display: inline-block;
-  align-self: flex-start;
-}
-
-.mod-title-text {
-  font-size: 13px;
-  color: var(--text-dark, #0B3C82);
-}
-
-.mod-completed-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: #16a34a;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  transition: all 0.15s;
 }
 
-.caret-toggle-icon {
-  font-size: 16px;
-  color: var(--text-gray, #5A6A7B);
-  margin-left: 8px;
+.course-tab-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
 }
 
-/* LISTA DE AULAS DO MÓDULO */
-.module-lessons-group {
+.course-tab-btn.active {
+  background: #4F46E5;
+  color: #FFFFFF;
+}
+
+.course-tab-content-pane {
   display: flex;
   flex-direction: column;
-  background: white;
-  border-top: 1px solid var(--border-color, #DCE7F0);
-}
-
-.lesson-click-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.lesson-click-item:last-child {
-  border-bottom: none;
-}
-
-.lesson-click-item:hover { background: var(--bg-gray, #F7FAFC); }
-
-.lesson-click-item.active {
-  background: var(--primary-light, #E8F0FA);
-  border-left: 3px solid var(--primary, #0B3C82);
-}
-
-.lesson-state-icon {
-  font-size: 16px;
-  color: #94a3b8;
-  flex-shrink: 0;
-}
-
-.lesson-text-content {
-  flex: 1;
-}
-
-.lesson-text-content strong {
-  display: block;
-  font-size: 12px;
-  color: var(--text-dark, #0B3C82);
-}
-
-.lesson-bottom-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.lesson-bottom-meta small {
-  font-size: 10px;
-  color: var(--text-gray, #5A6A7B);
-}
-
-.lesson-done-tag {
-  font-size: 9px;
-  font-weight: 700;
-  background: #dcfce7;
-  color: #166534;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.icon-green { color: #16a34a; }
-.icon-blue { color: #215cff; }
-
-/* CENTRAL DE MATERIAIS */
-.materials-white-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
 }
 
-.material-white-card {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  border-radius: 16px;
-  padding: 20px;
+/* LISTA DE AULAS AO VIVO */
+.modules-vertical-stack { display: flex; flex-direction: column; gap: 20px; }
+.module-group-card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; }
+.module-group-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #F1F5F9; }
+.module-group-header h3 { font-size: 15px; font-weight: 700; color: #0F172A; }
+.module-lessons-count { font-size: 12px; color: #64748B; }
+
+.lessons-vertical-column { display: flex; flex-direction: column; gap: 10px; }
+.lesson-item-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  overflow: hidden;
+}
+
+.lesson-thumb-col { height: 100%; min-height: 110px; background-size: cover; background-position: center; padding: 8px; position: relative; }
+.thumb-status-pill { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+.status-live { background: #EF4444; color: white; }
+.status-locked { background: rgba(15,23,42,0.85); color: white; }
+.status-recorded { background: #64748B; color: white; }
+
+.lesson-info-col { padding: 14px 16px; display: flex; flex-direction: column; }
+.lesson-timing-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.lesson-countdown-tag { font-size: 11px; font-weight: 700; color: #4F46E5; background: #EEF2FF; padding: 2px 6px; border-radius: 4px; }
+.lesson-countdown-tag.tag-live { color: #DC2626; background: #FEE2E2; }
+.lesson-duration-badge { font-size: 11px; color: #64748B; }
+
+.lesson-title { font-size: 14px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
+.lesson-desc { font-size: 12px; color: #64748B; margin-bottom: 10px; flex-grow: 1; }
+
+.lesson-footer-actions { display: flex; align-items: center; gap: 8px; }
+
+/* AULAS GRAVADAS */
+.recorded-lessons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.recorded-card-item {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.recorded-thumb {
+  height: 160px;
+  background-size: cover;
+  background-position: center;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   position: relative;
-  box-shadow: var(--shadow-sm);
 }
 
-.mat-card-header-tag {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  background: var(--primary-light, #E8F0FA);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
+.recorded-badge {
+  background: rgba(15, 23, 42, 0.85);
+  color: white;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--primary, #0B3C82);
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.mat-square-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+.recorded-duration {
+  background: rgba(0,0,0,0.7);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.recorded-info {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.recorded-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748B;
+  margin-bottom: 4px;
+}
+
+.recorded-info h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 6px;
+}
+
+.recorded-info p {
+  font-size: 12px;
+  color: #64748B;
+  line-height: 1.5;
+  margin-bottom: 14px;
+  flex-grow: 1;
+}
+
+.btn-watch-recorded {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  margin-bottom: 12px;
+  gap: 6px;
+  padding: 8px;
 }
 
-.mat-square-icon.pdf { background: #fee2e2; color: #dc2626; }
-.mat-square-icon.audio { background: #f3e8ff; color: #7e22ce; }
-.mat-square-icon.zip { background: #fef3c7; color: #d97706; }
+/* MATERIAIS DE APOIO */
+.materials-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
 
-.mat-card-body-text h3 { font-size: 15px; font-weight: 700; color: var(--text-dark, #0B3C82); margin-bottom: 4px; }
-.mat-card-body-text p { font-size: 12px; color: var(--text-gray, #5A6A7B); margin-bottom: 8px; }
-.size-pill { font-size: 10px; font-weight: 700; color: #16a34a; margin-bottom: 6px; display: block; }
-.course-ref { font-size: 11px; color: #94a3b8; margin-bottom: 14px; display: block; }
+.material-item-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
 
-.btn-block-mat {
-  margin-top: auto;
-  width: 100%;
+.material-pdf-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #FEE2E2;
+  color: #DC2626;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.material-item-details {
+  flex-grow: 1;
+}
+
+.material-item-details h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 2px;
+}
+
+.material-item-details p {
+  font-size: 11px;
+  color: #64748B;
+  margin-bottom: 4px;
+}
+
+.mat-size-badge {
+  font-size: 10px;
+  color: #94A3B8;
+  font-weight: 600;
+}
+
+.empty-tab-box {
+  background: #FFFFFF;
+  border: 1px dashed #CBD5E1;
+  border-radius: 12px;
+  padding: 48px 24px;
+  text-align: center;
+  color: #94A3B8;
+}
+
+.empty-tab-box i {
+  font-size: 36px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.empty-tab-box h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 4px;
+}
+
+.empty-tab-box p {
+  font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .lesson-item-card { grid-template-columns: 1fr; }
+  .lesson-thumb-col { height: 90px; min-height: auto; }
+}
+
+/* ===============================================================
+   SALA DE AULA AO VIVO (LIMPA: SEM BOTÃO DE PRESENÇA)
+   =============================================================== */
+.live-classroom-container { max-width: 1320px; margin: 0 auto; padding: 16px 20px 60px; width: 100%; }
+.classroom-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.classroom-breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.btn-back-nav { background: transparent; border: none; color: #4F46E5; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.crumb-divider { color: #CBD5E1; }
+.crumb-course { color: #64748B; }
+.crumb-lesson { color: #0F172A; font-weight: 700; }
+
+.live-pill-header { background: #FEE2E2; color: #DC2626; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
+.locked-pill-header { background: #FEF3C7; color: #D97706; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+.recorded-pill-header { background: #E2E8F0; color: #475569; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+
+.classroom-split-layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+@media (max-width: 1080px) { .classroom-split-layout { grid-template-columns: 1fr; } }
+
+.classroom-left-col { display: flex; flex-direction: column; gap: 16px; }
+.live-player-box { background: #000000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; position: relative; }
+.live-iframe-player { width: 100%; height: 100%; border: none; }
+
+.live-locked-overlay {
+  position: absolute;
+  inset: 0;
+  background: #0F172A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  padding: 24px;
+  text-align: center;
+}
+
+.locked-content-box { max-width: 440px; display: flex; flex-direction: column; align-items: center; }
+
+.lock-icon-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: #FBBF24;
+  margin-bottom: 14px;
+}
+
+.locked-white-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #FFFFFF !important;
+  margin-bottom: 8px;
+}
+
+.locked-white-desc {
+  font-size: 14px;
+  color: #E2E8F0 !important;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.locked-white-desc strong { color: #FFFFFF !important; }
+
+.classroom-lesson-details { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 20px; }
+.lesson-header-row-clean { padding-bottom: 14px; border-bottom: 1px solid #F1F5F9; }
+.lesson-main-title { font-size: 18px; font-weight: 700; color: #0F172A; margin-bottom: 4px; }
+.lesson-meta-chips { display: flex; gap: 12px; font-size: 12px; color: #64748B; }
+
+.lesson-body-section { padding-top: 16px; }
+.lesson-full-desc { font-size: 13px; color: #475569; line-height: 1.6; margin-bottom: 16px; }
+.instructor-card-row { display: flex; align-items: center; gap: 10px; background: #F8FAFC; padding: 10px 14px; border-radius: 8px; }
+.instructor-avatar-lg { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+.instructor-details strong { display: block; font-size: 13px; color: #0F172A; }
+.instructor-details span { font-size: 11px; color: #64748B; }
+
+/* CHAT & PESSOAS */
+.live-interaction-panel {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  height: 560px;
+  overflow: hidden;
+}
+
+.interaction-tabs-header { display: flex; border-bottom: 1px solid #E2E8F0; background: #F8FAFC; }
+.tab-interact-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748B;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
 }
 
-/* MODAL ADMIN */
-.teen-admin-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(11, 60, 130, 0.4);
-  backdrop-filter: blur(4px);
-  z-index: 99999;
+.tab-interact-btn.active { color: #4F46E5; background: #FFFFFF; border-bottom: 2px solid #4F46E5; }
+.live-chat-wrapper { display: flex; flex-direction: column; flex-grow: 1; height: calc(100% - 40px); }
+.chat-messages-feed { flex-grow: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+
+.chat-msg-row { display: flex; align-items: flex-start; gap: 8px; }
+.chat-user-initials {
+  font-size: 10px;
+  font-weight: 700;
+  background: #E2E8F0;
+  color: #334155;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  flex-shrink: 0;
 }
 
-.teen-admin-modal-card {
-  background: white;
-  width: 100%;
-  max-width: 1100px;
-  height: 88vh;
-  border-radius: 16px;
+.chat-msg-content { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 8px 10px; max-width: calc(100% - 36px); }
+.chat-msg-row.is-instructor .chat-msg-content { background: #EEF2FF; border-color: #C7D2FE; }
+.chat-msg-row.is-me .chat-msg-content { background: #F0FDF4; border-color: #BBF7D0; }
+
+.chat-msg-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.chat-author-name { font-size: 11px; color: #0F172A; }
+.badge-role-instructor { background: #4F46E5; color: white; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 4px; }
+.chat-time { font-size: 10px; color: #94A3B8; margin-left: auto; }
+.chat-bubble-text { font-size: 12px; color: #334155; line-height: 1.4; word-break: break-word; }
+
+.chat-input-form { padding: 10px; border-top: 1px solid #E2E8F0; display: flex; gap: 8px; align-items: center; }
+.chat-input { flex-grow: 1; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px 12px; font-size: 12px; outline: none; }
+.chat-input:focus { border-color: #4F46E5; }
+
+.btn-send-chat {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: #4F46E5;
+  color: #FFFFFF !important;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.btn-send-chat:hover { background: #4338CA; }
+.btn-send-chat i { color: #FFFFFF !important; }
+
+.live-people-wrapper { display: flex; flex-direction: column; height: calc(100% - 40px); }
+.people-list-scroll { flex-grow: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.person-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; }
+.person-row.is-me { background: #F0FDF4; border-color: #86EFAC; }
+.person-initials { font-size: 10px; font-weight: 700; background: #E2E8F0; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.person-info { flex-grow: 1; }
+.person-info strong { display: block; font-size: 12px; color: #0F172A; }
+.person-info small { font-size: 10px; color: #64748B; display: flex; align-items: center; gap: 4px; }
+.status-dot-green { width: 6px; height: 6px; background: #22C55E; border-radius: 50%; }
+
+/* ===============================================================
+   AGENDA / CALENDÁRIO VISUAL GRANDE (LAYOUT VERTICAL COM DETALHES EMBAIXO)
+   =============================================================== */
+.calendar-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.calendar-page-header h1 { font-size: 24px; font-weight: 800; color: #0F172A; margin-bottom: 4px; }
+.calendar-page-header p { font-size: 13px; color: #64748B; }
+.calendar-month-selector { background: #FFFFFF; border: 1px solid #CBD5E1; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 700; color: #0F172A; }
+
+.calendar-vertical-layout {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  gap: 28px;
+  width: 100%;
 }
 
-.modal-admin-top {
-  background: var(--bg-gray, #F7FAFC);
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border-color, #DCE7F0);
+/* GRADE DO CALENDÁRIO GRANDE */
+.calendar-grid-card-large {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.calendar-weekdays-row-large {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748B;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F1F5F9;
+  margin-bottom: 12px;
+}
+
+.calendar-days-grid-large {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+}
+
+.calendar-day-cell-large {
+  min-height: 95px;
+  height: 95px;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  background: #FFFFFF;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.calendar-day-cell-large:hover:not(.is-empty) {
+  border-color: #4F46E5;
+  background: #F8FAFC;
+  transform: translateY(-1px);
+}
+
+.calendar-day-cell-large.is-empty {
+  background: #F8FAFC;
+  border-color: #F1F5F9;
+  cursor: default;
+}
+
+.calendar-day-cell-large.is-today {
+  border-color: #4F46E5;
+  background: #EEF2FF;
+}
+
+.calendar-day-cell-large.is-selected {
+  border-color: #4F46E5;
+  background: #EEF2FF;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3);
+}
+
+.day-cell-inner-large {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.day-number-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.day-number-lg {
+  font-size: 13px;
+  font-weight: 800;
+  color: #334155;
+}
+
+.is-today .day-number-lg { color: #4F46E5; }
+
+.day-badge-counter-lg {
+  background: #4F46E5;
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.day-lessons-markers-lg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.day-lesson-pill-lg {
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #3730A3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-lesson-pill-lg.pill-live {
+  background: #FEE2E2;
+  border-color: #FCA5A5;
+  color: #991B1B;
+}
+
+.day-lesson-pill-lg.pill-attended {
+  background: #DCFCE7;
+  border-color: #86EFAC;
+  color: #166534;
+}
+
+.pill-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.pill-text { overflow: hidden; text-overflow: ellipsis; }
+
+.day-more-indicator {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748B;
+  padding-left: 2px;
+}
+
+/* 2. SEÇÃO DE DETALHES DO DIA (EMBAIXO DO CALENDÁRIO) */
+.calendar-bottom-detail-section {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.bottom-detail-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #F1F5F9;
+  margin-bottom: 20px;
+}
+
+.bottom-detail-title-group h3 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0F172A;
+  margin-bottom: 4px;
+}
+
+.bottom-detail-count {
+  font-size: 12px;
+  color: #64748B;
+  font-weight: 600;
+}
+
+.bottom-day-lessons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.bottom-lesson-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bottom-lesson-card.card-live {
+  border-color: #F87171;
+  background: #FEF2F2;
+}
+
+.bottom-card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.admin-modal-title { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--text-dark, #0B3C82); }
+.lesson-flag-tag { font-size: 11px; font-weight: 700; color: #4F46E5; }
+.live-badge-sm { background: #EF4444; color: white; font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
+.scheduled-badge-sm { font-size: 11px; font-weight: 600; color: #64748B; display: inline-flex; align-items: center; gap: 4px; }
 
-.btn-close-modal-admin {
-  background: white;
-  border: 1px solid var(--border-color, #DCE7F0);
-  color: var(--text-dark, #0B3C82);
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 12px;
+.bottom-lesson-title { font-size: 14px; font-weight: 700; color: #0F172A; }
+.bottom-lesson-desc { font-size: 12px; color: #64748B; line-height: 1.5; flex-grow: 1; }
+
+.bottom-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bottom-card-footer .instructor-mini {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bottom-card-footer .instructor-mini img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.bottom-card-footer .instructor-mini strong { font-size: 11px; color: #334155; }
+.bottom-card-footer .instructor-mini small { font-size: 10px; color: #94A3B8; margin-left: 4px; }
+
+.bottom-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-confirm-presence-bottom {
+  background: #F0FDF4;
+  border: 1px solid #86EFAC;
+  color: #166534;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
@@ -2447,93 +2375,50 @@ async function handleTeenLogin() {
   gap: 6px;
 }
 
-.admin-modal-body { flex: 1; overflow-y: auto; padding: 20px; }
+.btn-confirm-presence-bottom.active { background: #22C55E; border-color: #22C55E; color: white; }
+.btn-open-live-bottom { padding: 6px 14px; font-size: 11px; }
 
-/* CELEBRAÇÃO XP BRANCA */
-.celebration-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(11, 60, 130, 0.5);
-  backdrop-filter: blur(4px);
-  z-index: 999999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.celebration-white-card {
-  background: white;
-  border: 2px solid var(--primary, #0B3C82);
-  padding: 36px 40px;
-  border-radius: 20px;
+.bottom-empty-state {
   text-align: center;
-  box-shadow: 0 20px 30px rgba(0, 0, 0, 0.2);
+  padding: 48px 24px;
+  color: #94A3B8;
 }
 
-.celebration-emoji-icon { font-size: 44px; margin-bottom: 10px; }
-.celebration-white-card h2 { font-size: 22px; font-weight: 800; color: var(--text-dark, #0B3C82); margin-bottom: 6px; }
-.celebration-white-card p { font-size: 13px; color: var(--text-gray, #5A6A7B); margin-bottom: 18px; }
+.bottom-empty-state i { font-size: 40px; margin-bottom: 10px; display: block; }
+.bottom-empty-state h4 { font-size: 14px; font-weight: 700; color: #334155; margin-bottom: 4px; }
+.bottom-empty-state p { font-size: 12px; line-height: 1.5; }
 
-.badge-done-celebration {
-  background: #dcfce7;
-  color: #166534;
-  font-size: 14px;
-  font-weight: 700;
-  padding: 8px 24px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
+/* MODAL ADMIN */
+.teen-admin-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.teen-admin-modal-card { background: #FFFFFF; border-radius: 14px; width: 100%; max-width: 1200px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+.modal-admin-top { padding: 14px 20px; background: #0F172A; color: white; display: flex; justify-content: space-between; align-items: center; }
+.admin-modal-title { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.btn-close-modal-admin { background: rgba(255,255,255,0.15); color: white; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+.admin-modal-body { overflow-y: auto; padding: 20px; }
 
-/* TOPBAR ACTIONS */
-.teen-topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.btn-mobile-hamburger {
-  display: none;
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  color: var(--text-dark, #0B3C82);
-  font-size: 22px;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.btn-mobile-hamburger:hover {
-  background: var(--primary-light, #E8F0FA);
-  color: var(--primary, #0B3C82);
-}
-
-/* MENU GAVETA LATERAL MOBILE (DRAWER) */
+/* DRAWER MOBILE */
 .mobile-drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(11, 60, 130, 0.45);
+  background: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(4px);
   z-index: 99999;
   display: flex;
   justify-content: flex-start;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .mobile-drawer-card {
-  background: white;
-  width: 84%;
-  max-width: 320px;
-  height: 100%;
+  width: 280px;
+  max-width: 85vw;
+  height: 100vh;
+  background: #FFFFFF;
   display: flex;
   flex-direction: column;
   box-shadow: 4px 0 25px rgba(0, 0, 0, 0.15);
+  animation: slideDrawer 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 20px;
   overflow-y: auto;
-  padding: 20px 16px;
   box-sizing: border-box;
 }
 
@@ -2541,314 +2426,100 @@ async function handleTeenLogin() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color, #DCE7F0);
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F1F5F9;
 }
 
 .btn-close-drawer {
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
-  width: 36px;
-  height: 36px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  color: var(--text-dark, #0B3C82);
-  font-size: 18px;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #64748B;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-close-drawer:hover {
+  background: #E2E8F0;
+  color: #0F172A;
 }
 
 .drawer-profile-box {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--bg-gray, #F7FAFC);
-  border: 1px solid var(--border-color, #DCE7F0);
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
   padding: 12px;
-  border-radius: 12px;
   margin-bottom: 20px;
-}
-
-.avatar-emoji-large {
-  font-size: 26px;
 }
 
 .drawer-profile-box strong {
   display: block;
   font-size: 13px;
-  color: var(--text-dark, #0B3C82);
+  color: #0F172A;
 }
 
 .drawer-profile-box small {
   font-size: 11px;
-  color: var(--text-gray, #5A6A7B);
+  color: #64748B;
 }
 
 .drawer-nav-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex-grow: 1;
 }
 
 .drawer-nav-btn {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 12px 14px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: none;
-  background: transparent;
-  color: var(--text-dark, #0B3C82);
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 10px;
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.2s ease;
+  gap: 10px;
+  transition: all 0.15s;
 }
 
 .drawer-nav-btn i {
-  font-size: 20px;
-  color: var(--primary, #0B3C82);
+  font-size: 18px;
+  color: #64748B;
 }
 
 .drawer-nav-btn:hover {
-  background: var(--bg-gray, #F7FAFC);
+  background: #F1F5F9;
+  color: #0F172A;
 }
 
 .drawer-nav-btn.active {
-  background: var(--primary-light, #E8F0FA);
-  color: var(--primary, #0B3C82);
+  background: #EEF2FF;
+  color: #4F46E5;
   font-weight: 700;
+}
+
+.drawer-nav-btn.active i {
+  color: #4F46E5;
 }
 
 .drawer-divider {
   height: 1px;
-  background: var(--border-color, #DCE7F0);
+  background: #E2E8F0;
   margin: 12px 0;
-}
-
-.drawer-nav-btn.text-purple { color: #7e22ce; }
-.drawer-nav-btn.text-purple i { color: #7e22ce; }
-.drawer-nav-btn.text-primary { color: var(--primary, #0B3C82); }
-.drawer-nav-btn.text-danger { color: #dc2626; }
-.drawer-nav-btn.text-danger i { color: #dc2626; }
-
-/* BARRA FIXA INFERIOR NO MOBILE */
-.teen-bottom-mobile-nav {
-  display: none;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  background: white;
-  border-top: 1px solid var(--border-color, #DCE7F0);
-  z-index: 1000;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
-  justify-content: space-around;
-  align-items: center;
-  padding: 0 8px;
-}
-
-.bottom-nav-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-gray, #5A6A7B);
-  font-size: 10px;
-  font-weight: 600;
-  gap: 3px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  flex: 1;
-}
-
-.bottom-nav-btn i {
-  font-size: 20px;
-}
-
-.bottom-nav-btn.active {
-  color: var(--primary, #0B3C82);
-  font-weight: 700;
-}
-
-/* RESPONSIVO COMPLETO (MOBILE FIRST SOBERANO) */
-@media (max-width: 900px) {
-  .desktop-only-nav {
-    display: none !important;
-  }
-
-  .btn-mobile-hamburger {
-    display: flex !important;
-  }
-
-  .teen-topbar {
-    padding: 0 16px !important;
-    height: 58px !important;
-  }
-
-  .teen-topbar-container {
-    height: 58px !important;
-  }
-
-  .teen-brand-logo {
-    max-height: 30px !important;
-  }
-
-  .teen-user-avatar-btn .user-first-name {
-    display: none !important;
-  }
-
-  .teen-bottom-mobile-nav {
-    display: flex !important;
-  }
-
-  .teen-content-container {
-    padding: 16px 14px 85px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    overflow-x: hidden !important;
-  }
-
-  .teen-welcome-banner {
-    padding: 24px 18px !important;
-    gap: 20px !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    margin-bottom: 24px !important;
-  }
-
-  .welcome-left-col h1 {
-    font-size: 20px !important;
-    line-height: 1.3 !important;
-  }
-
-  .welcome-buttons-row {
-    flex-direction: column !important;
-    width: 100% !important;
-    gap: 8px !important;
-  }
-
-  .welcome-buttons-row button {
-    width: 100% !important;
-    justify-content: center !important;
-  }
-
-  .info-pill-box {
-    width: 100% !important;
-  }
-
-  .info-pill-item {
-    min-width: unset !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  .section-heading-row {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 8px !important;
-  }
-
-  .filters-white-bar {
-    width: 100% !important;
-    box-sizing: border-box !important;
-    gap: 10px !important;
-  }
-
-  .filters-top-row {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 10px !important;
-  }
-
-  .categories-pills-row, .lang-pills-row {
-    width: 100% !important;
-    overflow-x: auto !important;
-    flex-wrap: nowrap !important;
-    -webkit-overflow-scrolling: touch !important;
-    scrollbar-width: none !important;
-    padding-bottom: 4px !important;
-  }
-
-  .categories-pills-row::-webkit-scrollbar, .lang-pills-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  .search-input-box {
-    width: 100% !important;
-    min-width: unset !important;
-  }
-
-  .courses-white-grid {
-    grid-template-columns: 1fr !important;
-    gap: 18px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  .materials-white-grid {
-    grid-template-columns: 1fr !important;
-    gap: 14px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  /* TELA DE ASSISTIR NO MOBILE */
-  .watch-layout-grid {
-    grid-template-columns: 1fr !important;
-    gap: 20px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  .watch-top-bar {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 10px !important;
-  }
-
-  .lesson-info-bar {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 14px !important;
-    padding: 14px 16px !important;
-  }
-
-  .lesson-actions-group {
-    width: 100% !important;
-    justify-content: space-between !important;
-  }
-
-  .tabs-header-bar {
-    overflow-x: auto !important;
-    flex-wrap: nowrap !important;
-    -webkit-overflow-scrolling: touch !important;
-    scrollbar-width: none !important;
-    padding: 6px 8px !important;
-  }
-
-  .vocab-clean-grid {
-    grid-template-columns: 1fr !important;
-    width: 100% !important;
-  }
-
-  .course-modules-panel {
-    position: static !important;
-  }
-
-  .teen-admin-modal-card {
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: 100vw !important;
-    border-radius: 0 !important;
-  }
 }
 </style>

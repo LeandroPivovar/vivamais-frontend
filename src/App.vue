@@ -142,10 +142,24 @@ const handleUpdateUser = (updatedData) => {
   currentUser.value = updatedData
 }
 
+// Acesso restrito a Kids e Teen (disponível apenas em ambiente de desenvolvimento ou para administradores)
+const isDevAccessAllowed = () => {
+  const isDevHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  const isAdmin = currentUser.value?.role === 'admin'
+  const isDevStorage = localStorage.getItem('viva_dev_mode') === 'true'
+  return isDevHost || isAdmin || isDevStorage
+}
+
 const navigateTo = (tab) => {
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
+  
+  // Kids e Teen disponíveis somente em desenvolvimento / admin
+  if (tab.startsWith('kids') || tab.startsWith('teen')) {
+    if (!isDevAccessAllowed()) return
+  }
+
   if (tab === 'kids' || tab === 'kids-dashboard') {
     if (!isLoggedIn.value) {
       currentTab.value = 'kids-auth'
@@ -241,6 +255,13 @@ const closeFloatingPanels = (event) => {
 const handleRouting = () => {
   const path = window.location.pathname
   const hash = window.location.hash
+
+  // Bloqueio de acesso para Kids e Teen caso não seja ambiente de desenvolvimento / admin
+  if ((path.startsWith('/kids') || hash.startsWith('#/kids') || path.startsWith('/teen') || hash.startsWith('#/teen')) && !isDevAccessAllowed()) {
+    currentTab.value = 'home'
+    window.history.replaceState({}, '', '/')
+    return
+  }
 
   if (path === '/admin' || hash === '#/admin') {
     currentTab.value = 'admin'
