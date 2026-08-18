@@ -137,16 +137,6 @@ const confirmReset = async () => {
           <a href="#" class="forgot-link" @click.prevent="goToForgot">Esqueci a senha</a>
         </div>
 
-        <div style="margin-bottom: 16px; padding: 10px 12px; background: #f0fdf4; border: 1px dashed #22c55e; border-radius: 8px; font-size: 12px; color: #166534; display: flex; flex-direction: column; gap: 6px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <strong>👑 Usuário Admin de Teste:</strong>
-            <button type="button" @click="username = 'joao.silva@email.com'; password = 'senha123'" style="background: #16a34a; color: white; border: none; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-weight: 600;">
-              Preencher
-            </button>
-          </div>
-          <div>E-mail: <code>joao.silva@email.com</code> | Senha: <code>senha123</code></div>
-        </div>
-
         <p v-if="info" class="login-info">{{ info }}</p>
         <p v-if="error" class="login-error">{{ error }}</p>
 

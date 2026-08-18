@@ -10,10 +10,10 @@ const props = defineProps({
 
 const emit = defineEmits(['logout', 'updateUser'])
 
-const name = ref(props.user.name)
-const email = ref('joao.silva@email.com')
-const phone = ref('(11) 99999-7777')
-const cpf = ref('123.456.789-00')
+const name = ref(props.user?.name || '')
+const email = ref(props.user?.email || '')
+const phone = ref(props.user?.phone || '')
+const cpf = ref(props.user?.cpf || '')
 
 const currentPassword = ref('')
 const newPassword = ref('')
