@@ -95,12 +95,9 @@ const handleUpdateUser = (updatedData) => {
   currentUser.value = updatedData
 }
 
-// Acesso restrito a Kids e Teen (disponível apenas em ambiente de desenvolvimento ou para administradores)
+// Acesso restrito a Kids e Teen (disponível apenas para administradores)
 const isDevAccessAllowed = () => {
-  const isDevHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  const isAdmin = currentUser.value?.role === 'admin'
-  const isDevStorage = localStorage.getItem('viva_dev_mode') === 'true'
-  return isDevHost || isAdmin || isDevStorage
+  return currentUser.value?.role === 'admin'
 }
 
 const navigateTo = (tab) => {
@@ -108,9 +105,21 @@ const navigateTo = (tab) => {
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
   
-  // Kids e Teen disponíveis somente em desenvolvimento / admin
+  // Kids e Teen disponíveis somente para administradores
   if (tab.startsWith('kids') || tab.startsWith('teen')) {
-    if (!isDevAccessAllowed()) return
+    if (!isLoggedIn.value) {
+      currentTab.value = tab.startsWith('teen') ? 'teen-auth' : 'kids-auth'
+      showDropdown.value = false
+      window.history.pushState({}, '', tab.startsWith('teen') ? '/teen/auth' : '/kids/auth')
+      return
+    }
+    if (currentUser.value?.role !== 'admin') {
+      openDevModal({
+        title: 'Acesso Restrito',
+        message: 'A área Viva Mais Kids está disponível exclusivamente para administradores.'
+      })
+      return
+    }
   }
 
   if (tab === 'kids' || tab === 'kids-dashboard') {
@@ -209,44 +218,37 @@ const handleRouting = () => {
   const path = window.location.pathname
   const hash = window.location.hash
 
-  // Bloqueio de acesso para Kids e Teen caso não seja ambiente de desenvolvimento / admin
-  if ((path.startsWith('/kids') || hash.startsWith('#/kids') || path.startsWith('/teen') || hash.startsWith('#/teen')) && !isDevAccessAllowed()) {
-    currentTab.value = 'home'
-    window.history.replaceState({}, '', '/')
-    return
-  }
-
   if (path === '/admin' || hash === '#/admin') {
     currentTab.value = 'admin'
   } else if (path === '/kids/auth' || hash === '#/kids/auth') {
     currentTab.value = 'kids-auth'
-  } else if (path === '/kids/dashboard' || hash === '#/kids/dashboard') {
-    if (!isLoggedIn.value) {
-      currentTab.value = 'kids-auth'
-      window.history.replaceState({}, '', '/kids/auth')
-    } else {
-      currentTab.value = 'kids-dashboard'
-    }
   } else if (path.startsWith('/kids') || hash.startsWith('#/kids')) {
     if (!isLoggedIn.value) {
       currentTab.value = 'kids-auth'
       window.history.replaceState({}, '', '/kids/auth')
+    } else if (currentUser.value?.role !== 'admin') {
+      currentTab.value = 'home'
+      window.history.replaceState({}, '', '/')
+      openDevModal({
+        title: 'Acesso Restrito',
+        message: 'A área Viva Mais Kids está disponível exclusivamente para administradores.'
+      })
     } else {
       currentTab.value = 'kids-dashboard'
     }
   } else if (path === '/teen/auth' || hash === '#/teen/auth') {
     currentTab.value = 'teen-auth'
-  } else if (path === '/teen/dashboard' || hash === '#/teen/dashboard') {
-    if (!isLoggedIn.value) {
-      currentTab.value = 'teen-auth'
-      window.history.replaceState({}, '', '/teen/auth')
-    } else {
-      currentTab.value = 'teen-dashboard'
-    }
   } else if (path.startsWith('/teen') || hash.startsWith('#/teen')) {
     if (!isLoggedIn.value) {
       currentTab.value = 'teen-auth'
       window.history.replaceState({}, '', '/teen/auth')
+    } else if (currentUser.value?.role !== 'admin') {
+      currentTab.value = 'home'
+      window.history.replaceState({}, '', '/')
+      openDevModal({
+        title: 'Acesso Restrito',
+        message: 'A área Viva Mais Teen está disponível exclusivamente para administradores.'
+      })
     } else {
       currentTab.value = 'teen-dashboard'
     }
@@ -335,7 +337,7 @@ onBeforeUnmount(() => {
     v-else-if="currentTab === 'kids-dashboard' || currentTab === 'kids-auth' || currentTab === 'kids'"
     :user="currentUser"
     :isLoggedIn="isLoggedIn"
-    :subRoute="(!isLoggedIn || currentTab === 'kids-auth') ? 'auth' : 'dashboard'"
+    :subRoute="currentTab === 'kids-auth' ? 'auth' : 'dashboard'"
     @goHome="navigateTo('home')"
     @login="handleLogin"
     @logout="handleLogout"
@@ -347,7 +349,7 @@ onBeforeUnmount(() => {
     v-else-if="currentTab === 'teen-dashboard' || currentTab === 'teen-auth' || currentTab === 'teen'"
     :user="currentUser"
     :isLoggedIn="isLoggedIn"
-    :subRoute="(!isLoggedIn || currentTab === 'teen-auth') ? 'auth' : 'dashboard'"
+    :subRoute="currentTab === 'teen-auth' ? 'auth' : 'dashboard'"
     @goHome="navigateTo('home')"
     @login="handleLogin"
     @logout="handleLogout"
