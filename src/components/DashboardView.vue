@@ -530,6 +530,69 @@ const referralStats = computed(() => {
   }
 })
 
+// --- SAQUE DE COMISSÕES ---
+const withdrawSummary = ref({
+  earnedLabel: 'R$ 0,00',
+  availableLabel: 'R$ 0,00',
+  pendingLabel: 'R$ 0,00',
+  paidLabel: 'R$ 0,00',
+  available: 0,
+  pending: 0,
+  minWithdrawal: 20,
+  canRequest: false,
+  hasPending: false,
+  history: [],
+})
+const withdrawLoading = ref(false)
+const showWithdrawModal = ref(false)
+
+const loadWithdrawSummary = async () => {
+  try {
+    const data = await api.get('/withdrawals/summary')
+    if (data) withdrawSummary.value = data
+  } catch {
+    // mantém o estado atual — o botão fica desabilitado por canRequest = false
+  }
+}
+
+const openWithdrawModal = () => {
+  if (withdrawSummary.value.hasPending) {
+    emit('triggerDevModal', {
+      title: 'Saque pendente',
+      message: `Você já tem um saque de ${withdrawSummary.value.pendingLabel} aguardando liberação. Assim que ele for pago, você poderá solicitar outro.`,
+    })
+    return
+  }
+  if (!withdrawSummary.value.canRequest) {
+    emit('triggerDevModal', {
+      title: 'Saldo insuficiente',
+      message: `O valor mínimo para saque é R$ ${Number(withdrawSummary.value.minWithdrawal).toFixed(2).replace('.', ',')}. Seu saldo disponível é ${withdrawSummary.value.availableLabel}.`,
+    })
+    return
+  }
+  showWithdrawModal.value = true
+}
+
+const confirmWithdraw = async () => {
+  withdrawLoading.value = true
+  try {
+    const data = await api.post('/withdrawals')
+    if (data?.summary) withdrawSummary.value = data.summary
+    showWithdrawModal.value = false
+    emit('triggerDevModal', {
+      title: 'Saque solicitado!',
+      message: `Seu pedido de ${data?.withdrawal?.amountLabel ?? 'saque'} foi registrado e está pendente de liberação. Você receberá um e-mail assim que o pagamento for realizado.`,
+    })
+  } catch (err) {
+    emit('triggerDevModal', {
+      title: 'Não foi possível solicitar',
+      message: err?.message || 'Falha ao solicitar o saque. Tente novamente em instantes.',
+    })
+  } finally {
+    withdrawLoading.value = false
+  }
+}
+
 const REFERRAL_LEVELS = ['1º Nível', '2º Nível', '3º Nível', '4º Nível', '5º Nível']
 
 const levelBreakdown = computed(() => {
@@ -1023,6 +1086,7 @@ onMounted(async () => {
     } catch {
       depInfo.value = { limit: 0, used: 0, canAdd: false }
     }
+    await loadWithdrawSummary()
   } catch (err) {
     rawReferrals.value = []
     userLinks.value = []
@@ -1430,9 +1494,32 @@ onMounted(async () => {
 
       <!-- SUB-ABA 1: VISÃO GERAL -->
       <div v-if="activeRefTab === 'visaoGeral'" class="ref-sub-content">
-        <header class="tab-header animated-item" style="animation-delay: 0.05s;">
-          <h2>Seu Programa de Indicações</h2>
-          <p>Acompanhe seus ganhos, indicados e performance em tempo real.</p>
+        <header class="tab-header animated-item" style="animation-delay: 0.05s; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+          <div>
+            <h2>Seu Programa de Indicações</h2>
+            <p>Acompanhe seus ganhos, indicados e performance em tempo real.</p>
+          </div>
+
+          <div style="text-align:right; margin-left:auto;">
+            <button
+              class="btn btn-primary"
+              :disabled="withdrawLoading || !withdrawSummary.canRequest"
+              @click="openWithdrawModal"
+            >
+              <i v-if="withdrawLoading" class="mini-spinner"></i>
+              <i v-else class="ph ph-hand-coins"></i>
+              {{ withdrawLoading ? 'Solicitando...' : 'Solicitar Saque' }}
+            </button>
+            <div style="font-size: 12px; color: var(--text-gray); margin-top: 6px;">
+              <template v-if="withdrawSummary.hasPending">
+                <i class="ph ph-clock" style="color:#d97706;"></i>
+                Saque de <strong style="color:#d97706;">{{ withdrawSummary.pendingLabel }}</strong> pendente
+              </template>
+              <template v-else>
+                Disponível: <strong style="color:#059669;">{{ withdrawSummary.availableLabel }}</strong>
+              </template>
+            </div>
+          </div>
         </header>
 
         <!-- Cards de Resumo de Ganhos/Indicados (derivados dos indicados reais) -->
@@ -2403,6 +2490,53 @@ onMounted(async () => {
             <i class="ph ph-qr-code large-qr"></i>
             <p>Apresente este código para atendimento nos parceiros.</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: CONFIRMAR SOLICITAÇÃO DE SAQUE -->
+    <div v-if="showWithdrawModal" class="sso-overlay-custom" @click.self="showWithdrawModal = false">
+      <div class="telemed-modal-card">
+        <div class="modal-close" @click="showWithdrawModal = false"><i class="ph ph-x"></i></div>
+
+        <div class="telemed-modal-header">
+          <div class="telemed-icon-badge" style="background:#fffbeb; border-color:#fde68a; color:#d97706;">
+            <i class="ph ph-hand-coins"></i>
+          </div>
+          <div>
+            <h3 class="telemed-title">Solicitar Saque</h3>
+            <p class="telemed-subtitle">Confirme o valor que deseja retirar:</p>
+          </div>
+        </div>
+
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:var(--radius-md); padding:16px; margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:13px; color:var(--text-gray);">Ganhos acumulados:</span>
+            <strong style="font-size:14px;">{{ withdrawSummary.earnedLabel }}</strong>
+          </div>
+          <div v-if="withdrawSummary.paid > 0" style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:13px; color:var(--text-gray);">Já sacado:</span>
+            <strong style="font-size:14px;">- {{ withdrawSummary.paidLabel }}</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding-top:8px; border-top:1px dashed #cbd5e1;">
+            <span style="font-size:14px; font-weight:600;">Valor do saque:</span>
+            <strong style="font-size:20px; color:#059669;">{{ withdrawSummary.availableLabel }}</strong>
+          </div>
+        </div>
+
+        <p style="font-size:13px; color:var(--text-gray); margin-bottom:20px;">
+          O valor ficará <strong>pendente</strong> até a liberação pela equipe financeira. Você receberá um e-mail assim que o pagamento for realizado.
+        </p>
+
+        <div class="telemed-modal-footer">
+          <button class="btn btn-outline" @click="showWithdrawModal = false" :disabled="withdrawLoading">
+            Cancelar
+          </button>
+          <button class="btn btn-primary" @click="confirmWithdraw" :disabled="withdrawLoading">
+            <i v-if="withdrawLoading" class="mini-spinner"></i>
+            <i v-else class="ph ph-check"></i>
+            {{ withdrawLoading ? 'Solicitando...' : 'Confirmar Saque' }}
+          </button>
         </div>
       </div>
     </div>

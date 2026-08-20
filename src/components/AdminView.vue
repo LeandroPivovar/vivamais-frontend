@@ -323,6 +323,83 @@ const isPaidBilling = (item) => {
   return status === 'pago' || status.includes('pago') || status === 'paid'
 }
 
+const formatDateTime = (value) => {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// --- SAQUES (PEDIDOS DE RETIRADA DE COMISSÃO) ---
+const withdrawals = ref([])
+const withdrawalsTotal = ref(0)
+const withdrawalsTotalPages = ref(1)
+const withdrawalsPage = ref(1)
+const withdrawalsLimit = ref(10)
+const withdrawalsStatusFilter = ref('')
+const withdrawalsPendingTotal = ref(0)
+const withdrawalsLoading = ref(false)
+const withdrawalPayingId = ref(null)
+
+const withdrawalsPendingCount = computed(() => withdrawals.value.filter(w => w.status === 'pendente').length)
+
+const loadWithdrawals = async () => {
+  withdrawalsLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      page: String(withdrawalsPage.value),
+      limit: String(withdrawalsLimit.value),
+    })
+    if (withdrawalsStatusFilter.value) params.set('status', withdrawalsStatusFilter.value)
+    const data = await api.get(`/admin/withdrawals?${params.toString()}`)
+    withdrawals.value = data?.items || []
+    withdrawalsTotal.value = data?.total || 0
+    withdrawalsTotalPages.value = data?.totalPages || 1
+    withdrawalsPendingTotal.value = data?.pendingTotal || 0
+  } catch {
+    withdrawals.value = []
+    withdrawalsTotal.value = 0
+    withdrawalsTotalPages.value = 1
+  } finally {
+    withdrawalsLoading.value = false
+  }
+}
+
+const openWithdrawalsTab = () => {
+  activeAdminTab.value = 'saques'
+  loadWithdrawals()
+}
+
+const goWithdrawalsPage = (page) => {
+  withdrawalsPage.value = Math.min(Math.max(1, page), withdrawalsTotalPages.value)
+  loadWithdrawals()
+}
+
+watch([withdrawalsStatusFilter, withdrawalsLimit], () => {
+  withdrawalsPage.value = 1
+  loadWithdrawals()
+})
+
+const payWithdrawal = async (w) => {
+  if (!confirm(`Confirmar baixa do saque #${w.id} de ${w.amountLabel} para ${w.user?.name || 'usuário'}?\n\nO usuário receberá um e-mail informando que o saque foi realizado.`)) return
+  withdrawalPayingId.value = w.id
+  try {
+    await api.post(`/admin/withdrawals/${w.id}/pay`)
+    emit('triggerDevModal', {
+      title: 'Saque liberado',
+      message: `O saque #${w.id} foi marcado como pago e o e-mail de confirmação foi enviado para ${w.user?.email || 'o usuário'}.`,
+    })
+    await loadWithdrawals()
+  } catch (err) {
+    emit('triggerDevModal', {
+      title: 'Erro ao dar baixa',
+      message: err?.message || 'Não foi possível liberar esse saque. Tente novamente.',
+    })
+  } finally {
+    withdrawalPayingId.value = null
+  }
+}
+
 const isPixBilling = (item) => {
   const text = `${item?.paymentMethod ?? ''} ${item?.gatewayProvider ?? ''}`.toLowerCase()
   return text.includes('pix') || text.includes('woovi') || text.includes('veenca')
@@ -787,6 +864,13 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
       >
         <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
         <span v-if="chatConvs.some(c => c.unreadForAdmin > 0)" class="chat-nav-dot"></span>
+      </button>
+      <button
+        :class="['admin-tab-btn', { active: activeAdminTab === 'saques' }]"
+        @click="openWithdrawalsTab"
+      >
+        <i class="ph ph-hand-coins"></i> Saques
+        <span v-if="withdrawalsPendingCount > 0" class="chat-nav-dot"></span>
       </button>
       <button
         :class="['admin-tab-btn', { active: activeAdminTab === 'teen' }]"
@@ -1371,6 +1455,126 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
               Conversa encerrada. Ela será removida em instantes; se o usuário escrever de novo, abre uma nova conversa.
             </p>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA: SAQUES (PEDIDOS DE RETIRADA DE COMISSÃO) -->
+    <div v-if="activeAdminTab === 'saques'" class="tab-content-admin">
+      <div class="admin-filters-bar" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
+        <div class="metric-card card" style="flex:1; min-width:200px; margin:0;">
+          <div class="metric-header">
+            <i class="ph ph-clock" style="color:#d97706; background:#fffbeb; border:1px solid #fde68a; padding:8px; border-radius:var(--radius-sm); font-size:20px;"></i>
+            <span style="font-weight:700; color:#92400e;">PENDENTE DE PAGAMENTO</span>
+          </div>
+          <h3 style="color:#d97706;">R$ {{ money(withdrawalsPendingTotal) }}</h3>
+          <p>{{ withdrawalsPendingCount }} pedido(s) aguardando baixa</p>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select v-model="withdrawalsStatusFilter" class="form-control" style="width:auto; min-width:140px;">
+            <option value="">Todos</option>
+            <option value="pendente">Pendentes</option>
+            <option value="pago">Pagos</option>
+          </select>
+          <select v-model.number="withdrawalsLimit" class="form-control" style="width:auto; min-width:75px;">
+            <option :value="10">10</option>
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+          </select>
+          <button class="btn btn-outline" @click="loadWithdrawals()" :disabled="withdrawalsLoading">
+            <i class="ph ph-arrow-clockwise"></i> Atualizar
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 0; overflow-x: auto;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Usuário</th>
+              <th>CPF</th>
+              <th>Valor</th>
+              <th>Solicitado em</th>
+              <th>Pago em</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="w in withdrawals" :key="w.id">
+              <td><strong>#{{ w.id }}</strong></td>
+              <td>
+                <div class="user-info-col">
+                  <strong>{{ w.user?.name || '—' }}</strong>
+                  <span>{{ w.user?.email || '' }}</span>
+                </div>
+              </td>
+              <td>{{ w.user?.cpf || '—' }}</td>
+              <td style="font-weight:bold; color:#16a34a;">{{ w.amountLabel }}</td>
+              <td>{{ formatDateTime(w.createdAt) }}</td>
+              <td>{{ w.paidAt ? formatDateTime(w.paidAt) : '—' }}</td>
+              <td>
+                <span :class="['status-pill', w.status === 'pago' ? 'ativo' : 'pendente']">
+                  {{ w.status === 'pago' ? 'Pago' : 'Pendente' }}
+                </span>
+              </td>
+              <td>
+                <button
+                  v-if="w.status === 'pendente'"
+                  class="btn btn-primary"
+                  style="padding: 6px 12px; font-size: 12px;"
+                  :disabled="withdrawalPayingId === w.id"
+                  @click="payWithdrawal(w)"
+                >
+                  <i v-if="withdrawalPayingId === w.id" class="mini-spinner"></i>
+                  <i v-else class="ph ph-check-circle"></i>
+                  {{ withdrawalPayingId === w.id ? 'Dando baixa...' : 'Dar baixa' }}
+                </button>
+                <span v-else class="text-gray" style="font-size:11px;">Liberado</span>
+              </td>
+            </tr>
+            <tr v-if="!withdrawalsLoading && withdrawals.length === 0">
+              <td colspan="8" style="text-align:center; padding:32px 16px; color:var(--text-gray);">
+                <i class="ph ph-hand-coins" style="font-size:32px; display:block; margin-bottom:8px; opacity:0.5;"></i>
+                Nenhum pedido de saque encontrado.
+              </td>
+            </tr>
+            <tr v-if="withdrawalsLoading">
+              <td colspan="8" style="text-align:center; padding:32px 16px; color:var(--text-gray);">Carregando...</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="withdrawalsTotal > 0" class="table-pagination-footer">
+          <div class="pagination-info">
+            Mostrando <strong>{{ withdrawals.length }}</strong> de <strong>{{ withdrawalsTotal }}</strong> pedidos
+          </div>
+          <div class="pagination-actions">
+            <button class="btn-pagination-nav" :disabled="withdrawalsPage <= 1" @click="goWithdrawalsPage(1)" title="Primeira Página">
+              <i class="ph ph-caret-double-left"></i>
+            </button>
+            <button class="btn-pagination-nav" :disabled="withdrawalsPage <= 1" @click="goWithdrawalsPage(withdrawalsPage - 1)" title="Página Anterior">
+              <i class="ph ph-caret-left"></i> Anterior
+            </button>
+            <div class="pagination-pages">
+              <button
+                v-for="page in withdrawalsTotalPages"
+                :key="page"
+                :class="['btn-page-number', { active: page === withdrawalsPage }]"
+                @click="goWithdrawalsPage(page)"
+              >
+                {{ page }}
+              </button>
+            </div>
+            <button class="btn-pagination-nav" :disabled="withdrawalsPage >= withdrawalsTotalPages" @click="goWithdrawalsPage(withdrawalsPage + 1)" title="Próxima Página">
+              Próxima <i class="ph ph-caret-right"></i>
+            </button>
+            <button class="btn-pagination-nav" :disabled="withdrawalsPage >= withdrawalsTotalPages" @click="goWithdrawalsPage(withdrawalsTotalPages)" title="Última Página">
+              <i class="ph ph-caret-double-right"></i>
+            </button>
+          </div>
         </div>
       </div>
     </div>
