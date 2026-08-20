@@ -581,7 +581,7 @@ const confirmWithdraw = async () => {
     showWithdrawModal.value = false
     emit('triggerDevModal', {
       title: 'Saque solicitado!',
-      message: `Seu pedido de ${data?.withdrawal?.amountLabel ?? 'saque'} foi registrado e está pendente de liberação. Você receberá um e-mail assim que o pagamento for realizado.`,
+      message: `Seu pedido de ${data?.withdrawal?.amountLabel ?? 'saque'} foi registrado. Os saques são processados toda segunda-feira — você receberá um e-mail com a confirmação.`,
     })
   } catch (err) {
     emit('triggerDevModal', {
@@ -2525,7 +2525,7 @@ onMounted(async () => {
         </div>
 
         <p style="font-size:13px; color:var(--text-gray); margin-bottom:20px;">
-          O valor ficará <strong>pendente</strong> até a liberação pela equipe financeira. Você receberá um e-mail assim que o pagamento for realizado.
+          O valor ficará <strong>pendente</strong> até a liberação. Os saques são processados <strong>toda segunda-feira</strong> — você receberá um e-mail com a confirmação.
         </p>
 
         <div class="telemed-modal-footer">
