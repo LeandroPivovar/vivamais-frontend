@@ -1821,6 +1821,12 @@ onMounted(async () => {
               <i class="ph ph-copy"></i> Copiar
             </button>
           </div>
+          <div v-if="linkItem.urlAlt" class="link-input-group" style="margin-top: 6px;">
+            <input type="text" class="link-input" :value="linkItem.urlAlt" readonly style="font-size: 12px; opacity: 0.8;" />
+            <button class="btn btn-outline" @click="copyLink(linkItem.urlAlt)">
+              <i class="ph ph-copy"></i> Copiar
+            </button>
+          </div>
 
           <div class="sharing-metrics">
             <div class="sharing-metric-box">
@@ -2241,6 +2247,12 @@ onMounted(async () => {
           <div class="link-input-group">
             <input type="text" class="link-input" :value="selectedLink.url" readonly />
             <button class="btn btn-primary" @click="copyLink(selectedLink.url)">
+              <i class="ph ph-copy"></i> Copiar
+            </button>
+          </div>
+          <div v-if="selectedLink.urlAlt" class="link-input-group">
+            <input type="text" class="link-input" :value="selectedLink.urlAlt" readonly style="font-size: 12px; opacity: 0.8;" />
+            <button class="btn btn-outline" @click="copyLink(selectedLink.urlAlt)">
               <i class="ph ph-copy"></i> Copiar
             </button>
           </div>
