@@ -144,7 +144,15 @@ function onCpfInput(e) {
 function loadKidsTeenSession() {
   try {
     const saved = localStorage.getItem(KIDS_TEEN_SESSION_KEY)
-    if (saved) kidsTeenSession.value = JSON.parse(saved)
+    if (saved) {
+      const session = JSON.parse(saved)
+      if (session?.guest) {
+        localStorage.removeItem(KIDS_TEEN_SESSION_KEY)
+        kidsTeenSession.value = null
+      } else {
+        kidsTeenSession.value = session
+      }
+    }
   } catch {
     kidsTeenSession.value = null
   }
@@ -235,16 +243,6 @@ function openHelp() {
   })
 }
 
-
-function handleGuestMode() {
-  kidUser.name = 'Explorador'
-  kidUser.email = 'convidado@vivamaiskids.com.br'
-  kidUser.avatar = '⭐'
-  localStorage.setItem('viva_kids_has_visited', 'true')
-  saveKidProfile()
-  kidsAudio.playVictory()
-  activeTab.value = 'home'
-}
 
 // --- NOTIFICAÇÕES TOAST & CONFETTI ---
 const toastText = ref('')
@@ -557,7 +555,8 @@ function loadColoringTemplate(id) {
     paintCtx.fillRect(0, 0, width, height)
 
     // Ajusta proporção para caber perfeitamente no canvas
-    const scale = Math.min((width - 40) / img.width, (height - 40) / img.height)
+    const drawingMargin = window.innerWidth <= 768 ? 0 : 40
+    const scale = Math.min((width - drawingMargin) / img.width, (height - drawingMargin) / img.height)
     const dw = img.width * scale
     const dh = img.height * scale
     const dx = (width - dw) / 2
@@ -772,6 +771,7 @@ watch(() => props.user, () => {
 
       <!-- Main Body: Card alinhado no lado direito -->
       <div class="kids-auth-main-container">
+        <img src="/kids/banners/turma.png" alt="Turma Viva Mais Kids" class="auth-banner-character" />
         <div class="kids-auth-form-col">
           <div class="kids-auth-card">
             <div class="tab-content-area">
@@ -813,6 +813,7 @@ watch(() => props.user, () => {
                   <span>Seus dados protegidos com todo o cuidado que sua família merece.</span>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -933,7 +934,8 @@ watch(() => props.user, () => {
         <!-- 1. HOME HUB -->
         <section v-if="activeTab === 'home'" class="kids-section-fade">
           <div class="kids-hero-banner-container">
-            <img src="/kids/banner-hero.png" alt="Viva Mais Club Kids" class="kids-hero-img" />
+            <img src="/kids/banners/home-bg.png" alt="Viva Mais Club Kids" class="kids-hero-img" />
+            <img src="/kids/banners/turma.png" alt="Turma Viva Mais Kids" class="banner-character home-banner-character" />
             
             <div class="hero-content-overlay">
               <h1 class="hero-main-title">Olá, <span class="highlight-name">{{ kidUser.name }}!</span><br>Vamos brincar?</h1>
@@ -987,7 +989,7 @@ watch(() => props.user, () => {
                 </div>
                 <div class="card-text-col">
                   <h3>Livro de Pintura</h3>
-                  <p>Pinte com o balde de tinta mágica: Sonic, Hello Kitty, Minecraft e Bobbie Goods!</p>
+                  <p>Pinte os personagens da turminha Viva Mais com o balde de tinta mágica!</p>
                 </div>
               </div>
               <button class="btn-card-action btn-outline-yellow">
@@ -1026,7 +1028,8 @@ watch(() => props.user, () => {
         <section v-else-if="activeTab === 'games'" class="kids-section-fade">
           <!-- Banner da Sala de Jogos -->
           <div class="games-hero-banner-container">
-            <img src="/kids/games-banner.png" alt="Sala de Jogos" class="games-hero-img" />
+            <img src="/kids/banners/games-bg.png" alt="Sala de Jogos" class="games-hero-img" />
+            <img src="/kids/banners/games-character.webp" alt="Garoto gamer" class="banner-character games-banner-character" />
             <div class="games-hero-content">
               <div class="hero-banner-inline-row">
                 <div class="games-circle-badge">
@@ -1111,7 +1114,8 @@ watch(() => props.user, () => {
 
           <!-- Banner do Livro de Pintura Mágica -->
           <div class="paint-hero-banner-container">
-            <img src="/kids/paint-banner.png" alt="Livro de Pintura Mágica" class="paint-hero-img" />
+            <img src="/kids/banners/paint-bg.png" alt="Livro de Pintura Mágica" class="paint-hero-img" />
+            <img src="/kids/banners/paint-character.webp" alt="Artista Viva Mais Kids" class="banner-character paint-banner-character" />
             <div class="paint-hero-content">
               <div class="hero-banner-inline-row">
                 <div class="paint-circle-badge">
@@ -1200,7 +1204,8 @@ watch(() => props.user, () => {
         <section v-else-if="activeTab === 'draw'" class="kids-section-fade lousa-section-wrapper">
           <!-- Banner da Lousa -->
           <div class="lousa-hero-banner-container">
-            <img src="/kids/lousa-banner.png" alt="Lousa de Desenho Livre" class="lousa-hero-img" />
+            <img src="/kids/banners/draw-bg.png" alt="Lousa de Desenho Livre" class="lousa-hero-img" />
+            <img src="/kids/banners/draw-character.webp" alt="Artista Viva Mais Kids" class="banner-character draw-banner-character" />
             <div class="lousa-hero-content">
               <div class="hero-banner-inline-row">
                 <div class="lousa-circle-badge">
@@ -1270,6 +1275,7 @@ watch(() => props.user, () => {
                   @click="brushSize = 22"
                 >Grosso</button>
               </div>
+
 
               <!-- Ações Desfazer / Refazer / Limpar -->
               <div class="lousa-actions-pills-group">
@@ -1366,7 +1372,8 @@ watch(() => props.user, () => {
         <section v-else-if="activeTab === 'profile'" class="kids-section-fade profile-section-wrapper">
           <!-- Banner do Perfil -->
           <div class="profile-hero-banner-container">
-            <img src="/kids/profile-banner.png" alt="Perfil" class="profile-hero-img" />
+            <img src="/kids/banners/home-bg.png" alt="Perfil" class="profile-hero-img" />
+            <img src="/kids/banners/profile-character.webp" alt="Mascote do perfil" class="banner-character profile-banner-character" />
             <div class="profile-hero-content">
               <div class="profile-user-inline">
                 <div class="profile-big-avatar-circle">
@@ -1553,12 +1560,12 @@ watch(() => props.user, () => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-image: url('/kids-bg.png');
+  background-image: url('/kids/banners/auth-bg.png');
   background-size: cover;
   background-position: center center;
   background-repeat: no-repeat;
   background-color: #ebf6fb;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* Header Topbar Branco */
@@ -1631,12 +1638,24 @@ watch(() => props.user, () => {
   align-items: center;
   max-width: 100%;
   margin: 0;
-  padding: 40px 4.5vw 48px 40px;
+  padding: 40px 10vw 48px 40px;
   width: 100%;
   min-height: calc(100vh - 68px);
   box-sizing: border-box;
   position: relative;
   z-index: 5;
+}
+
+.auth-banner-character {
+  position: absolute;
+  left: 4%;
+  bottom: 12px;
+  width: clamp(600px, 62vw, 980px);
+  max-height: calc(100vh - 90px);
+  object-fit: contain;
+  object-position: bottom center;
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* Coluna da Direita (Card de Login) */
@@ -1662,10 +1681,12 @@ watch(() => props.user, () => {
 @media (max-width: 992px) {
   .kids-login-view {
     background-position: 30% center;
+    overflow: visible;
   }
   .kids-auth-main-container {
     justify-content: center;
-    padding: 100px 20px 40px;
+    align-items: flex-start;
+    padding: 32px 20px 40px;
   }
   .kids-auth-topbar {
     padding: 16px 20px;
@@ -2161,9 +2182,9 @@ watch(() => props.user, () => {
 .kids-hero-banner-container {
   position: relative;
   width: 100%;
-  height: auto;
+  height: clamp(215px, 21vw, 310px);
   border-radius: 60px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 16px 40px rgba(2, 100, 229, 0.16);
   margin-bottom: 36px;
   line-height: 0;
@@ -2172,10 +2193,52 @@ watch(() => props.user, () => {
 
 .kids-hero-img {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
   object-fit: cover;
   border-radius: 60px;
+}
+
+.banner-character {
+  position: absolute;
+  z-index: 3;
+  bottom: 0;
+  object-fit: contain;
+  object-position: bottom center;
+  pointer-events: none;
+  filter: drop-shadow(0 12px 14px rgba(5, 36, 83, 0.18));
+}
+
+.home-banner-character {
+  right: 2%;
+  bottom: 0;
+  width: auto;
+  max-width: 50%;
+  height: 108%;
+}
+
+.games-banner-character {
+  right: 9%;
+  width: clamp(170px, 23vw, 350px);
+  height: 104%;
+}
+
+.paint-banner-character {
+  right: 7%;
+  width: clamp(160px, 21vw, 325px);
+  height: 104%;
+}
+
+.draw-banner-character {
+  right: 8%;
+  width: clamp(160px, 20vw, 310px);
+  height: 104%;
+}
+
+.profile-banner-character {
+  right: 7%;
+  width: clamp(160px, 21vw, 320px);
+  height: 104%;
 }
 
 .hero-content-overlay {
@@ -2192,6 +2255,23 @@ watch(() => props.user, () => {
   z-index: 5;
   box-sizing: border-box;
   pointer-events: auto;
+}
+
+.kids-hero-banner-container .hero-content-overlay {
+  width: 56%;
+  padding-right: 48px;
+  background: linear-gradient(90deg, rgba(5, 36, 83, 0.48) 0%, rgba(5, 36, 83, 0.26) 68%, rgba(5, 36, 83, 0) 100%);
+  border-radius: 60px 0 0 60px;
+}
+
+.kids-hero-banner-container .hero-main-title {
+  color: #ffffff !important;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.22);
+}
+
+.kids-hero-banner-container .hero-desc {
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 1px 5px rgba(5, 36, 83, 0.22);
 }
 
 .hero-tag {
@@ -2298,6 +2378,22 @@ watch(() => props.user, () => {
   .kids-hero-img {
     border-radius: 20px !important;
   }
+  .banner-character {
+    bottom: 0;
+    right: 2%;
+    width: 37%;
+    height: 100%;
+  }
+  .banner-character:not(.home-banner-character) {
+    height: 104% !important;
+  }
+  .home-banner-character {
+    right: -4%;
+    bottom: 0;
+    width: auto;
+    max-width: 62%;
+    height: 104%;
+  }
   .hero-content-overlay {
     position: absolute !important;
     width: 65% !important;
@@ -2319,7 +2415,7 @@ watch(() => props.user, () => {
     overflow: hidden !important;
   }
   .hero-actions {
-    gap: 6px !important;
+    display: none !important;
   }
   .btn-hero-action {
     padding: 4px 9px !important;
@@ -2523,7 +2619,7 @@ watch(() => props.user, () => {
   height: clamp(260px, 28vw, 400px);
   max-height: 400px;
   border-radius: 60px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 12px 36px rgba(0, 185, 181, 0.12);
   margin-bottom: 32px;
   line-height: 0;
@@ -2587,7 +2683,8 @@ watch(() => props.user, () => {
 .games-main-title {
   font-size: clamp(1.8rem, 2.8vw, 2.6rem);
   font-weight: 900;
-  color: #072654;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -2596,7 +2693,8 @@ watch(() => props.user, () => {
 .games-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #475569;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
   margin: 0;
   line-height: 1.35;
   max-width: 480px;
@@ -2961,7 +3059,7 @@ watch(() => props.user, () => {
   height: clamp(260px, 28vw, 400px);
   max-height: 400px;
   border-radius: 60px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 12px 36px rgba(124, 58, 237, 0.12);
   margin-bottom: 32px;
   line-height: 0;
@@ -3013,7 +3111,8 @@ watch(() => props.user, () => {
 .paint-main-title {
   font-size: clamp(1.8rem, 2.8vw, 2.6rem);
   font-weight: 900;
-  color: #072654;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -3022,7 +3121,8 @@ watch(() => props.user, () => {
 .paint-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #475569;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.4);
   margin: 0;
   line-height: 1.35;
   max-width: 480px;
@@ -3318,7 +3418,7 @@ watch(() => props.user, () => {
   height: clamp(260px, 28vw, 400px);
   max-height: 400px;
   border-radius: 60px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 12px 36px rgba(0, 185, 181, 0.12);
   margin-bottom: 32px;
   line-height: 0;
@@ -3369,7 +3469,8 @@ watch(() => props.user, () => {
 .lousa-main-title {
   font-size: clamp(1.8rem, 2.8vw, 2.6rem);
   font-weight: 900;
-  color: #072654;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -3378,7 +3479,8 @@ watch(() => props.user, () => {
 .lousa-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #475569;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
   margin: 0;
   line-height: 1.35;
   max-width: 480px;
@@ -3662,6 +3764,92 @@ watch(() => props.user, () => {
   transition: transform 0.15s, box-shadow 0.15s;
 }
 
+/* No celular, a criação vem antes das ferramentas. */
+@media (max-width: 768px) {
+  .paint-workspace-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 8px;
+  }
+
+  .paint-templates-sidebar {
+    order: 1;
+  }
+
+  .templates-header {
+    display: none;
+  }
+
+  .templates-list-scroll {
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 2px 8px;
+  }
+
+  .tmpl-card-btn {
+    flex: 0 0 74px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 7px;
+    text-align: center;
+  }
+
+  .tmpl-thumb-img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .tmpl-thumb-title {
+    font-size: 0.68rem;
+    line-height: 1.1;
+  }
+
+  .paint-canvas-area {
+    order: 2;
+  }
+
+  .paint-dashed-wrapper {
+    order: 1;
+    min-height: 440px;
+    padding: 2px;
+  }
+
+  .paint-palette-bar {
+    order: 2;
+    border-radius: 18px;
+  }
+
+  .paint-actions-footer {
+    order: 3;
+  }
+
+  .lousa-canvas-dashed-frame {
+    order: 1;
+    min-height: 360px;
+  }
+
+  .lousa-top-toolbar {
+    order: 2;
+  }
+
+  .lousa-stamps-picker-bar {
+    order: 3;
+  }
+
+  .lousa-colors-bar {
+    order: 4;
+    border-radius: 18px;
+  }
+
+  .lousa-bottom-bar {
+    order: 5;
+  }
+}
+
 .btn-lousa-save-gallery:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(0, 187, 166, 0.4);
@@ -3792,7 +3980,7 @@ watch(() => props.user, () => {
   height: clamp(260px, 28vw, 400px);
   max-height: 400px;
   border-radius: 60px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 14px 36px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
@@ -3854,7 +4042,8 @@ watch(() => props.user, () => {
 .profile-name-title {
   font-size: clamp(1.8rem, 2.8vw, 2.5rem);
   font-weight: 900;
-  color: #072654;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -4560,4 +4749,5 @@ watch(() => props.user, () => {
   background: #e6f8f8;
   border-color: #00b9b5;
 }
+
 </style>
