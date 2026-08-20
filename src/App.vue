@@ -73,22 +73,32 @@ const handleLogin = (userData) => {
   initFloatingChat()
 }
 
+let loggingOut = false
+
 const handleLogout = async () => {
+  if (loggingOut) return
+  loggingOut = true
   try {
-    await api.post('/auth/logout')
-  } catch {
-    // token já pode estar expirado — segue com o logout local de qualquer forma
+    if (getToken()) {
+      try {
+        await api.post('/auth/logout')
+      } catch {
+        // token já pode estar expirado/inválido — segue com o logout local de qualquer forma
+      }
+    }
+    clearToken()
+    disconnectSocket()
+    chatSock = null
+    showChatPanel.value = false
+    chatHasUnread.value = false
+    currentUser.value = null
+    isLoggedIn.value = false
+    currentTab.value = 'home'
+    showDropdown.value = false
+    window.history.pushState({}, '', '/')
+  } finally {
+    loggingOut = false
   }
-  clearToken()
-  disconnectSocket()
-  chatSock = null
-  showChatPanel.value = false
-  chatHasUnread.value = false
-  currentUser.value = null
-  isLoggedIn.value = false
-  currentTab.value = 'home'
-  showDropdown.value = false
-  window.history.pushState({}, '', '/')
 }
 
 const handleUpdateUser = (updatedData) => {

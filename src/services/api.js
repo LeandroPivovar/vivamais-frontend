@@ -35,7 +35,7 @@ async function request(path, { method = 'GET', body } = {}) {
   const data = isJson ? await response.json() : null
 
   if (!response.ok) {
-    if (response.status === 401 && !path.startsWith('/auth/login')) {
+    if (response.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/logout')) {
       clearToken()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('auth:unauthorized'))
