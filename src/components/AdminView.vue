@@ -69,6 +69,7 @@ const showConfigModal = ref(false)
 const showTreeModal = ref(false)
 const selectedTreeUser = ref(null)
 const editingUser = ref(null)
+const resettingPasswordIds = ref(new Set())
 
 // Controla scroll do body quando modal está aberto no Admin
 watch([showRegisterModal, showConfigModal, showTreeModal, editingUser], (vals) => {
@@ -716,15 +717,20 @@ const deleteUser = async (id) => {
 
 // Gerar nova senha — envia por e-mail ao usuário e exibe pro admin.
 const regeneratePassword = async (user) => {
-  if (!confirm(`Gerar uma nova senha para ${user.name}? A senha será enviada por e-mail e exibida aqui.`)) return
+  if (!confirm(`Resetar a senha de ${user.name}? Uma nova senha temporária será enviada para ${user.email}.`)) return
+  resettingPasswordIds.value = new Set([...resettingPasswordIds.value, user.id])
   try {
     const { password } = await api.post(`/admin/users/${user.id}/reset-password`, {})
     emit('triggerDevModal', {
-      title: 'Nova senha gerada',
-      message: `Nova senha de ${user.name}: ${password}\n\nEnviada para ${user.email}. Anote antes de fechar.`
+      title: 'Senha temporária enviada',
+      message: `A nova senha temporária de ${user.name} foi enviada para ${user.email}.\n\nSenha: ${password}\n\nAnote antes de fechar.`
     })
   } catch (err) {
-    emit('triggerDevModal', { title: 'Erro', message: 'Não foi possível gerar uma nova senha agora.' })
+    emit('triggerDevModal', { title: 'Erro', message: 'Não foi possível resetar a senha e enviar o e-mail agora.' })
+  } finally {
+    const next = new Set(resettingPasswordIds.value)
+    next.delete(user.id)
+    resettingPasswordIds.value = next
   }
 }
 
@@ -1001,8 +1007,14 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                     <button class="btn-action-tree" title="Visualizar Rede de Indicações" @click="openTreeModal(u)" style="color: #7c3aed; background: transparent; border: none; cursor: pointer; font-size: 16px; padding: 6px; border-radius: var(--radius-sm);">
                       <i class="ph ph-tree-structure"></i>
                     </button>
-                    <button class="btn-action-edit" title="Gerar Nova Senha" @click="regeneratePassword(u)" style="color: #f59e0b;">
-                      <i class="ph ph-key"></i>
+                    <button
+                      class="btn-action-reset"
+                      title="Resetar senha e enviar por e-mail"
+                      :disabled="resettingPasswordIds.has(u.id)"
+                      @click="regeneratePassword(u)"
+                    >
+                      <i :class="resettingPasswordIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-key'"></i>
+                      <span>{{ resettingPasswordIds.has(u.id) ? 'Enviando...' : 'Resetar senha' }}</span>
                     </button>
                     <button class="btn-action-delete" title="Excluir Usuário" @click="deleteUser(u.id)">
                       <i class="ph ph-trash"></i>
@@ -1140,8 +1152,14 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <button class="btn btn-outline btn-sm" @click="openTreeModal(u)" style="flex: 1; min-width: 70px; color: #7c3aed; border-color: #7c3aed; display: flex; align-items: center; justify-content: center; gap: 4px;">
               <i class="ph ph-tree-structure"></i> Rede
             </button>
-            <button class="btn btn-outline btn-sm" @click="regeneratePassword(u)" style="flex: 1; min-width: 70px; color: #f59e0b; border-color: #f59e0b; display: flex; align-items: center; justify-content: center; gap: 4px;">
-              <i class="ph ph-key"></i> Senha
+            <button
+              class="btn btn-outline btn-sm"
+              :disabled="resettingPasswordIds.has(u.id)"
+              @click="regeneratePassword(u)"
+              style="flex: 1; min-width: 120px; color: #f59e0b; border-color: #f59e0b; display: flex; align-items: center; justify-content: center; gap: 4px;"
+            >
+              <i :class="resettingPasswordIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-key'"></i>
+              {{ resettingPasswordIds.has(u.id) ? 'Enviando...' : 'Resetar senha' }}
             </button>
             <button class="btn btn-outline btn-sm text-red" @click="deleteUser(u.id)" style="flex: 1; min-width: 70px; display: flex; align-items: center; justify-content: center; gap: 4px;">
               <i class="ph ph-trash"></i> Excluir
@@ -2653,7 +2671,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
   gap: 8px;
 }
 
-.btn-action-edit, .btn-action-delete {
+.btn-action-edit, .btn-action-delete, .btn-action-reset {
   background: transparent;
   border: none;
   cursor: pointer;
@@ -2661,6 +2679,25 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
   border-radius: var(--radius-sm);
   transition: var(--transition);
   font-size: 16px;
+}
+
+.btn-action-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #f59e0b;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.btn-action-reset:hover {
+  background: #fffbeb;
+}
+
+.btn-action-reset:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .btn-action-edit {
