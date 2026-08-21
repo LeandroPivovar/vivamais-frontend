@@ -545,6 +545,15 @@ const withdrawSummary = ref({
 })
 const withdrawLoading = ref(false)
 const showWithdrawModal = ref(false)
+const withdrawError = ref('')
+const withdrawForm = ref({ pixKeyType: 'cpf', pixKey: '' })
+
+const PIX_KEY_PLACEHOLDERS = {
+  cpf: '000.000.000-00',
+  email: 'seuemail@exemplo.com',
+  telefone: '(00) 00000-0000',
+  aleatoria: '00000000-0000-0000-0000-000000000000',
+}
 
 const loadWithdrawSummary = async () => {
   try {
@@ -570,24 +579,35 @@ const openWithdrawModal = () => {
     })
     return
   }
+  withdrawError.value = ''
+  // Pré-preenche com o CPF da conta — é a chave mais comum e evita erro de digitação.
+  withdrawForm.value = { pixKeyType: 'cpf', pixKey: maskCpf(cpf.value || props.user?.cpf || '') }
   showWithdrawModal.value = true
 }
 
 const confirmWithdraw = async () => {
+  if (!withdrawForm.value.pixKey.trim()) {
+    withdrawError.value = 'Informe a chave PIX que vai receber o valor.'
+    return
+  }
+  withdrawError.value = ''
   withdrawLoading.value = true
   try {
-    const data = await api.post('/withdrawals')
+    const data = await api.post('/withdrawals', {
+      pixKeyType: withdrawForm.value.pixKeyType,
+      pixKey: withdrawForm.value.pixKey.trim(),
+    })
     if (data?.summary) withdrawSummary.value = data.summary
     showWithdrawModal.value = false
+    withdrawForm.value.pixKey = ''
     emit('triggerDevModal', {
       title: 'Saque solicitado!',
       message: `Seu pedido de ${data?.withdrawal?.amountLabel ?? 'saque'} foi registrado. Os saques são processados toda segunda-feira — você receberá um e-mail com a confirmação.`,
     })
   } catch (err) {
-    emit('triggerDevModal', {
-      title: 'Não foi possível solicitar',
-      message: err?.message || 'Falha ao solicitar o saque. Tente novamente em instantes.',
-    })
+    // Erro de validação (chave inválida) fica no próprio modal, para o usuário
+    // corrigir sem perder o que digitou.
+    withdrawError.value = err?.message || 'Falha ao solicitar o saque. Tente novamente em instantes.'
   } finally {
     withdrawLoading.value = false
   }
@@ -2522,6 +2542,36 @@ onMounted(async () => {
             <span style="font-size:14px; font-weight:600;">Valor do saque:</span>
             <strong style="font-size:20px; color:#059669;">{{ withdrawSummary.availableLabel }}</strong>
           </div>
+        </div>
+
+        <!-- Chave PIX de destino -->
+        <div style="margin-bottom:16px;">
+          <label class="form-label" style="display:block; margin-bottom:6px; font-weight:600; font-size:14px;">
+            Chave PIX para receber
+          </label>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <select v-model="withdrawForm.pixKeyType" class="form-control" style="width:auto; min-width:130px;">
+              <option value="cpf">CPF</option>
+              <option value="email">E-mail</option>
+              <option value="telefone">Telefone</option>
+              <option value="aleatoria">Aleatória</option>
+            </select>
+            <input
+              v-model="withdrawForm.pixKey"
+              type="text"
+              class="form-control"
+              style="flex:1; min-width:180px;"
+              :placeholder="PIX_KEY_PLACEHOLDERS[withdrawForm.pixKeyType]"
+              @keyup.enter="confirmWithdraw"
+            />
+          </div>
+          <small style="color:var(--text-gray); font-size:12px;">
+            O valor será enviado para essa chave. Confira antes de confirmar.
+          </small>
+        </div>
+
+        <div v-if="withdrawError" class="alert-error-box" style="margin-bottom:16px; color:#b91c1c; background:#fef2f2; border:1px solid #fecaca; padding:10px 12px; border-radius:var(--radius-sm); font-size:13px;">
+          <i class="ph ph-warning-circle"></i> {{ withdrawError }}
         </div>
 
         <p style="font-size:13px; color:var(--text-gray); margin-bottom:20px;">

@@ -380,8 +380,19 @@ watch([withdrawalsStatusFilter, withdrawalsLimit], () => {
   loadWithdrawals()
 })
 
+const copyPixKey = async (key) => {
+  if (!key) return
+  try {
+    await navigator.clipboard.writeText(key)
+    emit('triggerDevModal', { title: 'Chave copiada', message: `Chave PIX ${key} copiada para a área de transferência.` })
+  } catch {
+    emit('triggerDevModal', { title: 'Chave PIX', message: key })
+  }
+}
+
 const payWithdrawal = async (w) => {
-  if (!confirm(`Confirmar baixa do saque #${w.id} de ${w.amountLabel} para ${w.user?.name || 'usuário'}?\n\nO usuário receberá um e-mail informando que o saque foi realizado.`)) return
+  const pixLine = w.pixKey ? `\nChave PIX (${w.pixKeyTypeLabel}): ${w.pixKey}` : ''
+  if (!confirm(`Confirmar baixa do saque #${w.id}?\n\nCliente: ${w.user?.name || 'usuário'}\nValor: ${w.amountLabel}${pixLine}\n\nO usuário receberá um e-mail informando que o saque foi realizado.`)) return
   withdrawalPayingId.value = w.id
   try {
     await api.post(`/admin/withdrawals/${w.id}/pay`)
@@ -1495,6 +1506,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
               <th>#</th>
               <th>Usuário</th>
               <th>CPF</th>
+              <th>Chave PIX</th>
               <th>Valor</th>
               <th>Solicitado em</th>
               <th>Pago em</th>
@@ -1512,6 +1524,23 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                 </div>
               </td>
               <td>{{ w.user?.cpf || '—' }}</td>
+              <td>
+                <div v-if="w.pixKey" style="display:flex; align-items:center; gap:6px;">
+                  <div class="user-info-col">
+                    <strong style="font-family: monospace; font-size:12px;">{{ w.pixKey }}</strong>
+                    <span>{{ w.pixKeyTypeLabel }}</span>
+                  </div>
+                  <button
+                    class="btn-pagination-nav"
+                    style="padding:4px 8px;"
+                    :title="'Copiar chave PIX'"
+                    @click="copyPixKey(w.pixKey)"
+                  >
+                    <i class="ph ph-copy"></i>
+                  </button>
+                </div>
+                <span v-else class="text-gray">—</span>
+              </td>
               <td style="font-weight:bold; color:#16a34a;">{{ w.amountLabel }}</td>
               <td>{{ formatDateTime(w.createdAt) }}</td>
               <td>{{ w.paidAt ? formatDateTime(w.paidAt) : '—' }}</td>
@@ -1536,13 +1565,13 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
               </td>
             </tr>
             <tr v-if="!withdrawalsLoading && withdrawals.length === 0">
-              <td colspan="8" style="text-align:center; padding:32px 16px; color:var(--text-gray);">
+              <td colspan="9" style="text-align:center; padding:32px 16px; color:var(--text-gray);">
                 <i class="ph ph-hand-coins" style="font-size:32px; display:block; margin-bottom:8px; opacity:0.5;"></i>
                 Nenhum pedido de saque encontrado.
               </td>
             </tr>
             <tr v-if="withdrawalsLoading">
-              <td colspan="8" style="text-align:center; padding:32px 16px; color:var(--text-gray);">Carregando...</td>
+              <td colspan="9" style="text-align:center; padding:32px 16px; color:var(--text-gray);">Carregando...</td>
             </tr>
           </tbody>
         </table>
