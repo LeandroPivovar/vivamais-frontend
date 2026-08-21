@@ -450,7 +450,8 @@ function handleTeenLogout() {
   if (props.isLoggedIn) {
     clearToken()
   }
-  emit('logout')
+  forceAuth.value = true
+  emit('logout', 'teen-auth')
 }
 </script>
 

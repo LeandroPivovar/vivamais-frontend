@@ -76,10 +76,16 @@ const handleLogin = (userData) => {
 
 let loggingOut = false
 
-const handleLogout = async () => {
+const logoutRedirects = {
+  'kids-auth': '/kids/auth',
+  'teen-auth': '/teen/auth',
+}
+
+const handleLogout = async (redirectTab = 'home') => {
   if (loggingOut) return
   loggingOut = true
   try {
+    const targetTab = Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
     if (getToken()) {
       try {
         await api.post('/auth/logout')
@@ -94,9 +100,9 @@ const handleLogout = async () => {
     chatHasUnread.value = false
     currentUser.value = null
     isLoggedIn.value = false
-    currentTab.value = 'home'
+    currentTab.value = targetTab
     showDropdown.value = false
-    window.history.pushState({}, '', '/')
+    window.history.pushState({ tab: targetTab }, '', logoutRedirects[targetTab] || '/')
   } finally {
     loggingOut = false
   }

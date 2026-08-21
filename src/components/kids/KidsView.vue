@@ -741,8 +741,7 @@ function handleLogout() {
   if (props.isLoggedIn) {
     clearToken()
   }
-  emit('logout')
-  window.history.pushState({ tab: 'kids-auth' }, '', '/kids/auth')
+  emit('logout', 'kids-auth')
 }
 
 // Fecha dropdown ao clicar fora
@@ -892,7 +891,6 @@ watch(() => props.user, () => {
                 {{ dep.name.split(' ')[0] }}
               </option>
             </select>
-            <i class="ph-bold ph-caret-down select-caret-ico"></i>
           </div>
 
           <!-- Contador de Estrelas (Desktop) -->
@@ -2051,11 +2049,6 @@ watch(() => props.user, () => {
 .child-icon-ph {
   font-size: 1.3rem;
   color: #0284c7;
-}
-
-.select-caret-ico {
-  font-size: 0.8rem;
-  color: #64748b;
 }
 
 .kids-dep-select {

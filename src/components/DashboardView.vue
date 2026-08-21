@@ -51,7 +51,7 @@ const SSO_BENEFIT_SLUGS = {
 // Pet (Veterinário) não tem API/SSO — o usuário faz login direto no portal do parceiro.
 const PET_PORTAL_URL = 'https://pet.consultastelemedicina.com.br/login_n'
 
-const portalOrigin = () => window.location.origin || 'https://conta.vivamaisclub.net'
+const portalOrigin = () => window.location.origin || 'https://conta.vivamaisclub.com'
 const portalUrl = (path) => `${portalOrigin()}${path.startsWith('/') ? path : `/${path}`}`
 
 function resolveBenefitSlug(title) {
