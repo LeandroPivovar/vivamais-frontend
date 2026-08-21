@@ -25,11 +25,21 @@ async function request(path, { method = 'GET', body } = {}) {
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    // Falha de rede (offline, servidor reiniciando, CORS): o fetch rejeita com um
+    // "Failed to fetch" cru, que vazava para a tela do cliente. Status 0 = sem resposta.
+    throw new ApiError(
+      'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente em instantes.',
+      0,
+    )
+  }
 
   const isJson = response.headers.get('content-type')?.includes('application/json')
   const data = isJson ? await response.json() : null
@@ -40,6 +50,14 @@ async function request(path, { method = 'GET', body } = {}) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('auth:unauthorized'))
       }
+    }
+    // 502/503/504 = servidor reiniciando ou fora do ar por instantes; a resposta vem
+    // do nginx em HTML, sem message útil para o cliente.
+    if ([502, 503, 504].includes(response.status)) {
+      throw new ApiError(
+        'O servidor está temporariamente indisponível. Aguarde alguns segundos e tente novamente.',
+        response.status,
+      )
     }
     throw new ApiError(data?.message ?? 'Erro na comunicação com o servidor.', response.status)
   }
