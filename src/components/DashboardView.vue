@@ -51,6 +51,9 @@ const SSO_BENEFIT_SLUGS = {
 // Pet (Veterinário) não tem API/SSO — o usuário faz login direto no portal do parceiro.
 const PET_PORTAL_URL = 'https://pet.consultastelemedicina.com.br/login_n'
 
+const portalOrigin = () => window.location.origin || 'https://conta.vivamaisclub.net'
+const portalUrl = (path) => `${portalOrigin()}${path.startsWith('/') ? path : `/${path}`}`
+
 function resolveBenefitSlug(title) {
   const key = Object.keys(SSO_BENEFIT_SLUGS).find((label) => title.includes(label))
   return key ? SSO_BENEFIT_SLUGS[key] : null
@@ -945,7 +948,7 @@ const updateCheckoutPlanDetails = () => {
     planType: checkoutSelectedPlanType.value,
     desc: `Link de checkout para indicação do Plano ${checkoutSelectedPlanType.value}`,
     price: planPrices.value[checkoutSelectedPlanType.value],
-    url: `https://conta.vivamaisclub.com/plano-${slugify(checkoutSelectedPlanType.value)}?ref=${refCodeInput.value}`,
+    url: portalUrl(`/plano-${slugify(checkoutSelectedPlanType.value)}?ref=${refCodeInput.value}`),
   }
 }
 

@@ -4,6 +4,7 @@ import LoginView from './components/LoginView.vue'
 import DashboardView from './components/DashboardView.vue'
 import AdminView from './components/AdminView.vue'
 import DependentesView from './components/DependentesView.vue'
+import HerdeiroView from './components/HerdeiroView.vue'
 import SuporteView from './components/SuporteView.vue'
 import ChatAoVivoView from './components/ChatAoVivoView.vue'
 import CheckoutView from './components/CheckoutView.vue'
@@ -13,7 +14,7 @@ import { api, getToken, clearToken } from './services/api'
 import { getSocket, disconnectSocket } from './services/socket'
 
 // Abas bloqueadas para dependentes (sem parte financeira nem gestão de dependentes).
-const DEPENDENT_BLOCKED_TABS = ['financeiro', 'indicacoes', 'dependentes']
+const DEPENDENT_BLOCKED_TABS = ['financeiro', 'indicacoes', 'dependentes', 'herdeiro']
 
 const isLoggedIn = ref(false)
 const currentUser = ref(null)
@@ -105,29 +106,17 @@ const handleUpdateUser = (updatedData) => {
   currentUser.value = updatedData
 }
 
-// Acesso restrito a Kids e Teen (disponível apenas para administradores)
-const isDevAccessAllowed = () => {
-  return currentUser.value?.role === 'admin'
-}
-
 const navigateTo = (tab) => {
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
   
-  // Kids e Teen disponíveis somente para administradores
+  // Kids e Teen têm login próprio por CPF do dependente quando não há sessão completa.
   if (tab.startsWith('kids') || tab.startsWith('teen')) {
     if (!isLoggedIn.value) {
       currentTab.value = tab.startsWith('teen') ? 'teen-auth' : 'kids-auth'
       showDropdown.value = false
       window.history.pushState({}, '', tab.startsWith('teen') ? '/teen/auth' : '/kids/auth')
-      return
-    }
-    if (currentUser.value?.role !== 'admin') {
-      openDevModal({
-        title: 'Acesso Restrito',
-        message: 'A área Viva Mais Kids está disponível exclusivamente para administradores.'
-      })
       return
     }
   }
@@ -177,6 +166,7 @@ const navigateTo = (tab) => {
   else if (tab === 'perfil') path = '/meu-perfil'
   else if (tab === 'financeiro') path = '/financeiro'
   else if (tab === 'dependentes') path = '/dependentes'
+  else if (tab === 'herdeiro') path = '/herdeiro'
   else if (tab === 'suporte') path = '/suporte'
   else if (tab === 'chat') path = '/chat'
   else if (tab === 'admin' && currentUser.value?.role === 'admin') path = '/admin'
@@ -236,13 +226,6 @@ const handleRouting = () => {
     if (!isLoggedIn.value) {
       currentTab.value = 'kids-auth'
       window.history.replaceState({}, '', '/kids/auth')
-    } else if (currentUser.value?.role !== 'admin') {
-      currentTab.value = 'home'
-      window.history.replaceState({}, '', '/')
-      openDevModal({
-        title: 'Acesso Restrito',
-        message: 'A área Viva Mais Kids está disponível exclusivamente para administradores.'
-      })
     } else {
       currentTab.value = 'kids-dashboard'
     }
@@ -252,13 +235,6 @@ const handleRouting = () => {
     if (!isLoggedIn.value) {
       currentTab.value = 'teen-auth'
       window.history.replaceState({}, '', '/teen/auth')
-    } else if (currentUser.value?.role !== 'admin') {
-      currentTab.value = 'home'
-      window.history.replaceState({}, '', '/')
-      openDevModal({
-        title: 'Acesso Restrito',
-        message: 'A área Viva Mais Teen está disponível exclusivamente para administradores.'
-      })
     } else {
       currentTab.value = 'teen-dashboard'
     }
@@ -270,6 +246,8 @@ const handleRouting = () => {
     currentTab.value = 'financeiro'
   } else if (path === '/dependentes' || hash === '#/dependentes') {
     currentTab.value = 'dependentes'
+  } else if (path === '/herdeiro' || hash === '#/herdeiro') {
+    currentTab.value = 'herdeiro'
   } else if (path === '/suporte' || hash === '#/suporte') {
     currentTab.value = 'suporte'
   } else if (path === '/chat' || hash === '#/chat') {
@@ -414,6 +392,9 @@ onBeforeUnmount(() => {
               <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="navigateTo('dependentes')">
                 <i class="ph ph-users"></i> Dependentes
               </button>
+              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="navigateTo('herdeiro')">
+                <i class="ph ph-identification-card"></i> Herdeiro
+              </button>
               <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="navigateTo('indicacoes')">
                 <i class="ph ph-users-three"></i> Indicações
               </button>
@@ -445,6 +426,10 @@ onBeforeUnmount(() => {
         <DependentesView
           v-else-if="currentTab === 'dependentes'"
           :plan="currentUser?.plan"
+          @triggerDevModal="openDevModal"
+        />
+        <HerdeiroView
+          v-else-if="currentTab === 'herdeiro'"
           @triggerDevModal="openDevModal"
         />
         <SuporteView v-else-if="currentTab === 'suporte'" />
@@ -480,25 +465,56 @@ onBeforeUnmount(() => {
             <img src="/logo.png" alt="Viva Mais" class="pwa-logo" style="max-height: 32px;" />
           </div>
           
-          <!-- Menu com 3 riscos (no text) se estiver na aba Indicações -->
-          <div v-if="currentTab === 'indicacoes'" ref="mobileMenuRef" style="position: relative; display: flex; align-items: center;">
+          <!-- Menu mobile principal -->
+          <div ref="mobileMenuRef" style="position: relative; display: flex; align-items: center;">
             <button @click.stop="showRefMenuDropdown = !showRefMenuDropdown" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center;">
               <i class="ph ph-list" style="font-size: 26px; color: var(--secondary);"></i>
             </button>
             
-            <div v-if="showRefMenuDropdown" class="dropdown-menu show" style="position: absolute; right: 0; top: 110%; z-index: 99999; width: 180px; box-shadow: var(--shadow-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: white; padding: 6px; display: flex; flex-direction: column;">
-              <button class="dropdown-item" :class="{ active: activeRefTab === 'visaoGeral' }" @click="activeRefTab = 'visaoGeral'; showRefMenuDropdown = false" style="width: 100%; border: none; background: transparent; padding: 8px 12px; text-align: left; font-size: 13px; cursor: pointer;">
+            <div v-if="showRefMenuDropdown" class="dropdown-menu show mobile-main-menu" style="position: absolute; right: 0; top: 110%; z-index: 99999; width: 220px; box-shadow: var(--shadow-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: white; padding: 6px; display: flex; flex-direction: column;">
+              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('home')">
+                <i class="ph ph-squares-four"></i> Visão Geral
+              </button>
+              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('perfil')">
+                <i class="ph ph-user"></i> Minha Conta
+              </button>
+              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('financeiro')">
+                <i class="ph ph-credit-card"></i> Financeiro
+              </button>
+              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('dependentes')">
+                <i class="ph ph-users"></i> Dependentes
+              </button>
+              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('herdeiro')">
+                <i class="ph ph-identification-card"></i> Herdeiro
+              </button>
+              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('indicacoes')">
+                <i class="ph ph-users-three"></i> Indicações
+              </button>
+              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('suporte')">
+                <i class="ph ph-headset"></i> Suporte
+              </button>
+              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('chat')">
+                <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
+              </button>
+              <button v-if="currentUser?.role === 'admin'" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('admin')">
+                <i class="ph ph-shield-check"></i> Painel Admin
+              </button>
+
+              <template v-if="currentTab === 'indicacoes'">
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item" :class="{ active: activeRefTab === 'visaoGeral' }" @click="activeRefTab = 'visaoGeral'; showRefMenuDropdown = false">
                 Visão Geral
-              </button>
-              <button class="dropdown-item" :class="{ active: activeRefTab === 'indicados' }" @click="activeRefTab = 'indicados'; showRefMenuDropdown = false" style="width: 100%; border: none; background: transparent; padding: 8px 12px; text-align: left; font-size: 13px; cursor: pointer;">
+                </button>
+                <button class="dropdown-item" :class="{ active: activeRefTab === 'indicados' }" @click="activeRefTab = 'indicados'; showRefMenuDropdown = false">
                 Meus Indicados
-              </button>
-              <button class="dropdown-item" :class="{ active: activeRefTab === 'financeiroRef' }" @click="activeRefTab = 'financeiroRef'; showRefMenuDropdown = false" style="width: 100%; border: none; background: transparent; padding: 8px 12px; text-align: left; font-size: 13px; cursor: pointer;">
+                </button>
+                <button class="dropdown-item" :class="{ active: activeRefTab === 'financeiroRef' }" @click="activeRefTab = 'financeiroRef'; showRefMenuDropdown = false">
                 Financeiro
-              </button>
-              <button class="dropdown-item" :class="{ active: activeRefTab === 'links' }" @click="activeRefTab = 'links'; showRefMenuDropdown = false" style="width: 100%; border: none; background: transparent; padding: 8px 12px; text-align: left; font-size: 13px; cursor: pointer;">
+                </button>
+                <button class="dropdown-item" :class="{ active: activeRefTab === 'links' }" @click="activeRefTab = 'links'; showRefMenuDropdown = false">
                 Meus Links
-              </button>
+                </button>
+              </template>
             </div>
           </div>
         </header>
@@ -513,6 +529,10 @@ onBeforeUnmount(() => {
           <DependentesView
             v-else-if="currentTab === 'dependentes'"
             :plan="currentUser?.plan"
+            @triggerDevModal="openDevModal"
+          />
+          <HerdeiroView
+            v-else-if="currentTab === 'herdeiro'"
             @triggerDevModal="openDevModal"
           />
           <SuporteView v-else-if="currentTab === 'suporte'" />

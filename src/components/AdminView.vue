@@ -2079,6 +2079,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
           <p style="font-size:12px; color:var(--text-gray); background:#fff7ed; border:1px solid #fed7aa; padding:10px 12px; border-radius:8px;">
             <strong>Webhook:</strong> a Pagar.me v5 não permite cadastrar webhook via API. No painel Pagar.me → Configurações → Webhooks, adicione a URL
+            <code>https://conta.vivamaisclub.net/api/billing/webhook/pagarme</code> ou
             <code>https://conta.vivamaisclub.com/api/billing/webhook/pagarme</code> (eventos: charge.paid, charge.payment_failed, subscription.charged). A confirmação também funciona por polling.
           </p>
         </div>

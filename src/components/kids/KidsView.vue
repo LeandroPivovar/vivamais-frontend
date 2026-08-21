@@ -60,18 +60,20 @@ function loadKidProfile(profileId = 'titular') {
   }
   if (!data) data = { ...defaultUserData }
 
-  const dep = dependentsList.value.find(d => String(d.id) === String(profileId))
+  const dep = kidProfileOptions.value.find(d => String(d.id) === String(profileId))
   if (dep) {
     kidUser.name = dep.name.split(' ')[0]
     kidUser.avatar = dep.avatar || '🧒'
     kidUser.stars = Number(data.stars || 0)
   } else {
-    kidUser.name = props.user?.name ? props.user.name.split(' ')[0] : (data.name || 'Estudante')
+    kidUser.name = kidsTeenSession.value?.user?.name
+      ? kidsTeenSession.value.user.name.split(' ')[0]
+      : (props.user?.name ? props.user.name.split(' ')[0] : (data.name || 'Estudante'))
     kidUser.avatar = '⭐'
     kidUser.stars = Number(data.stars || 0)
   }
 
-  kidUser.email = data.email || props.user?.email || ''
+  kidUser.email = data.email || kidsTeenSession.value?.user?.email || props.user?.email || ''
   kidUser.artworks = data.artworks || []
   kidUser.achievements = data.achievements || defaultUserData.achievements
 }
@@ -86,11 +88,16 @@ async function fetchDependents() {
   try {
     const data = await api.get('/dependents')
     if (data?.dependents && Array.isArray(data.dependents)) {
-      dependentsList.value = data.dependents
+      dependentsList.value = data.dependents.filter((dep) => dep.ageGroup === 'kids')
     } else if (Array.isArray(data)) {
-      dependentsList.value = data
+      dependentsList.value = data.filter((dep) => dep.ageGroup === 'kids')
     } else {
       dependentsList.value = []
+    }
+    if (dependentsList.value.length && !dependentsList.value.some((dep) => String(dep.id) === String(activeProfileId.value))) {
+      activeProfileId.value = String(dependentsList.value[0].id)
+      localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
+      loadKidProfile(activeProfileId.value)
     }
   } catch {
     dependentsList.value = []
@@ -101,7 +108,7 @@ function switchProfile(profileId) {
   activeProfileId.value = String(profileId)
   localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
 
-  const dep = dependentsList.value.find(d => String(d.id) === String(profileId))
+  const dep = kidProfileOptions.value.find(d => String(d.id) === String(profileId))
   if (dep) {
     kidUser.name = dep.name.split(' ')[0]
     kidUser.avatar = dep.avatar || '🧒'
@@ -149,8 +156,10 @@ function loadKidsTeenSession() {
       if (session?.guest) {
         localStorage.removeItem(KIDS_TEEN_SESSION_KEY)
         kidsTeenSession.value = null
-      } else {
+      } else if (session?.module === 'kids') {
         kidsTeenSession.value = session
+      } else {
+        kidsTeenSession.value = null
       }
     }
   } catch {
@@ -159,9 +168,24 @@ function loadKidsTeenSession() {
 }
 loadKidsTeenSession()
 
-const hasKidsAccess = computed(() => props.isLoggedIn || !!kidsTeenSession.value)
+const hasKidsAccess = computed(() => {
+  if (kidsTeenSession.value?.module === 'kids') return true
+  if (!props.isLoggedIn) return false
+  if (props.user?.isDependent) return props.user?.ageGroup === 'kids'
+  return true
+})
 const forceAuth = ref(props.subRoute === 'auth' && !hasKidsAccess.value)
 const showAuthScreen = computed(() => !hasKidsAccess.value || forceAuth.value)
+
+const kidProfileOptions = computed(() => {
+  if (dependentsList.value.length) return dependentsList.value
+  const sessionUser = kidsTeenSession.value?.module === 'kids' ? kidsTeenSession.value.user : null
+  if (sessionUser) return [{ id: 'session', name: sessionUser.name, email: sessionUser.email || '', avatar: '🧒' }]
+  if (props.user?.isDependent && props.user?.ageGroup === 'kids') {
+    return [{ id: props.user.id || 'session', name: props.user.name, email: props.user.email || '', avatar: '🧒' }]
+  }
+  return []
+})
 
 watch(() => props.subRoute, (val) => {
   if (val === 'auth' && !hasKidsAccess.value) {
@@ -182,20 +206,16 @@ async function handleKidsLogin() {
   try {
     const data = await api.post('/auth/login-kids', { cpf: digits, module: 'kids' })
     if (data?.token) {
-      if (data.user?.role !== 'admin') {
-        loginError.value = 'Acesso ao Viva Mais Kids permitido apenas para administradores.'
-        return
-      }
-      setToken(data.token)
-      kidsTeenSession.value = { token: data.token, user: data.user }
+      kidsTeenSession.value = { token: data.token, user: data.user, module: 'kids' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
+      activeProfileId.value = 'session'
+      localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
       kidUser.name = data.user?.name ? data.user.name.split(' ')[0] : kidUser.name
       saveKidProfile()
       kidsAudio.playVictory()
       triggerConfetti()
       forceAuth.value = false
       activeTab.value = 'home'
-      emit('login', data.user)
       window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
     }
   } catch (err) {
@@ -868,8 +888,7 @@ watch(() => props.user, () => {
               class="kids-dep-select"
               title="Trocar Perfil da Criança"
             >
-              <option value="titular">{{ props.user?.name ? props.user.name.split(' ')[0] : 'João' }}</option>
-              <option v-for="dep in dependentsList" :key="dep.id" :value="dep.id">
+              <option v-for="dep in kidProfileOptions" :key="dep.id" :value="dep.id">
                 {{ dep.name.split(' ')[0] }}
               </option>
             </select>
@@ -905,8 +924,7 @@ watch(() => props.user, () => {
                   @change="switchProfile($event.target.value)"
                   class="dropdown-dep-select"
                 >
-                  <option value="titular">{{ props.user?.name ? props.user.name.split(' ')[0] : 'João' }}</option>
-                  <option v-for="dep in dependentsList" :key="dep.id" :value="dep.id">
+                  <option v-for="dep in kidProfileOptions" :key="dep.id" :value="dep.id">
                     {{ dep.name.split(' ')[0] }}
                   </option>
                 </select>

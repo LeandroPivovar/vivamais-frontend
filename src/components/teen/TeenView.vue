@@ -87,14 +87,22 @@ const kidsTeenSession = ref(null)
 function loadKidsTeenSession() {
   try {
     const saved = localStorage.getItem(KIDS_TEEN_SESSION_KEY)
-    if (saved) kidsTeenSession.value = JSON.parse(saved)
+    if (saved) {
+      const session = JSON.parse(saved)
+      kidsTeenSession.value = session?.module === 'teen' ? session : null
+    }
   } catch {
     kidsTeenSession.value = null
   }
 }
 loadKidsTeenSession()
 
-const hasTeenAccess = computed(() => props.isLoggedIn || !!kidsTeenSession.value)
+const hasTeenAccess = computed(() => {
+  if (kidsTeenSession.value?.module === 'teen') return true
+  if (!props.isLoggedIn) return false
+  if (props.user?.isDependent) return props.user?.ageGroup === 'teen'
+  return true
+})
 
 function getInitials(name) {
   if (!name) return 'UN'
@@ -105,23 +113,37 @@ function getInitials(name) {
 
 async function fetchDependentsAndSetupProfiles() {
   const current = props.user || kidsTeenSession.value?.user || {}
-  const list = [
-    {
+  const list = []
+
+  if (kidsTeenSession.value?.module === 'teen' && kidsTeenSession.value.user) {
+    list.push({
+      id: `dep-${kidsTeenSession.value.user.id}`,
+      name: kidsTeenSession.value.user.name || 'Dependente',
+      email: kidsTeenSession.value.user.email || '',
+      initials: getInitials(kidsTeenSession.value.user.name || 'Dependente'),
+      role: 'dependent',
+      isDependent: true,
+      level: 'Dependente Teen'
+    })
+  } else if (current.role === 'admin' || (current.isDependent && current.ageGroup === 'teen')) {
+    list.push({
       id: current.id ? `user-${current.id}` : 'titular',
       name: current.name || 'Titular',
       email: current.email || '',
       initials: getInitials(current.name || 'Titular'),
       role: current.role || 'user',
-      isDependent: false,
-      level: current.plan ? `Plano ${current.plan}` : 'Titular'
-    }
-  ]
+      isDependent: !!current.isDependent,
+      level: current.plan ? `Plano ${current.plan}` : 'Teen'
+    })
+  }
 
   if (props.isLoggedIn && getToken()) {
     try {
-      const deps = await api.get('/dependents')
-      if (Array.isArray(deps)) {
-        deps.forEach(dep => {
+      const data = await api.get('/dependents')
+      const deps = Array.isArray(data) ? data : (Array.isArray(data?.dependents) ? data.dependents : [])
+      deps
+        .filter((dep) => dep.ageGroup === 'teen')
+        .forEach(dep => {
           list.push({
             id: `dep-${dep.id}`,
             name: dep.name,
@@ -129,10 +151,9 @@ async function fetchDependentsAndSetupProfiles() {
             initials: getInitials(dep.name),
             role: 'dependent',
             isDependent: true,
-            level: 'Dependente'
+            level: 'Dependente Teen'
           })
         })
-      }
     } catch {
       // offline fallback
     }
@@ -141,7 +162,15 @@ async function fetchDependentsAndSetupProfiles() {
   availableProfiles.value = list
   const savedProfileId = localStorage.getItem('viva_teen_active_profile_id')
   const matched = list.find(p => String(p.id) === String(savedProfileId))
-  activeProfile.value = matched || list[0]
+  activeProfile.value = matched || list[0] || {
+    id: 'sem-teen',
+    name: 'Sem dependente Teen',
+    email: '',
+    initials: 'ST',
+    role: 'dependent',
+    isDependent: true,
+    level: 'Nenhum dependente de 11 a 17 anos'
+  }
   loadAllData()
 }
 
@@ -390,7 +419,7 @@ async function handleTeenLogin() {
   try {
     const data = await api.post('/auth/login-kids', { cpf, module: 'teen' })
     if (data?.token) {
-      kidsTeenSession.value = { token: data.token, user: data.user }
+      kidsTeenSession.value = { token: data.token, user: data.user, module: 'teen' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
       fetchDependentsAndSetupProfiles()
     }
@@ -427,7 +456,7 @@ function handleTeenLogout() {
         </div>
 
         <h2>Aulas de Idiomas Ao Vivo</h2>
-        <p>Digite o CPF do titular ou dependente com assinatura ativa para assistir às aulas ao vivo e consultar o cronograma.</p>
+        <p>Digite o CPF do dependente Teen com assinatura ativa para assistir às aulas ao vivo e consultar o cronograma.</p>
 
         <div v-if="loginError" class="alert-error-box">
           <i class="ph ph-warning-circle"></i> {{ loginError }}
