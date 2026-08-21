@@ -174,7 +174,7 @@ const hasKidsAccess = computed(() => {
   if (props.user?.isDependent) return props.user?.ageGroup === 'kids'
   return true
 })
-const forceAuth = ref(props.subRoute === 'auth' && !hasKidsAccess.value)
+const forceAuth = ref(props.subRoute === 'auth')
 const showAuthScreen = computed(() => !hasKidsAccess.value || forceAuth.value)
 
 const kidProfileOptions = computed(() => {
@@ -188,7 +188,7 @@ const kidProfileOptions = computed(() => {
 })
 
 watch(() => props.subRoute, (val) => {
-  if (val === 'auth' && !hasKidsAccess.value) {
+  if (val === 'auth') {
     forceAuth.value = true
   } else if (val === 'dashboard') {
     forceAuth.value = false

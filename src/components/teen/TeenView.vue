@@ -83,6 +83,7 @@ const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
 const kidsTeenSession = ref(null)
+const forceAuth = ref(props.subRoute === 'auth')
 
 function loadKidsTeenSession() {
   try {
@@ -103,6 +104,7 @@ const hasTeenAccess = computed(() => {
   if (props.user?.isDependent) return props.user?.ageGroup === 'teen'
   return true
 })
+const showAuthScreen = computed(() => !hasTeenAccess.value || forceAuth.value)
 
 function getInitials(name) {
   if (!name) return 'UN'
@@ -234,6 +236,14 @@ onBeforeUnmount(() => {
 
 watch(() => props.user, () => {
   fetchDependentsAndSetupProfiles()
+})
+
+watch(() => props.subRoute, (val) => {
+  if (val === 'auth') {
+    forceAuth.value = true
+  } else if (val === 'dashboard') {
+    forceAuth.value = false
+  }
 })
 
 // Todas as aulas cadastradas
@@ -421,7 +431,9 @@ async function handleTeenLogin() {
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user, module: 'teen' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
+      forceAuth.value = false
       fetchDependentsAndSetupProfiles()
+      window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
     }
   } catch (err) {
     loginError.value = err.status === 401 ? 'CPF não encontrado ou assinatura inativa.' : (err?.message || 'Falha ao autenticar. Tente novamente.')
@@ -448,7 +460,7 @@ function handleTeenLogout() {
     <!-- ================================================================= -->
     <!-- TELA DE AUTH / LOGIN TEEN (CASO DESLOGADO) -->
     <!-- ================================================================= -->
-    <div v-if="!hasTeenAccess || subRoute === 'auth'" class="teen-auth-screen">
+    <div v-if="showAuthScreen" class="teen-auth-screen">
       <div class="teen-auth-card">
         <div class="auth-logo-row">
           <img src="/logo.png" alt="Viva Mais Club" class="auth-logo-img" />

@@ -391,6 +391,12 @@ const accessBlocked = computed(() => {
 const depInfo = ref({ limit: 0, used: 0, canAdd: false })
 const depAvailable = computed(() => depInfo.value.limit > 0)
 const depRemaining = computed(() => Math.max(0, depInfo.value.limit - depInfo.value.used))
+const hasKidsDependents = computed(() =>
+  (depInfo.value?.dependents || []).some((d) => d.ageGroup === 'kids')
+)
+const hasTeenDependents = computed(() =>
+  (depInfo.value?.dependents || []).some((d) => d.ageGroup === 'teen')
+)
 
 // Programa de Indicações (Afiliação)
 const activeRefTab = ref('visaoGeral')
@@ -1275,6 +1281,38 @@ onMounted(async () => {
               <div class="shortcut-details">
                 <h3>Programa de Indicações</h3>
                 <p>Indique amigos e ganhe descontos e comissões em dinheiro</p>
+              </div>
+              <i class="ph ph-caret-right action-arrow"></i>
+            </div>
+
+            <div
+              v-if="hasKidsDependents"
+              class="shortcut-card animated-item"
+              style="animation-delay: 0.75s;"
+              @click="emit('changeTab', 'kids-auth')"
+            >
+              <div class="shortcut-icon icon-blue">
+                <i class="ph ph-game-controller"></i>
+              </div>
+              <div class="shortcut-details">
+                <h3>Login Viva Kids</h3>
+                <p>Acesse a área Kids dos dependentes cadastrados</p>
+              </div>
+              <i class="ph ph-caret-right action-arrow"></i>
+            </div>
+
+            <div
+              v-if="hasTeenDependents"
+              class="shortcut-card animated-item"
+              style="animation-delay: 0.8s;"
+              @click="emit('changeTab', 'teen-auth')"
+            >
+              <div class="shortcut-icon icon-purple">
+                <i class="ph ph-graduation-cap"></i>
+              </div>
+              <div class="shortcut-details">
+                <h3>Login Viva Teens</h3>
+                <p>Acesse a área Teen dos dependentes cadastrados</p>
               </div>
               <i class="ph ph-caret-right action-arrow"></i>
             </div>
@@ -3115,6 +3153,8 @@ onMounted(async () => {
 .icon-pink { background: var(--primary-light); color: var(--primary); }
 .icon-green { background: #EDF8F8; color: var(--secondary-hover); }
 .icon-orange { background: #F1F6FC; color: var(--primary); }
+.icon-blue { background: #EAF4FF; color: #1565C0; }
+.icon-purple { background: #F2ECFF; color: #6D4AFF; }
 
 .shortcut-details {
   flex-grow: 1;
