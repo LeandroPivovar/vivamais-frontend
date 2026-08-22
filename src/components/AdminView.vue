@@ -424,6 +424,8 @@ const isCardBilling = (item) => {
 
 const todayKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
 const billingDateKey = (item) => {
+  if (item?.paymentDateKey) return item.paymentDateKey
+  if (item?.dateKey) return item.dateKey
   const raw = item?.dateIso ?? item?.createdAt
   if (!raw) return ''
   return new Date(raw).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
