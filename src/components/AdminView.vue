@@ -422,13 +422,24 @@ const isCardBilling = (item) => {
   return text.includes('cart') || text.includes('card') || text.includes('pagarme')
 }
 
-const todayKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+const brDateKey = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const part = (type) => parts.find((item) => item.type === type)?.value || ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+const todayKey = () => brDateKey()
 const billingDateKey = (item) => {
   if (item?.paymentDateKey) return item.paymentDateKey
   if (item?.dateKey) return item.dateKey
   const raw = item?.dateIso ?? item?.createdAt
   if (!raw) return ''
-  return new Date(raw).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+  return brDateKey(new Date(raw))
 }
 
 const aggregateBilling = (items) => {
