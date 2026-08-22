@@ -45,6 +45,8 @@ const PLAN_BY_SLUG = {
 const BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
 
 const refCode = ref('')
+const trialToken = ref('')
+const trialEndsAt = ref('')
 const planType = ref('Individual')
 const prices = ref({})
 const loading = ref(true)
@@ -54,6 +56,8 @@ const done = ref(false)
 const pixCode = ref('')
 const pixImage = ref('')
 const status = ref('')
+
+const isTrialSignup = computed(() => !!trialToken.value)
 
 const form = ref({
   name: '', email: '', cpf: '', phone: '', birthDate: '', gender: '',
@@ -74,8 +78,18 @@ onMounted(async () => {
   // /plano-{slug}
   const m = window.location.pathname.match(/\/plano-([a-z0-9-]+)/i)
   if (m && PLAN_BY_SLUG[m[1].toLowerCase()]) planType.value = PLAN_BY_SLUG[m[1].toLowerCase()]
+  const trialMatch = window.location.pathname.match(/\/cadastro-30-dias\/([a-z0-9]+)/i)
+  if (trialMatch) {
+    trialToken.value = trialMatch[1]
+    try {
+      const info = await api.get(`/billing/trial-link/${trialToken.value}`)
+      planType.value = info?.plan || 'Individual'
+    } catch (err) {
+      error.value = err?.message || 'Este link de cadastro não está disponível.'
+    }
+  }
   // Registra o clique no link de indicação (best-effort, não bloqueia a tela).
-  if (refCode.value) {
+  if (!isTrialSignup.value && refCode.value) {
     api.post('/billing/referral-click', { ref: refCode.value, planType: planType.value }).catch(() => {})
   }
   try {
@@ -102,6 +116,20 @@ const submit = async () => {
   submitting.value = true
   try {
     let cardToken
+    if (isTrialSignup.value) {
+      const res = await api.post('/billing/trial-signup', {
+        token: trialToken.value,
+        name: f.name, email: f.email, cpf: f.cpf, phone: f.phone,
+        birthDate: toBrDate(f.birthDate), gender: f.gender,
+        address: f.address, neighborhood: f.neighborhood,
+        complement: f.complement || undefined,
+        city: f.city, state: f.state, zipCode: f.zipCode,
+      })
+      status.value = res?.status || 'trial_active'
+      trialEndsAt.value = res?.trialEndsAt || ''
+      done.value = true
+      return
+    }
     if (paymentMethod.value === 'card') {
       if (!cardPublicKey.value) throw new Error('Pagamento com cartão indisponível no momento.')
       const { exp_month, exp_year } = parseExpiry(card.value.expiry)
@@ -162,6 +190,12 @@ const copyPix = async () => {
           <p>Seu plano <strong>{{ planType }}</strong> foi ativado. Enviamos o acesso (e-mail + senha provisória) no seu e-mail.</p>
         </template>
 
+        <!-- Cadastro 30 dias -->
+        <template v-else-if="status === 'trial_active'">
+          <p>Seu plano <strong>{{ planType }}</strong> foi liberado por 30 dias. Enviamos o acesso (e-mail + senha provisória) no seu e-mail.</p>
+          <p v-if="trialEndsAt" class="cp-note">O primeiro pagamento vence em <strong>{{ trialEndsAt }}</strong>. Antes disso enviaremos lembretes por e-mail.</p>
+        </template>
+
         <!-- Cartão em processamento -->
         <template v-else-if="paymentMethod === 'card'">
           <p>Recebemos seu pagamento no <strong>cartão</strong>. A confirmação chega em instantes e o plano <strong>{{ planType }}</strong> é ativado automaticamente. Enviamos o acesso no seu e-mail.</p>
@@ -185,8 +219,11 @@ const copyPix = async () => {
       <!-- Formulário -->
       <div v-else class="cp-grid">
         <div class="cp-card">
-          <h1>Finalize sua assinatura</h1>
-          <p class="cp-sub">Plano <strong>{{ planType }}</strong><span v-if="planPrice"> — {{ planPrice }}</span></p>
+          <h1>{{ isTrialSignup ? 'Finalize seu cadastro' : 'Finalize sua assinatura' }}</h1>
+          <p class="cp-sub">
+            Plano <strong>{{ planType }}</strong><span v-if="planPrice && !isTrialSignup"> — {{ planPrice }}</span>
+            <span v-if="isTrialSignup"> — 30 dias iniciais sem pagamento</span>
+          </p>
 
           <div v-if="loading" class="cp-note">Carregando…</div>
 
@@ -228,6 +265,7 @@ const copyPix = async () => {
             </div>
             <div class="form-group"><label>Complemento (opcional)</label><input v-model="form.complement" type="text" class="form-control" placeholder="Apto, bloco…" /></div>
 
+            <template v-if="!isTrialSignup">
             <div class="cp-section">Pagamento</div>
             <div v-if="cardEnabled" class="cp-pay-methods">
               <button type="button" :class="['cp-pay-opt', { active: paymentMethod === 'pix' }]" @click="paymentMethod = 'pix'">
@@ -255,10 +293,19 @@ const copyPix = async () => {
               </div>
               <p class="cp-note" style="margin:0;">Assinatura mensal no cartão, cobrada automaticamente. Cancele quando quiser.</p>
             </div>
+            </template>
+
+            <div v-else class="cp-pix-note">
+              <i class="ph ph-calendar-check"></i>
+              <div>
+                <strong>30 dias liberados</strong>
+                <span>Você paga somente após 30 dias. Enviaremos avisos 7, 3 e 1 dia antes do vencimento.</span>
+              </div>
+            </div>
 
             <p v-if="error" class="cp-error">{{ error }}</p>
             <button type="submit" class="btn btn-secondary btn-full cp-submit" :disabled="submitting">
-              {{ submitting ? 'Processando…' : (paymentMethod === 'card' ? 'Assinar com cartão' : 'Confirmar e gerar Pix Automático') }}
+              {{ submitting ? 'Processando…' : (isTrialSignup ? 'Criar conta 30 dias' : (paymentMethod === 'card' ? 'Assinar com cartão' : 'Confirmar e gerar Pix Automático')) }}
             </button>
             <button type="button" class="cp-login-link" @click="emit('goLogin')">Já tem conta? Entrar</button>
           </form>
@@ -268,9 +315,9 @@ const copyPix = async () => {
           <h4>Resumo</h4>
           <div class="cp-sum-row"><span>Plano</span><strong>{{ planType }}</strong></div>
           <div class="cp-sum-row"><span>Periodicidade</span><strong>Mensal</strong></div>
-          <div class="cp-sum-row"><span>Pagamento</span><strong>{{ paymentMethod === 'card' ? 'Cartão de Crédito' : 'Pix Automático' }}</strong></div>
-          <div class="cp-sum-row total"><span>Total/mês</span><strong>{{ planPrice || '—' }}</strong></div>
-          <p class="cp-note">Débito automático mensal via Pix. Você autoriza uma vez no banco. Cancele quando quiser.</p>
+          <div class="cp-sum-row"><span>Pagamento</span><strong>{{ isTrialSignup ? 'Após 30 dias' : (paymentMethod === 'card' ? 'Cartão de Crédito' : 'Pix Automático') }}</strong></div>
+          <div class="cp-sum-row total"><span>{{ isTrialSignup ? 'Hoje' : 'Total/mês' }}</span><strong>{{ isTrialSignup ? 'R$ 0,00' : (planPrice || '—') }}</strong></div>
+          <p class="cp-note">{{ isTrialSignup ? 'O primeiro pagamento será solicitado depois do período inicial. O link é único e só pode ser usado uma vez.' : 'Débito automático mensal via Pix. Você autoriza uma vez no banco. Cancele quando quiser.' }}</p>
         </aside>
       </div>
     </div>

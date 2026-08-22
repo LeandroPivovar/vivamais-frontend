@@ -67,12 +67,16 @@ const config = ref({
 const showRegisterModal = ref(false)
 const showConfigModal = ref(false)
 const showTreeModal = ref(false)
+const showTrialLinkModal = ref(false)
 const selectedTreeUser = ref(null)
 const editingUser = ref(null)
 const resettingPasswordIds = ref(new Set())
+const trialLinkPlan = ref('Individual')
+const trialLinkLoading = ref(false)
+const generatedTrialLink = ref('')
 
 // Controla scroll do body quando modal está aberto no Admin
-watch([showRegisterModal, showConfigModal, showTreeModal, editingUser], (vals) => {
+watch([showRegisterModal, showConfigModal, showTreeModal, showTrialLinkModal, editingUser], (vals) => {
   const isOpen = vals.some(v => !!v)
   document.body.style.overflow = isOpen ? 'hidden' : ''
 })
@@ -747,6 +751,31 @@ const regeneratePassword = async (user) => {
   }
 }
 
+const openTrialLinkModal = () => {
+  trialLinkPlan.value = 'Individual'
+  generatedTrialLink.value = ''
+  showTrialLinkModal.value = true
+}
+
+const generateTrialLink = async () => {
+  trialLinkLoading.value = true
+  generatedTrialLink.value = ''
+  try {
+    const res = await api.post('/admin/trial-links', { plan: trialLinkPlan.value })
+    generatedTrialLink.value = res?.url || ''
+  } catch {
+    emit('triggerDevModal', { title: 'Erro', message: 'Não foi possível gerar o link de cadastro 30 dias agora.' })
+  } finally {
+    trialLinkLoading.value = false
+  }
+}
+
+const copyTrialLink = async () => {
+  if (!generatedTrialLink.value) return
+  try { await navigator.clipboard.writeText(generatedTrialLink.value) } catch { /* ignora */ }
+  emit('triggerDevModal', { title: 'Link copiado!', message: 'O link único de cadastro 30 dias foi copiado.' })
+}
+
 /** DD/MM/AAAA (formato salvo/Vencca) -> YYYY-MM-DD (formato do input type="date"). */
 function toIsoDate(brDate) {
   if (!brDate) return ''
@@ -818,11 +847,12 @@ const clearUserFilters = () => {
 
 const filteredUsers = computed(() => {
   const term = (searchFilter.value || '').trim().toLowerCase()
+  const termDigits = term.replace(/\D/g, '')
   return users.value.filter(u => {
     const matchSearch = !term ||
       (u.name && u.name.toLowerCase().includes(term)) ||
       (u.email && u.email.toLowerCase().includes(term)) ||
-      (u.cpf && u.cpf.replace(/\D/g, '').includes(term.replace(/\D/g, '')))
+      (termDigits.length > 0 && u.cpf && u.cpf.replace(/\D/g, '').includes(termDigits))
     
     const matchStatus = userStatusFilter.value === 'todos' || u.status === userStatusFilter.value
     const matchPlan = userPlanFilter.value === 'todos' || (u.plan && u.plan.toLowerCase().includes(userPlanFilter.value.toLowerCase()))
@@ -856,6 +886,9 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         <div class="action-buttons-header">
           <button class="btn btn-secondary" @click="showRegisterModal = true">
             <i class="ph ph-user-plus"></i> Cadastrar Usuário
+          </button>
+          <button class="btn btn-outline" @click="openTrialLinkModal">
+            <i class="ph ph-link-simple"></i> Link 30 dias
           </button>
           <button class="btn btn-outline" @click="showConfigModal = true">
             <i class="ph ph-sliders"></i> Regras & Comissões
@@ -1104,7 +1137,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
       <!-- LISTA DE USUÁRIOS: MOBILE / PWA -->
       <div v-else class="admin-content-mobile animated-item" style="animation-delay: 0.1s;">
-        <div v-for="u in filteredUsers" :key="u.id" class="mobile-user-card card">
+        <div v-for="u in paginatedUsers" :key="u.id" class="mobile-user-card card">
           <div class="mobile-card-header">
             <div class="user-avatar-mini">{{ u.name.split(' ').filter(Boolean).slice(0, 2).map(n=>n[0]).join('') }}</div>
             <div class="mobile-card-title">
@@ -1182,6 +1215,20 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
         <div v-if="filteredUsers.length === 0" class="card" style="text-align: center; padding: 24px; color: var(--text-gray);">
           Nenhum usuário correspondente encontrado.
+        </div>
+
+        <div v-if="filteredUsers.length > 0" class="table-pagination-footer mobile-pagination-footer">
+          <div class="pagination-info">
+            Mostrando <strong>{{ userRangeStart }}</strong> a <strong>{{ userRangeEnd }}</strong> de <strong>{{ filteredUsers.length }}</strong> usuários
+          </div>
+          <div class="pagination-actions">
+            <button class="btn-pagination-nav" :disabled="userPage <= 1" @click="userPage--">
+              <i class="ph ph-caret-left"></i> Anterior
+            </button>
+            <button class="btn-pagination-nav" :disabled="userPage >= totalUserPages" @click="userPage++">
+              Próxima <i class="ph ph-caret-right"></i>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1649,6 +1696,40 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
     </div>
 
     <!-- MODAL 1: CADASTRAR USUÁRIO -->
+    <div v-if="showTrialLinkModal" class="custom-modal-overlay" @click.self="showTrialLinkModal = false">
+      <div class="custom-modal-card" style="max-width: 520px;">
+        <div class="modal-header-container">
+          <h3><i class="ph ph-link-simple"></i> Link de cadastro 30 dias</h3>
+          <button class="btn-close-modal" @click="showTrialLinkModal = false">✕</button>
+        </div>
+
+        <div style="display: grid; gap: 14px;">
+          <p style="color: var(--text-gray); margin: 0;">
+            Gere um link único para cadastro com acesso liberado por 30 dias. Após o prazo, a conta fica pendente até pagar por Pix ou cartão.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Plano</label>
+            <select v-model="trialLinkPlan" class="form-control">
+              <option value="Individual">Individual</option>
+              <option value="Família">Família</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary" :disabled="trialLinkLoading" @click="generateTrialLink">
+            <i :class="trialLinkLoading ? 'ph ph-circle-notch' : 'ph ph-link-simple-horizontal'"></i>
+            {{ trialLinkLoading ? 'Gerando...' : 'Gerar link único' }}
+          </button>
+
+          <div v-if="generatedTrialLink" class="trial-link-result">
+            <label class="form-label">Link gerado</label>
+            <textarea readonly class="form-control" rows="3" :value="generatedTrialLink"></textarea>
+            <button class="btn btn-outline" @click="copyTrialLink">
+              <i class="ph ph-copy"></i> Copiar link
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showRegisterModal" class="custom-modal-overlay" @click.self="showRegisterModal = false">
       <div class="custom-modal-card modal-large">
         <div class="modal-header-container">
@@ -2524,6 +2605,21 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
   width: 100%;
   text-align: center;
   justify-content: center;
+}
+
+.trial-link-result {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.mobile-pagination-footer {
+  margin-top: 12px;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 /* Navegação de Abas do Admin */

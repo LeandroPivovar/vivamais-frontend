@@ -1465,7 +1465,9 @@ onMounted(async () => {
         <div class="card financial-main-card">
           <div class="billing-header">
             <div>
-              <span class="badge badge-success">Assinatura Ativa</span>
+              <span :class="['badge', user?.active ? 'badge-success' : 'badge-warning']">
+                {{ user?.active ? 'Assinatura Ativa' : 'Pagamento Pendente' }}
+              </span>
               <h3 class="plan-title">{{ user.plan }}</h3>
             </div>
             <div class="price-block">

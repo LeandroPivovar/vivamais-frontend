@@ -48,6 +48,8 @@ const handleResize = () => {
   layoutMode.value = window.innerWidth < 768 ? 'pwa' : 'desktop'
 }
 
+const shouldRedirectToPayment = (user) => user?.role !== 'admin' && !user?.isDependent && user?.active === false
+
 // Controla scroll do body quando modal está aberto
 watch(showDevModal, (val) => {
   document.body.style.overflow = val ? 'hidden' : ''
@@ -67,8 +69,9 @@ const handleLogin = (userData) => {
     currentTab.value = 'kids-dashboard'
     window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
   } else {
-    currentTab.value = 'home'
-    window.history.pushState({ tab: 'home' }, '', '/')
+    const tab = shouldRedirectToPayment(userData) ? 'financeiro' : 'home'
+    currentTab.value = tab
+    window.history.pushState({ tab }, '', tab === 'financeiro' ? '/financeiro' : '/')
   }
 
   initFloatingChat()
@@ -272,6 +275,10 @@ const handleRouting = () => {
     currentTab.value = 'home'
     window.history.replaceState({}, '', '/')
   }
+  if (shouldRedirectToPayment(currentUser.value) && currentTab.value !== 'financeiro') {
+    currentTab.value = 'financeiro'
+    window.history.replaceState({ tab: 'financeiro' }, '', '/financeiro')
+  }
 }
 
 const onUnauthorized = () => {
@@ -300,10 +307,11 @@ onMounted(async () => {
 
   if (isLoggedIn.value) initFloatingChat()
 
-  // Link de indicação (?ref= ou /plano-*) e sem sessão → abre o checkout público.
+  // Link de indicação (?ref= ou /plano-*) ou link 30 dias e sem sessão → abre o checkout público.
   const hasRef = new URLSearchParams(window.location.search).has('ref')
   const isPlanPath = /\/plano-[a-z0-9-]+/i.test(window.location.pathname)
-  if (!isLoggedIn.value && (hasRef || isPlanPath)) {
+  const isTrialPath = /\/cadastro-30-dias\/[a-z0-9]+/i.test(window.location.pathname)
+  if (!isLoggedIn.value && (hasRef || isPlanPath || isTrialPath)) {
     showPublicCheckout.value = true
   } else {
     handleRouting()
