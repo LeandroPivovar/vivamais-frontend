@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { api, getToken, clearToken } from '../../services/api'
+import { api, clearToken } from '../../services/api'
 import { teenStorage } from './services/teenStorage'
 import TeenAdminView from './TeenAdminView.vue'
 
@@ -100,9 +100,7 @@ loadKidsTeenSession()
 
 const hasTeenAccess = computed(() => {
   if (kidsTeenSession.value?.module === 'teen') return true
-  if (!props.isLoggedIn) return false
-  if (props.user?.isDependent) return props.user?.ageGroup === 'teen'
-  return true
+  return false
 })
 const showAuthScreen = computed(() => !hasTeenAccess.value || forceAuth.value)
 
@@ -114,7 +112,6 @@ function getInitials(name) {
 }
 
 async function fetchDependentsAndSetupProfiles() {
-  const current = props.user || kidsTeenSession.value?.user || {}
   const list = []
 
   if (kidsTeenSession.value?.module === 'teen' && kidsTeenSession.value.user) {
@@ -127,38 +124,6 @@ async function fetchDependentsAndSetupProfiles() {
       isDependent: true,
       level: 'Dependente Teen'
     })
-  } else if (current.role === 'admin' || (current.isDependent && current.ageGroup === 'teen')) {
-    list.push({
-      id: current.id ? `user-${current.id}` : 'titular',
-      name: current.name || 'Titular',
-      email: current.email || '',
-      initials: getInitials(current.name || 'Titular'),
-      role: current.role || 'user',
-      isDependent: !!current.isDependent,
-      level: current.plan ? `Plano ${current.plan}` : 'Teen'
-    })
-  }
-
-  if (props.isLoggedIn && getToken()) {
-    try {
-      const data = await api.get('/dependents')
-      const deps = Array.isArray(data) ? data : (Array.isArray(data?.dependents) ? data.dependents : [])
-      deps
-        .filter((dep) => dep.ageGroup === 'teen')
-        .forEach(dep => {
-          list.push({
-            id: `dep-${dep.id}`,
-            name: dep.name,
-            email: dep.email || '',
-            initials: getInitials(dep.name),
-            role: 'dependent',
-            isDependent: true,
-            level: 'Dependente Teen'
-          })
-        })
-    } catch {
-      // offline fallback
-    }
   }
 
   availableProfiles.value = list

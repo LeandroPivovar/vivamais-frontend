@@ -49,6 +49,17 @@ const handleResize = () => {
 }
 
 const shouldRedirectToPayment = (user) => user?.role !== 'admin' && !user?.isDependent && user?.active === false
+const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
+const kidsTeenSessionModule = () => {
+  try {
+    const session = JSON.parse(localStorage.getItem(KIDS_TEEN_SESSION_KEY) || 'null')
+    return session?.module === 'kids' || session?.module === 'teen' ? session.module : null
+  } catch {
+    return null
+  }
+}
+const isKidsPath = (path, hash = '') => path.startsWith('/kids') || hash.startsWith('#/kids')
+const isTeenPath = (path, hash = '') => path.startsWith('/teen') || path.startsWith('/teens') || hash.startsWith('#/teen') || hash.startsWith('#/teens')
 
 // Controla scroll do body quando modal está aberto
 watch(showDevModal, (val) => {
@@ -62,12 +73,12 @@ const handleLogin = (userData) => {
   const path = window.location.pathname
   const hash = window.location.hash
 
-  if (currentTab.value === 'teen-auth' || currentTab.value === 'teen' || path.startsWith('/teen') || hash.startsWith('#/teen')) {
-    currentTab.value = 'teen-dashboard'
-    window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
-  } else if (currentTab.value === 'kids-auth' || currentTab.value === 'kids' || path.startsWith('/kids') || hash.startsWith('#/kids')) {
-    currentTab.value = 'kids-dashboard'
-    window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
+  if (currentTab.value === 'teen-auth' || currentTab.value === 'teen' || isTeenPath(path, hash)) {
+    currentTab.value = 'teen-auth'
+    window.history.pushState({ tab: 'teen-auth' }, '', '/teen/auth')
+  } else if (currentTab.value === 'kids-auth' || currentTab.value === 'kids' || isKidsPath(path, hash)) {
+    currentTab.value = 'kids-auth'
+    window.history.pushState({ tab: 'kids-auth' }, '', '/kids/auth')
   } else {
     const tab = shouldRedirectToPayment(userData) ? 'financeiro' : 'home'
     currentTab.value = tab
@@ -120,26 +131,10 @@ const navigateTo = (tab) => {
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
   
-  // Kids e Teen têm login próprio por CPF do dependente quando não há sessão completa.
-  if (tab.startsWith('kids') || tab.startsWith('teen')) {
-    if (!isLoggedIn.value) {
-      currentTab.value = tab.startsWith('teen') ? 'teen-auth' : 'kids-auth'
-      showDropdown.value = false
-      window.history.pushState({}, '', tab.startsWith('teen') ? '/teen/auth' : '/kids/auth')
-      return
-    }
-  }
-
   if (tab === 'kids' || tab === 'kids-dashboard') {
-    if (!isLoggedIn.value) {
-      currentTab.value = 'kids-auth'
-      showDropdown.value = false
-      window.history.pushState({ tab: 'kids-auth' }, '', '/kids/auth')
-      return
-    }
-    currentTab.value = 'kids-dashboard'
+    currentTab.value = kidsTeenSessionModule() === 'kids' ? 'kids-dashboard' : 'kids-auth'
     showDropdown.value = false
-    window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
+    window.history.pushState({ tab: currentTab.value }, '', currentTab.value === 'kids-dashboard' ? '/kids/dashboard' : '/kids/auth')
     return
   }
   if (tab === 'kids-auth') {
@@ -149,15 +144,9 @@ const navigateTo = (tab) => {
     return
   }
   if (tab === 'teen' || tab === 'teen-dashboard') {
-    if (!isLoggedIn.value) {
-      currentTab.value = 'teen-auth'
-      showDropdown.value = false
-      window.history.pushState({ tab: 'teen-auth' }, '', '/teen/auth')
-      return
-    }
-    currentTab.value = 'teen-dashboard'
+    currentTab.value = kidsTeenSessionModule() === 'teen' ? 'teen-dashboard' : 'teen-auth'
     showDropdown.value = false
-    window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
+    window.history.pushState({ tab: currentTab.value }, '', currentTab.value === 'teen-dashboard' ? '/teen/dashboard' : '/teen/auth')
     return
   }
   if (tab === 'teen-auth') {
@@ -231,21 +220,23 @@ const handleRouting = () => {
     currentTab.value = 'admin'
   } else if (path === '/kids/auth' || hash === '#/kids/auth') {
     currentTab.value = 'kids-auth'
-  } else if (path.startsWith('/kids') || hash.startsWith('#/kids')) {
-    if (!isLoggedIn.value) {
-      currentTab.value = 'kids-auth'
-      window.history.replaceState({}, '', '/kids/auth')
-    } else {
+  } else if (isKidsPath(path, hash)) {
+    if (kidsTeenSessionModule() === 'kids') {
       currentTab.value = 'kids-dashboard'
-    }
-  } else if (path === '/teen/auth' || hash === '#/teen/auth') {
-    currentTab.value = 'teen-auth'
-  } else if (path.startsWith('/teen') || hash.startsWith('#/teen')) {
-    if (!isLoggedIn.value) {
-      currentTab.value = 'teen-auth'
-      window.history.replaceState({}, '', '/teen/auth')
     } else {
+      currentTab.value = 'kids-auth'
+      window.history.replaceState({ tab: 'kids-auth' }, '', '/kids/auth')
+    }
+  } else if (path === '/teen/auth' || path === '/teens/auth' || hash === '#/teen/auth' || hash === '#/teens/auth') {
+    currentTab.value = 'teen-auth'
+    if (path.startsWith('/teens')) window.history.replaceState({ tab: 'teen-auth' }, '', '/teen/auth')
+  } else if (isTeenPath(path, hash)) {
+    if (kidsTeenSessionModule() === 'teen') {
       currentTab.value = 'teen-dashboard'
+      if (path.startsWith('/teens')) window.history.replaceState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
+    } else {
+      currentTab.value = 'teen-auth'
+      window.history.replaceState({ tab: 'teen-auth' }, '', '/teen/auth')
     }
   } else if (path === '/indicacoes' || hash === '#/indicacoes') {
     currentTab.value = 'indicacoes'

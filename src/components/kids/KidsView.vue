@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { api, clearToken, setToken } from '../../services/api'
+import { api, clearToken } from '../../services/api'
 import { kidsAudio } from './services/audio'
 import { COLORING_TEMPLATES } from './data/drawings'
 import { GAMES_CATALOG } from './data/games'
@@ -84,24 +84,7 @@ function saveKidProfile() {
 }
 
 async function fetchDependents() {
-  if (!props.isLoggedIn) return
-  try {
-    const data = await api.get('/dependents')
-    if (data?.dependents && Array.isArray(data.dependents)) {
-      dependentsList.value = data.dependents.filter((dep) => dep.ageGroup === 'kids')
-    } else if (Array.isArray(data)) {
-      dependentsList.value = data.filter((dep) => dep.ageGroup === 'kids')
-    } else {
-      dependentsList.value = []
-    }
-    if (dependentsList.value.length && !dependentsList.value.some((dep) => String(dep.id) === String(activeProfileId.value))) {
-      activeProfileId.value = String(dependentsList.value[0].id)
-      localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
-      loadKidProfile(activeProfileId.value)
-    }
-  } catch {
-    dependentsList.value = []
-  }
+  dependentsList.value = []
 }
 
 function switchProfile(profileId) {
@@ -125,16 +108,10 @@ function switchProfile(profileId) {
 
 // --- LOGIN INTERNO NO KIDS (/kids/auth) — apenas CPF, sem senha ---
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
-const authTab = ref('kids') // 'kids' | 'guardian'
 const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
 const kidsTeenSession = ref(null)
-
-const guardianLogin = ref('')
-const guardianPassword = ref('')
-const guardianLoading = ref(false)
-const guardianError = ref('')
 
 function formatCpf(val) {
   const digits = (val || '').replace(/\D/g, '').slice(0, 11)
@@ -170,20 +147,14 @@ loadKidsTeenSession()
 
 const hasKidsAccess = computed(() => {
   if (kidsTeenSession.value?.module === 'kids') return true
-  if (!props.isLoggedIn) return false
-  if (props.user?.isDependent) return props.user?.ageGroup === 'kids'
-  return true
+  return false
 })
 const forceAuth = ref(props.subRoute === 'auth')
 const showAuthScreen = computed(() => !hasKidsAccess.value || forceAuth.value)
 
 const kidProfileOptions = computed(() => {
-  if (dependentsList.value.length) return dependentsList.value
   const sessionUser = kidsTeenSession.value?.module === 'kids' ? kidsTeenSession.value.user : null
   if (sessionUser) return [{ id: 'session', name: sessionUser.name, email: sessionUser.email || '', avatar: '🧒' }]
-  if (props.user?.isDependent && props.user?.ageGroup === 'kids') {
-    return [{ id: props.user.id || 'session', name: props.user.name, email: props.user.email || '', avatar: '🧒' }]
-  }
   return []
 })
 
@@ -208,6 +179,7 @@ async function handleKidsLogin() {
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user, module: 'kids' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
+      dependentsList.value = []
       activeProfileId.value = 'session'
       localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
       kidUser.name = data.user?.name ? data.user.name.split(' ')[0] : kidUser.name
@@ -222,37 +194,6 @@ async function handleKidsLogin() {
     loginError.value = err?.message || 'CPF não cadastrado ou sem permissão de acesso.'
   } finally {
     loginLoading.value = false
-  }
-}
-
-async function handleGuardianLogin() {
-  guardianError.value = ''
-  guardianLoading.value = true
-  try {
-    const { token, user } = await api.post('/auth/login', {
-      username: guardianLogin.value.trim(),
-      password: guardianPassword.value.trim(),
-      rememberMe: true,
-    })
-    if (user?.role !== 'admin') {
-      guardianError.value = 'Acesso ao Viva Mais Kids permitido apenas para administradores.'
-      return
-    }
-    setToken(token)
-    kidsTeenSession.value = { token, user }
-    localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
-    kidUser.name = user?.name ? user.name.split(' ')[0] : kidUser.name
-    saveKidProfile()
-    kidsAudio.playVictory()
-    triggerConfetti()
-    forceAuth.value = false
-    activeTab.value = 'home'
-    emit('login', user)
-    window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
-  } catch (err) {
-    guardianError.value = err.status === 401 ? 'CPF/e-mail ou senha incorretos.' : (err?.message || 'Não foi possível entrar. Tente novamente.')
-  } finally {
-    guardianLoading.value = false
   }
 }
 
