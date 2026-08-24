@@ -50,6 +50,11 @@ const handleResize = () => {
 
 const shouldRedirectToPayment = (user) => user?.role !== 'admin' && !user?.isDependent && user?.active === false
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
+const rawAppVariant = import.meta.env.VITE_APP_VARIANT
+const APP_VARIANT = rawAppVariant === 'kids' || rawAppVariant === 'teen' ? rawAppVariant : 'main'
+const isKidsApp = APP_VARIANT === 'kids'
+const isTeenApp = APP_VARIANT === 'teen'
+const isExclusiveDependentApp = isKidsApp || isTeenApp
 const kidsTeenSessionModule = () => {
   try {
     const session = JSON.parse(localStorage.getItem(KIDS_TEEN_SESSION_KEY) || 'null')
@@ -60,6 +65,22 @@ const kidsTeenSessionModule = () => {
 }
 const isKidsPath = (path, hash = '') => path.startsWith('/kids') || hash.startsWith('#/kids')
 const isTeenPath = (path, hash = '') => path.startsWith('/teen') || path.startsWith('/teens') || hash.startsWith('#/teen') || hash.startsWith('#/teens')
+const variantAuthTab = () => (isKidsApp ? 'kids-auth' : 'teen-auth')
+const variantAuthPath = () => (isKidsApp ? '/kids/auth' : '/teen/auth')
+const variantDashboardTab = () => (isKidsApp ? 'kids-dashboard' : 'teen-dashboard')
+const variantDashboardPath = () => (isKidsApp ? '/kids/dashboard' : '/teen/dashboard')
+
+const navigateToExclusiveAppHome = (replace = false) => {
+  if (!isExclusiveDependentApp) return false
+  const hasValidSession = kidsTeenSessionModule() === APP_VARIANT
+  const tab = hasValidSession ? variantDashboardTab() : variantAuthTab()
+  const path = hasValidSession ? variantDashboardPath() : variantAuthPath()
+  currentTab.value = tab
+  const state = { tab }
+  if (replace) window.history.replaceState(state, '', path)
+  else window.history.pushState(state, '', path)
+  return true
+}
 
 // Controla scroll do body quando modal está aberto
 watch(showDevModal, (val) => {
@@ -69,6 +90,11 @@ watch(showDevModal, (val) => {
 const handleLogin = (userData) => {
   currentUser.value = userData
   isLoggedIn.value = true
+
+  if (navigateToExclusiveAppHome()) {
+    initFloatingChat()
+    return
+  }
 
   const path = window.location.pathname
   const hash = window.location.hash
@@ -99,7 +125,9 @@ const handleLogout = async (redirectTab = 'home') => {
   if (loggingOut) return
   loggingOut = true
   try {
-    const targetTab = Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
+    const targetTab = isExclusiveDependentApp
+      ? variantAuthTab()
+      : Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
     if (getToken()) {
       try {
         await api.post('/auth/logout')
@@ -116,7 +144,7 @@ const handleLogout = async (redirectTab = 'home') => {
     isLoggedIn.value = false
     currentTab.value = targetTab
     showDropdown.value = false
-    window.history.pushState({ tab: targetTab }, '', logoutRedirects[targetTab] || '/')
+    window.history.pushState({ tab: targetTab }, '', isExclusiveDependentApp ? variantAuthPath() : logoutRedirects[targetTab] || '/')
   } finally {
     loggingOut = false
   }
@@ -127,6 +155,10 @@ const handleUpdateUser = (updatedData) => {
 }
 
 const navigateTo = (tab) => {
+  if (isExclusiveDependentApp && !['kids', 'kids-auth', 'kids-dashboard', 'teen', 'teen-auth', 'teen-dashboard'].includes(tab)) {
+    navigateToExclusiveAppHome()
+    return
+  }
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
@@ -216,6 +248,15 @@ const handleRouting = () => {
   const path = window.location.pathname
   const hash = window.location.hash
 
+  if (isKidsApp && !isKidsPath(path, hash)) {
+    navigateToExclusiveAppHome(true)
+    return
+  }
+  if (isTeenApp && !isTeenPath(path, hash)) {
+    navigateToExclusiveAppHome(true)
+    return
+  }
+
   if (path === '/admin' || hash === '#/admin') {
     currentTab.value = 'admin'
   } else if (path === '/kids/auth' || hash === '#/kids/auth') {
@@ -302,7 +343,7 @@ onMounted(async () => {
   const hasRef = new URLSearchParams(window.location.search).has('ref')
   const isPlanPath = /\/plano-[a-z0-9-]+/i.test(window.location.pathname)
   const isTrialPath = /\/cadastro-30-dias\/[a-z0-9]+/i.test(window.location.pathname)
-  if (!isLoggedIn.value && (hasRef || isPlanPath || isTrialPath)) {
+  if (!isExclusiveDependentApp && !isLoggedIn.value && (hasRef || isPlanPath || isTrialPath)) {
     showPublicCheckout.value = true
   } else {
     handleRouting()
