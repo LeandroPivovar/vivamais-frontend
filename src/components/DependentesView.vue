@@ -12,6 +12,15 @@ const removingId = ref(null)
 
 const form = ref({ name: '', email: '', cpf: '', phone: '', birthDate: '' })
 
+// Aplica DD/MM/AAAA enquanto digita. Sem isso o usuário mandava "31101988" e a
+// Vencca recusava o cadastro do dependente com "Preencha o campo DataNascimento".
+const maskBirthDate = (value) => {
+  const d = String(value ?? '').replace(/\D/g, '').slice(0, 8)
+  if (d.length <= 2) return d
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`
+}
+
 const remaining = computed(() => Math.max(0, info.value.limit - info.value.used))
 
 const load = async () => {
@@ -116,7 +125,16 @@ onMounted(load)
           </div>
           <div class="form-group">
             <label>Data de nascimento</label>
-            <input v-model="form.birthDate" type="text" class="form-control" placeholder="DD/MM/AAAA" :disabled="!info.canAdd" />
+            <input
+              v-model="form.birthDate"
+              type="text"
+              class="form-control"
+              placeholder="DD/MM/AAAA"
+              inputmode="numeric"
+              maxlength="10"
+              :disabled="!info.canAdd"
+              @input="form.birthDate = maskBirthDate($event.target.value)"
+            />
           </div>
         </div>
         <button class="btn btn-secondary" :disabled="!info.canAdd || submitting" @click="addDependent">
