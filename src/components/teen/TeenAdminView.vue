@@ -1095,6 +1095,34 @@ function resetAllData() {
       </div>
     </div>
 
+    <nav v-if="embedded" class="teen-admin-bottom-nav">
+      <button class="teen-bottom-tab return-tab" @click="emit('closeAdmin')">
+        <i class="ph ph-arrow-left"></i>
+        <span>Voltar</span>
+      </button>
+      <button
+        :class="['teen-bottom-tab', { active: activeAdminSubTab === 'courses' }]"
+        @click="activeAdminSubTab = 'courses'"
+      >
+        <i class="ph ph-books"></i>
+        <span>Cursos</span>
+      </button>
+      <button
+        :class="['teen-bottom-tab', { active: activeAdminSubTab === 'modules' }]"
+        @click="activeAdminSubTab = 'modules'"
+      >
+        <i class="ph ph-tree-structure"></i>
+        <span>Módulos</span>
+      </button>
+      <button
+        :class="['teen-bottom-tab', { active: activeAdminSubTab === 'materials' }]"
+        @click="activeAdminSubTab = 'materials'"
+      >
+        <i class="ph ph-download-simple"></i>
+        <span>Materiais</span>
+      </button>
+    </nav>
+
   </div>
 </template>
 
@@ -1257,6 +1285,121 @@ function resetAllData() {
   background: white;
   color: #2563eb;
   box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+.teen-admin-bottom-nav {
+  display: none;
+}
+
+.teen-bottom-tab {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  min-width: 78px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.teen-bottom-tab i {
+  font-size: 21px;
+}
+
+.teen-bottom-tab.active {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.teen-bottom-tab.return-tab {
+  color: #0f172a;
+}
+
+@media (max-width: 1366px) {
+  .teen-admin-container.is-embedded {
+    padding-bottom: 92px;
+  }
+
+  .teen-admin-container.is-embedded .teen-admin-tabs {
+    display: none;
+  }
+
+  .teen-admin-container.is-embedded .teen-admin-bottom-nav {
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 1003;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.97);
+    border: 1px solid #e2e8f0;
+    border-radius: 22px;
+    box-shadow: 0 16px 42px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(14px);
+  }
+
+  .teen-admin-container.is-embedded .teen-bottom-tab {
+    flex: 1 0 76px;
+  }
+
+  .teen-admin-container.is-embedded .course-selector-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .teen-admin-container.is-embedded .selector-info {
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .teen-admin-container.is-embedded .selector-info label {
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  .teen-admin-container.is-embedded .selector-select,
+  .teen-admin-container.is-embedded .course-selector-bar .btn {
+    width: 100%;
+  }
+
+  .teen-admin-container.is-embedded .teen-admin-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .teen-admin-container.is-embedded .header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .teen-admin-container.is-embedded .header-actions .btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 52px;
+    white-space: normal;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .teen-admin-container.is-embedded .teen-admin-bottom-nav {
+    left: 50%;
+    right: auto;
+    width: min(520px, calc(100vw - 32px));
+    transform: translateX(-50%);
+  }
 }
 
 /* Filtros */

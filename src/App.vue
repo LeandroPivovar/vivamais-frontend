@@ -35,6 +35,7 @@ const showDropdown = ref(false)
 // Dropdown de Indicações no Mobile
 const activeRefTab = ref('visaoGeral')
 const showRefMenuDropdown = ref(false)
+const isMobileMenuClosing = ref(false)
 const profileMenuRef = ref(null)
 const mobileMenuRef = ref(null)
 const chatPanelRef = ref(null)
@@ -50,11 +51,6 @@ const handleResize = () => {
 
 const shouldRedirectToPayment = (user) => user?.role !== 'admin' && !user?.isDependent && user?.active === false
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
-const rawAppVariant = import.meta.env.VITE_APP_VARIANT
-const APP_VARIANT = rawAppVariant === 'kids' || rawAppVariant === 'teen' ? rawAppVariant : 'main'
-const isKidsApp = APP_VARIANT === 'kids'
-const isTeenApp = APP_VARIANT === 'teen'
-const isExclusiveDependentApp = isKidsApp || isTeenApp
 const kidsTeenSessionModule = () => {
   try {
     const session = JSON.parse(localStorage.getItem(KIDS_TEEN_SESSION_KEY) || 'null')
@@ -65,22 +61,6 @@ const kidsTeenSessionModule = () => {
 }
 const isKidsPath = (path, hash = '') => path.startsWith('/kids') || hash.startsWith('#/kids')
 const isTeenPath = (path, hash = '') => path.startsWith('/teen') || path.startsWith('/teens') || hash.startsWith('#/teen') || hash.startsWith('#/teens')
-const variantAuthTab = () => (isKidsApp ? 'kids-auth' : 'teen-auth')
-const variantAuthPath = () => (isKidsApp ? '/kids/auth' : '/teen/auth')
-const variantDashboardTab = () => (isKidsApp ? 'kids-dashboard' : 'teen-dashboard')
-const variantDashboardPath = () => (isKidsApp ? '/kids/dashboard' : '/teen/dashboard')
-
-const navigateToExclusiveAppHome = (replace = false) => {
-  if (!isExclusiveDependentApp) return false
-  const hasValidSession = kidsTeenSessionModule() === APP_VARIANT
-  const tab = hasValidSession ? variantDashboardTab() : variantAuthTab()
-  const path = hasValidSession ? variantDashboardPath() : variantAuthPath()
-  currentTab.value = tab
-  const state = { tab }
-  if (replace) window.history.replaceState(state, '', path)
-  else window.history.pushState(state, '', path)
-  return true
-}
 
 // Controla scroll do body quando modal está aberto
 watch(showDevModal, (val) => {
@@ -90,11 +70,6 @@ watch(showDevModal, (val) => {
 const handleLogin = (userData) => {
   currentUser.value = userData
   isLoggedIn.value = true
-
-  if (navigateToExclusiveAppHome()) {
-    initFloatingChat()
-    return
-  }
 
   const path = window.location.pathname
   const hash = window.location.hash
@@ -125,9 +100,7 @@ const handleLogout = async (redirectTab = 'home') => {
   if (loggingOut) return
   loggingOut = true
   try {
-    const targetTab = isExclusiveDependentApp
-      ? variantAuthTab()
-      : Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
+    const targetTab = Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
     if (getToken()) {
       try {
         await api.post('/auth/logout')
@@ -144,7 +117,7 @@ const handleLogout = async (redirectTab = 'home') => {
     isLoggedIn.value = false
     currentTab.value = targetTab
     showDropdown.value = false
-    window.history.pushState({ tab: targetTab }, '', isExclusiveDependentApp ? variantAuthPath() : logoutRedirects[targetTab] || '/')
+    window.history.pushState({ tab: targetTab }, '', logoutRedirects[targetTab] || '/')
   } finally {
     loggingOut = false
   }
@@ -154,11 +127,41 @@ const handleUpdateUser = (updatedData) => {
   currentUser.value = updatedData
 }
 
-const navigateTo = (tab) => {
-  if (isExclusiveDependentApp && !['kids', 'kids-auth', 'kids-dashboard', 'teen', 'teen-auth', 'teen-dashboard'].includes(tab)) {
-    navigateToExclusiveAppHome()
+let mobileMenuCloseTimer = null
+
+const openMainMobileMenu = () => {
+  if (mobileMenuCloseTimer) clearTimeout(mobileMenuCloseTimer)
+  isMobileMenuClosing.value = false
+  showRefMenuDropdown.value = true
+}
+
+const closeMainMobileMenu = (afterClose) => {
+  if (!showRefMenuDropdown.value && !isMobileMenuClosing.value) {
+    if (afterClose) afterClose()
     return
   }
+  isMobileMenuClosing.value = true
+  mobileMenuCloseTimer = setTimeout(() => {
+    showRefMenuDropdown.value = false
+    isMobileMenuClosing.value = false
+    if (afterClose) afterClose()
+  }, 240)
+}
+
+const toggleMainMobileMenu = () => {
+  if (showRefMenuDropdown.value) closeMainMobileMenu()
+  else openMainMobileMenu()
+}
+
+const mobileNavigateTo = (tab) => {
+  closeMainMobileMenu(() => navigateTo(tab))
+}
+
+const mobileLogout = () => {
+  closeMainMobileMenu(() => handleLogout())
+}
+
+const navigateTo = (tab) => {
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
@@ -238,7 +241,7 @@ const closeFloatingPanels = (event) => {
     showDropdown.value = false
   }
   if (mobileMenuRef.value && !mobileMenuRef.value.contains(event.target)) {
-    showRefMenuDropdown.value = false
+    closeMainMobileMenu()
   }
   const clickedChat = chatPanelRef.value?.contains(event.target) || chatButtonRef.value?.contains(event.target)
   if (!clickedChat) showChatPanel.value = false
@@ -247,15 +250,6 @@ const closeFloatingPanels = (event) => {
 const handleRouting = () => {
   const path = window.location.pathname
   const hash = window.location.hash
-
-  if (isKidsApp && !isKidsPath(path, hash)) {
-    navigateToExclusiveAppHome(true)
-    return
-  }
-  if (isTeenApp && !isTeenPath(path, hash)) {
-    navigateToExclusiveAppHome(true)
-    return
-  }
 
   if (path === '/admin' || hash === '#/admin') {
     currentTab.value = 'admin'
@@ -343,7 +337,7 @@ onMounted(async () => {
   const hasRef = new URLSearchParams(window.location.search).has('ref')
   const isPlanPath = /\/plano-[a-z0-9-]+/i.test(window.location.pathname)
   const isTrialPath = /\/cadastro-30-dias\/[a-z0-9]+/i.test(window.location.pathname)
-  if (!isExclusiveDependentApp && !isLoggedIn.value && (hasRef || isPlanPath || isTrialPath)) {
+  if (!isLoggedIn.value && (hasRef || isPlanPath || isTrialPath)) {
     showPublicCheckout.value = true
   } else {
     handleRouting()
@@ -491,6 +485,37 @@ onBeforeUnmount(() => {
           @changeTab="navigateTo"
         />
       </main>
+
+      <nav v-if="currentTab === 'indicacoes'" class="desktop-ref-bottom-nav">
+        <button
+          :class="['ref-bottom-tab', { active: activeRefTab === 'visaoGeral' }]"
+          @click="activeRefTab = 'visaoGeral'"
+        >
+          <i class="ph ph-chart-pie-slice"></i>
+          <span>Visão</span>
+        </button>
+        <button
+          :class="['ref-bottom-tab', { active: activeRefTab === 'indicados' }]"
+          @click="activeRefTab = 'indicados'"
+        >
+          <i class="ph ph-users"></i>
+          <span>Indicados</span>
+        </button>
+        <button
+          :class="['ref-bottom-tab', { active: activeRefTab === 'financeiroRef' }]"
+          @click="activeRefTab = 'financeiroRef'"
+        >
+          <i class="ph ph-hand-coins"></i>
+          <span>Financeiro</span>
+        </button>
+        <button
+          :class="['ref-bottom-tab', { active: activeRefTab === 'links' }]"
+          @click="activeRefTab = 'links'"
+        >
+          <i class="ph ph-link"></i>
+          <span>Links</span>
+        </button>
+      </nav>
     </div>
 
     <!-- VERSÃO PWA MOBILE (SIMULADOR) -->
@@ -506,61 +531,67 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Cabeçalho PWA -->
-        <header class="pwa-header" style="position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 16px 24px; background: white; border-bottom: 1px solid var(--border-color);">
+        <header
+          class="pwa-header"
+          :class="{ 'menu-open': showRefMenuDropdown }"
+          style="position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 16px 24px; background: white; border-bottom: 1px solid var(--border-color);"
+        >
           <div @click="navigateTo('home')" style="cursor: pointer; display: flex; align-items: center;">
             <img src="/logo.png" alt="Viva Mais" class="pwa-logo" style="max-height: 32px;" />
           </div>
           
           <!-- Menu mobile principal -->
           <div ref="mobileMenuRef" style="position: relative; display: flex; align-items: center;">
-            <button @click.stop="showRefMenuDropdown = !showRefMenuDropdown" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center;">
+            <button @click.stop="toggleMainMobileMenu" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center;">
               <i class="ph ph-list" style="font-size: 26px; color: var(--secondary);"></i>
             </button>
             
-            <div v-if="showRefMenuDropdown" class="dropdown-menu show mobile-main-menu" style="position: absolute; right: 0; top: 110%; z-index: 99999; width: 220px; box-shadow: var(--shadow-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: white; padding: 6px; display: flex; flex-direction: column;">
-              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('home')">
-                <i class="ph ph-squares-four"></i> Visão Geral
-              </button>
-              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('perfil')">
-                <i class="ph ph-user"></i> Minha Conta
-              </button>
-              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('financeiro')">
-                <i class="ph ph-credit-card"></i> Financeiro
-              </button>
-              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('dependentes')">
-                <i class="ph ph-users"></i> Dependentes
-              </button>
-              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('herdeiro')">
-                <i class="ph ph-identification-card"></i> Herdeiro
-              </button>
-              <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('indicacoes')">
-                <i class="ph ph-users-three"></i> Indicações
-              </button>
-              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('suporte')">
-                <i class="ph ph-headset"></i> Suporte
-              </button>
-              <button class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('chat')">
-                <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
-              </button>
-              <button v-if="currentUser?.role === 'admin'" class="dropdown-item" @click="showRefMenuDropdown = false; navigateTo('admin')">
-                <i class="ph ph-shield-check"></i> Painel Admin
-              </button>
+            <div
+              v-if="showRefMenuDropdown || isMobileMenuClosing"
+              :class="['mobile-main-menu-overlay', { closing: isMobileMenuClosing }]"
+              @click.self="closeMainMobileMenu"
+            >
+              <div :class="['mobile-main-menu-drawer', { closing: isMobileMenuClosing }]">
+                <div class="mobile-main-menu-head">
+                  <img src="/logo.png" alt="Viva Mais" class="pwa-logo" />
+                  <button class="mobile-main-menu-close" @click="closeMainMobileMenu" aria-label="Fechar menu">
+                    <i class="ph ph-x"></i>
+                  </button>
+                </div>
 
-              <template v-if="currentTab === 'indicacoes'">
+                <button class="dropdown-item" @click="mobileNavigateTo('home')">
+                  <i class="ph ph-squares-four"></i> Visão Geral
+                </button>
+                <button class="dropdown-item" @click="mobileNavigateTo('perfil')">
+                  <i class="ph ph-user"></i> Minha Conta
+                </button>
+                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('financeiro')">
+                  <i class="ph ph-credit-card"></i> Financeiro
+                </button>
+                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('dependentes')">
+                  <i class="ph ph-users"></i> Dependentes
+                </button>
+                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('herdeiro')">
+                  <i class="ph ph-identification-card"></i> Herdeiro
+                </button>
+                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('indicacoes')">
+                  <i class="ph ph-users-three"></i> Indicações
+                </button>
+                <button class="dropdown-item" @click="mobileNavigateTo('suporte')">
+                  <i class="ph ph-headset"></i> Suporte
+                </button>
+                <button class="dropdown-item" @click="mobileNavigateTo('chat')">
+                  <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
+                </button>
+                <button v-if="currentUser?.role === 'admin'" class="dropdown-item" @click="mobileNavigateTo('admin')">
+                  <i class="ph ph-shield-check"></i> Painel Admin
+                </button>
+
                 <div class="dropdown-divider"></div>
-                <button class="dropdown-item" :class="{ active: activeRefTab === 'visaoGeral' }" @click="activeRefTab = 'visaoGeral'; showRefMenuDropdown = false">
-                Visão Geral
+                <button class="dropdown-item text-red" @click="mobileLogout">
+                  <i class="ph ph-sign-out"></i> Sair da Conta
                 </button>
-                <button class="dropdown-item" :class="{ active: activeRefTab === 'indicados' }" @click="activeRefTab = 'indicados'; showRefMenuDropdown = false">
-                Meus Indicados
-                </button>
-                <button class="dropdown-item" :class="{ active: activeRefTab === 'financeiroRef' }" @click="activeRefTab = 'financeiroRef'; showRefMenuDropdown = false">
-                Financeiro
-                </button>
-                <button class="dropdown-item" :class="{ active: activeRefTab === 'links' }" @click="activeRefTab = 'links'; showRefMenuDropdown = false">
-                Meus Links
-                </button>
-              </template>
+              </div>
             </div>
           </div>
         </header>
@@ -597,30 +628,38 @@ onBeforeUnmount(() => {
           />
         </main>
 
-        <!-- Menu de Navegação Inferior PWA (sem o botão início) -->
-        <nav class="pwa-bottom-nav">
-          <button 
-            :class="['pwa-nav-item', { active: currentTab === 'indicacoes' }]"
-            @click="navigateTo('indicacoes')"
+        <!-- Menu de Navegação Inferior PWA -->
+        <nav v-if="currentTab === 'indicacoes'" class="pwa-bottom-nav pwa-ref-tabs-nav">
+          <button
+            :class="['pwa-nav-item', { active: activeRefTab === 'visaoGeral' }]"
+            @click="activeRefTab = 'visaoGeral'"
           >
-            <i class="ph ph-users-three"></i>
-            <span>Indicações</span>
+            <i class="ph ph-chart-pie-slice"></i>
+            <span>Visão</span>
           </button>
           <button
-            :class="['pwa-nav-item', { active: currentTab === 'perfil' }]"
-            @click="navigateTo('perfil')"
+            :class="['pwa-nav-item', { active: activeRefTab === 'indicados' }]"
+            @click="activeRefTab = 'indicados'"
           >
-            <i class="ph ph-user"></i>
-            <span>Minha Conta</span>
+            <i class="ph ph-users"></i>
+            <span>Indicados</span>
           </button>
           <button
-            :class="['pwa-nav-item', { active: currentTab === 'financeiro' }]"
-            @click="navigateTo('financeiro')"
+            :class="['pwa-nav-item', { active: activeRefTab === 'financeiroRef' }]"
+            @click="activeRefTab = 'financeiroRef'"
           >
-            <i class="ph ph-credit-card"></i>
-            <span>Finanças</span>
+            <i class="ph ph-hand-coins"></i>
+            <span>Financeiro</span>
+          </button>
+          <button
+            :class="['pwa-nav-item', { active: activeRefTab === 'links' }]"
+            @click="activeRefTab = 'links'"
+          >
+            <i class="ph ph-link"></i>
+            <span>Links</span>
           </button>
         </nav>
+
       </div>
     </div>
 
@@ -842,6 +881,95 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.desktop-ref-bottom-nav {
+  display: none;
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .desktop-layout {
+    overflow-x: hidden;
+  }
+
+  .topbar-container,
+  .dashboard-showcase .topbar-container {
+    width: 100%;
+    max-width: none;
+    padding: 14px clamp(20px, 3vw, 36px);
+  }
+
+  .desktop-main,
+  .dashboard-showcase .desktop-main {
+    width: 100%;
+    max-width: none;
+    padding: clamp(20px, 3vw, 32px) clamp(20px, 3vw, 32px) 96px;
+  }
+
+  .container {
+    max-width: 100%;
+  }
+
+  .user-profile-area {
+    max-width: min(280px, 42vw);
+  }
+
+  .profile-name {
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-ref-bottom-nav {
+    position: fixed;
+    left: 50%;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    z-index: 1200;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: min(640px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 22px;
+    padding: 8px;
+    box-shadow: 0 18px 44px rgba(15, 58, 74, 0.18);
+  }
+
+  .ref-bottom-tab {
+    min-width: 0;
+    min-height: 58px;
+    border: 0;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--text-gray);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .ref-bottom-tab i {
+    font-size: 1.25rem;
+  }
+
+  .ref-bottom-tab span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ref-bottom-tab.active {
+    background: var(--primary-light);
+    color: var(--secondary);
+  }
+}
+
 /* PWA Simulator */
 .pwa-layout {
   background: #0f172a;
@@ -878,22 +1006,107 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--border-color);
 }
 
+.pwa-header.menu-open {
+  z-index: 100000 !important;
+}
+
 .pwa-logo {
   max-height: 36px;
   /* Removido o filtro invertido para manter as cores originais no fundo branco */
 }
 
+.mobile-main-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(4px);
+  animation: appMenuFadeIn 0.2s ease-out;
+}
+
+.mobile-main-menu-overlay.closing {
+  animation: appMenuFadeOut 0.24s ease forwards;
+}
+
+.mobile-main-menu-drawer {
+  width: min(360px, 86vw);
+  height: 100dvh;
+  min-height: 100dvh;
+  background: #ffffff;
+  padding: 22px;
+  box-shadow: -10px 0 32px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  animation: appDrawerFromRight 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mobile-main-menu-drawer.closing {
+  animation: appDrawerToRight 0.24s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+.mobile-main-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mobile-main-menu-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-gray);
+  color: var(--secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+@keyframes appDrawerFromRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes appDrawerToRight {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes appMenuFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes appMenuFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @media (max-width: 767px) {
+  .mobile-main-menu-drawer {
+    width: min(340px, 86vw);
+  }
+
   .chat-fab {
     right: 16px;
-    bottom: calc(78px + env(safe-area-inset-bottom));
+    bottom: calc(18px + env(safe-area-inset-bottom));
   }
 
   .chat-fab-panel {
     right: 8px;
     left: 8px;
     width: auto;
-    bottom: calc(146px + env(safe-area-inset-bottom));
+    bottom: calc(86px + env(safe-area-inset-bottom));
   }
 }
 </style>
