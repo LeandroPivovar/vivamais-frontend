@@ -227,9 +227,44 @@ const confirmReset = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-gray);
+  background:
+    radial-gradient(circle at 7% 42%, rgba(0, 185, 181, 0.10) 0 13%, transparent 27%),
+    radial-gradient(circle at 84% 48%, rgba(7, 89, 133, 0.07) 0 18%, transparent 34%),
+    linear-gradient(135deg, #f8fbff 0%, #eef6ff 48%, #ffffff 100%);
   padding: 16px;
   width: 100%;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.login-wrapper::before,
+.login-wrapper::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.login-wrapper::before {
+  width: min(520px, 52vw);
+  aspect-ratio: 1;
+  left: -180px;
+  bottom: -210px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 185, 181, 0.35);
+  box-shadow:
+    180px -44px 0 56px rgba(0, 88, 166, 0.05),
+    360px 92px 0 88px rgba(7, 89, 133, 0.04);
+}
+
+.login-wrapper::after {
+  inset: 0;
+  background:
+    radial-gradient(circle, rgba(0, 185, 181, 0.55) 1.5px, transparent 2px) 18% 25% / 18px 18px no-repeat,
+    radial-gradient(circle, rgba(1, 117, 194, 0.36) 1.5px, transparent 2px) 82% 63% / 18px 18px no-repeat,
+    repeating-radial-gradient(circle at 100% 0, transparent 0 30px, rgba(0, 185, 181, 0.16) 31px 32px);
+  opacity: 0.72;
 }
 
 .login-card {
@@ -240,6 +275,8 @@ const confirmReset = async () => {
   width: 100%;
   border: 1px solid var(--border-color);
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 .login-header {
@@ -349,5 +386,26 @@ const confirmReset = async () => {
 .back-link:hover {
   color: var(--primary);
   text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .login-wrapper {
+    padding: 14px;
+    background:
+      radial-gradient(circle at 0% 24%, rgba(0, 185, 181, 0.09) 0 18%, transparent 38%),
+      linear-gradient(135deg, #f8fbff 0%, #eef6ff 52%, #ffffff 100%);
+  }
+
+  .login-wrapper::before {
+    width: 360px;
+    left: -180px;
+    bottom: -180px;
+  }
+
+  .login-wrapper::after {
+    background:
+      radial-gradient(circle, rgba(0, 185, 181, 0.45) 1.5px, transparent 2px) 16% 18% / 18px 18px no-repeat,
+      radial-gradient(circle, rgba(1, 117, 194, 0.28) 1.5px, transparent 2px) 86% 76% / 18px 18px no-repeat;
+  }
 }
 </style>
