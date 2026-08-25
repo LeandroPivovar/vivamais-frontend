@@ -676,10 +676,11 @@ const confirmReset = async () => {
     align-items: stretch;
     justify-content: flex-start;
     min-height: 100vh;
+    height: auto;
     background-color: #F8FAFD;
     background-image: none;
     padding: 0;
-    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .mobile-hero-header {
@@ -687,8 +688,8 @@ const confirmReset = async () => {
     align-items: center;
     justify-content: center;
     width: 100%;
-    min-height: 22vh;
-    padding: 28px 20px 44px;
+    min-height: 150px;
+    padding: 24px 20px 42px;
     background:
       radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.15) 0 40px, transparent 41px),
       radial-gradient(circle at 85% 80%, rgba(0, 181, 176, 0.3) 0 60px, transparent 61px),
@@ -723,7 +724,7 @@ const confirmReset = async () => {
   .auth-card {
     background: #FFFFFF;
     border-radius: 32px 32px 0 0;
-    box-shadow: 0 -12px 36px rgba(5, 36, 83, 0.12);
+    box-shadow: 0 -8px 28px rgba(5, 36, 83, 0.10);
     border: none;
     width: 100%;
     max-width: 100%;
@@ -731,12 +732,12 @@ const confirmReset = async () => {
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    margin-bottom: 0;
-    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    margin: 0;
+    padding: 0;
   }
 
   .card-header-block {
-    padding: 28px 24px 14px;
+    padding: 22px 20px 8px;
     text-align: center;
     max-width: 440px;
     margin: 0 auto;
@@ -744,34 +745,35 @@ const confirmReset = async () => {
   }
 
   .card-heading {
-    font-size: 1.4rem;
+    font-size: 1.35rem;
     font-weight: 800;
     color: #06285C;
     margin-bottom: 4px;
   }
 
   .card-subheading {
-    font-size: 0.86rem;
+    font-size: 0.85rem;
     color: #60728C;
     line-height: 1.4;
   }
 
   .auth-form {
-    padding: 0 24px 28px;
+    padding: 0 20px 20px;
     max-width: 440px;
     margin: 0 auto;
     width: 100%;
   }
 
   .field-input {
-    height: 48px;
-    border-radius: 12px;
+    height: 46px;
+    border-radius: 10px;
   }
 
   .submit-btn-primary {
-    height: 50px;
-    border-radius: 12px;
-    font-size: 1rem;
+    height: 48px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    margin-top: 4px;
   }
 }
 </style>
