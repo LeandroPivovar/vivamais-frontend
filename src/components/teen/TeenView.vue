@@ -382,6 +382,14 @@ function sendChatMessage() {
   scrollChatToBottom()
 }
 
+function finishTeenLogin(data) {
+  kidsTeenSession.value = { token: data.token, user: data.user, module: 'teen' }
+  localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
+  forceAuth.value = false
+  fetchDependentsAndSetupProfiles()
+  window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
+}
+
 // --- LOGIN TEEN — apenas CPF, sem senha ---
 async function handleTeenLogin() {
   const cpf = loginCpf.value.replace(/\D/g, '')
@@ -394,11 +402,7 @@ async function handleTeenLogin() {
   try {
     const data = await api.post('/auth/login-kids', { cpf, module: 'teen' })
     if (data?.token) {
-      kidsTeenSession.value = { token: data.token, user: data.user, module: 'teen' }
-      localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
-      forceAuth.value = false
-      fetchDependentsAndSetupProfiles()
-      window.history.pushState({ tab: 'teen-dashboard' }, '', '/teen/dashboard')
+      finishTeenLogin(data)
     }
   } catch (err) {
     loginError.value = err.status === 401 ? 'CPF não encontrado ou assinatura inativa.' : (err?.message || 'Falha ao autenticar. Tente novamente.')

@@ -10,7 +10,7 @@ function cloneDefaultCourses() {
   return JSON.parse(JSON.stringify(DEFAULT_TEEN_COURSES))
 }
 
-function isLegacyMockCourseSet(courses) {
+function isLegacySeedCourseSet(courses) {
   return courses.some(course => String(course?.id || '').startsWith('course-teen-'))
 }
 
@@ -22,7 +22,7 @@ export const teenStorage = {
       if (saved) {
         const parsed = JSON.parse(saved)
         if (Array.isArray(parsed) && parsed.length > 0) {
-          if (isLegacyMockCourseSet(parsed)) return []
+          if (isLegacySeedCourseSet(parsed)) return []
           return parsed
         }
       }
@@ -120,8 +120,8 @@ export const teenStorage = {
       moduleItem.lessons.push({
         id: lessonData.id || `les-${Date.now()}`,
         status: lessonData.status || 'agendada',
-        liveDate: lessonData.liveDate || '2026-08-20T19:00',
-        formattedDate: lessonData.formattedDate || '20/08 às 19:00',
+        liveDate: lessonData.liveDate || '',
+        formattedDate: lessonData.formattedDate || '',
         viewersCount: lessonData.viewersCount || 0,
         materials: [],
         ...lessonData
@@ -155,7 +155,7 @@ export const teenStorage = {
     } else {
       course.materials.push({
         id: materialData.id || `mat-${Date.now()}`,
-        downloadUrl: materialData.downloadUrl || '#',
+        downloadUrl: materialData.downloadUrl || '',
         ...materialData
       })
     }
