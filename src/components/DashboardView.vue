@@ -1133,7 +1133,7 @@ onMounted(async () => {
     <div v-if="currentTab === 'home'" class="tab-content">
       <header class="welcome-section animated-item" style="animation-delay: 0s;">
         <div class="welcome-text">
-          <h1>Olá, {{ user.name }}</h1>
+          <h1>Olá, {{ user.name }} <span class="wave-emoji" aria-label="Aceno" role="img">👋</span></h1>
           <p>Confira o andamento da sua conta e acesse seus benefícios de saúde.</p>
         </div>
         <div class="plan-pill">
@@ -2780,10 +2780,23 @@ onMounted(async () => {
   letter-spacing: -0.045em;
 }
 
-.dashboard-wrapper.desktop .welcome-text h1::after {
-  content: ' 👋';
-  font-size: 25px;
-  letter-spacing: 0;
+.wave-emoji {
+  display: inline-block;
+  font-size: 0.85em;
+  transform-origin: 70% 70%;
+  animation: wave-hand-animation 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  user-select: none;
+}
+
+@keyframes wave-hand-animation {
+  0% { transform: rotate(0deg); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-8deg); }
+  30% { transform: rotate(14deg); }
+  40% { transform: rotate(-4deg); }
+  50% { transform: rotate(10deg); }
+  60% { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
 }
 
 .dashboard-wrapper.desktop .welcome-text p {
