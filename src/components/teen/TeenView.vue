@@ -79,6 +79,7 @@ const studentProfileId = computed(() => activeProfile.value?.id || props.user?.i
 
 // Login Teen State — apenas CPF, sem senha (mesma sessão local do Kids)
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
+const LOCAL_TEST_CPF = import.meta.env.DEV ? '41873492010' : null
 const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
@@ -392,7 +393,18 @@ async function handleTeenLogin() {
   loginLoading.value = true
   loginError.value = ''
   try {
-    const data = await api.post('/auth/login-kids', { cpf, module: 'teen' })
+    const data = cpf === LOCAL_TEST_CPF
+      ? {
+          token: 'local-test-teen-token',
+          user: {
+            id: 'local-teen-dependent',
+            name: 'Sofia',
+            email: 'teste.teen@vivamaisclub.com',
+            isDependent: true,
+            ageGroup: 'teen'
+          }
+        }
+      : await api.post('/auth/login-kids', { cpf, module: 'teen' })
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user, module: 'teen' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
@@ -426,12 +438,20 @@ function handleTeenLogout() {
     <!-- ================================================================= -->
     <!-- TELA DE AUTH / LOGIN TEEN (CASO DESLOGADO) -->
     <!-- ================================================================= -->
-    <div v-if="showAuthScreen" class="teen-auth-screen">
-      <div class="teen-auth-card">
-        <div class="auth-logo-row">
-          <img src="/logo.png" alt="Viva Mais Club" class="auth-logo-img" />
+    <div v-if="showAuthScreen" class="teen-auth-shell">
+      <header class="teen-auth-topbar">
+        <button class="teen-auth-brand" type="button" @click="emit('goHome')">
+          <img src="/logo.png" alt="Viva Mais Club" class="teen-auth-logo" />
           <span class="badge-teen-tag">TEEN</span>
-        </div>
+        </button>
+      </header>
+
+      <main class="teen-auth-screen">
+        <section class="teen-auth-visual" aria-label="Estudo de idiomas">
+          <img src="/teen/auth-language-student.png" alt="Aluna assistindo aula de idiomas no notebook" class="teen-auth-illustration-img" />
+        </section>
+
+        <div class="teen-auth-card">
 
         <h2>Aulas de Idiomas Ao Vivo</h2>
         <p>Digite o CPF do dependente Teen com assinatura ativa para assistir às aulas ao vivo e consultar o cronograma.</p>
@@ -457,7 +477,8 @@ function handleTeenLogout() {
         <button class="btn-back-club-link" @click="emit('goHome')">
           <i class="ph ph-arrow-left"></i> Voltar ao Viva Mais Club Principal
         </button>
-      </div>
+        </div>
+      </main>
     </div>
 
     <!-- ================================================================= -->
@@ -1174,6 +1195,68 @@ function handleTeenLogout() {
               </div>
             </div>
 
+            <div class="mobile-selected-day-card">
+              <div class="bottom-detail-header">
+                <div class="bottom-detail-title-group">
+                  <h3>Aulas do Dia {{ selectedCalendarDay }}</h3>
+                  <span class="bottom-detail-count">{{ selectedDayLessons.length }} Aula(s) Programada(s)</span>
+                </div>
+              </div>
+
+              <div v-if="selectedDayLessons.length > 0" class="bottom-day-lessons-grid">
+                <div
+                  v-for="les in selectedDayLessons"
+                  :key="`mobile-${les.id}`"
+                  class="bottom-lesson-card"
+                  :class="{ 'card-live': les.status === 'ao_vivo' }"
+                >
+                  <div class="bottom-card-top">
+                    <span class="lesson-flag-tag">{{ les.courseLanguage }} • {{ les.courseTitle }}</span>
+                    <span v-if="les.status === 'ao_vivo'" class="live-badge-sm">AO VIVO</span>
+                    <span v-else class="scheduled-badge-sm"><i class="ph ph-clock"></i> {{ les.formattedDate }}</span>
+                  </div>
+
+                  <h4 class="bottom-lesson-title">{{ les.title }}</h4>
+                  <p class="bottom-lesson-desc">{{ les.description }}</p>
+
+                  <div class="bottom-card-footer">
+                    <div class="instructor-mini">
+                      <img :src="les.instructor?.avatar" :alt="les.instructor?.name" />
+                      <div>
+                        <strong>{{ les.instructor?.name }}</strong>
+                        <small>{{ les.duration }}</small>
+                      </div>
+                    </div>
+
+                    <div class="bottom-card-actions">
+                      <button
+                        class="btn-confirm-presence-bottom"
+                        :class="{ active: attendedLessons.includes(les.id) }"
+                        @click="toggleAttendance(les)"
+                      >
+                        <i :class="attendedLessons.includes(les.id) ? 'ph ph-check-circle-fill' : 'ph ph-check-circle'"></i>
+                        <span>{{ attendedLessons.includes(les.id) ? 'Presença Confirmada' : 'Confirmar Presença' }}</span>
+                      </button>
+
+                      <button
+                        class="btn btn-sm btn-primary btn-open-live-bottom"
+                        @click="openLessonFromCalendar(les)"
+                      >
+                        <i :class="les.status === 'ao_vivo' ? 'ph ph-broadcast' : 'ph ph-play'"></i>
+                        <span>{{ les.status === 'ao_vivo' ? 'Entrar na Sala' : 'Abrir Aula' }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="bottom-empty-state">
+                <i class="ph ph-calendar-blank"></i>
+                <h4>Nenhuma aula no dia {{ selectedCalendarDay }}</h4>
+                <p>Toque em um dia com marcador para ver aulas e confirmar presença.</p>
+              </div>
+            </div>
+
           </div>
 
           <!-- 2. SEÇÃO DE AULAS DO DIA SELECIONADO (POSICIONADA EMBAIXO DA GRADE) -->
@@ -1261,22 +1344,408 @@ function handleTeenLogout() {
 }
 
 /* AUTH */
-.teen-auth-screen {
+.teen-auth-shell {
   min-height: 100vh;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+}
+
+.teen-auth-topbar {
+  height: 76px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 clamp(20px, 4vw, 56px);
+  background: #ffffff;
+  border-bottom: 1px solid #e6eef6;
+  flex-shrink: 0;
+}
+
+.teen-auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.teen-auth-logo {
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+}
+
+.teen-auth-help-btn {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: #0F172A;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid #dce8f5;
+  background: #ffffff;
+  color: #052453;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.teen-auth-help-btn:hover {
+  border-color: #00b9b5;
+  color: #009c9a;
+}
+
+.teen-auth-screen {
+  min-height: calc(100vh - 76px);
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(340px, 420px);
+  align-items: center;
+  justify-content: start;
+  gap: clamp(18px, 3vw, 42px);
+  padding: clamp(28px, 5vw, 64px);
+  background: #ffffff;
+  overflow: hidden;
 }
 
 .teen-auth-card {
-  background: #FFFFFF;
-  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 185, 181, 0.16);
+  border-radius: 24px;
   padding: 36px;
   width: 100%;
   max-width: 420px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
+  position: relative;
+  z-index: 3;
+  justify-self: start;
+  margin-left: -18px;
+}
+
+.teen-auth-visual {
+  min-height: 520px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+
+.teen-auth-visual::before {
+  content: none;
+  position: absolute;
+  inset: 8% 5% 2%;
+  border-radius: 40px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.32)),
+    radial-gradient(circle at 72% 25%, rgba(20, 184, 166, 0.15), transparent 32%);
+  border: 1px solid rgba(180, 231, 232, 0.65);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+  z-index: -2;
+}
+
+.teen-auth-visual::after {
+  content: none;
+  position: absolute;
+  width: 62%;
+  height: 22%;
+  left: 18%;
+  bottom: 8%;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at center, rgba(15, 23, 42, 0.12), transparent 68%);
+  filter: blur(12px);
+  z-index: -1;
+}
+
+.teen-auth-illustration-img {
+  display: block;
+  width: min(760px, 100%);
+  max-height: 74vh;
+  object-fit: contain;
+  object-position: center;
+  filter: none;
+}
+
+.teen-floating-card {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(203, 213, 225, 0.76);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+  transform: rotate(var(--tilt, 0deg));
+}
+
+.teen-floating-card span {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.teen-floating-card strong {
+  font-size: clamp(1rem, 1.6vw, 1.28rem);
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.card-english {
+  --tilt: -3deg;
+  top: 13%;
+  left: 10%;
+  border-color: rgba(20, 184, 166, 0.34);
+}
+
+.card-spanish {
+  --tilt: 4deg;
+  top: 26%;
+  right: 10%;
+  padding: 14px 18px;
+  border-color: rgba(79, 70, 229, 0.28);
+}
+
+.card-french {
+  --tilt: -5deg;
+  right: 16%;
+  bottom: 18%;
+  border-color: rgba(14, 165, 233, 0.32);
+}
+
+.card-practice {
+  --tilt: 3deg;
+  left: 13%;
+  bottom: 20%;
+  padding: 10px 14px;
+  border-color: rgba(45, 212, 191, 0.34);
+}
+
+.teen-study-illustration {
+  position: relative;
+  width: min(560px, 88%);
+  aspect-ratio: 1.28;
+  margin-top: 46px;
+}
+
+.study-desk {
+  position: absolute;
+  left: 5%;
+  right: 2%;
+  bottom: 13%;
+  height: 16%;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #ffffff, #dff8f7);
+  border: 1px solid rgba(20, 184, 166, 0.24);
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.11);
+}
+
+.study-desk::before,
+.study-desk::after {
+  content: '';
+  position: absolute;
+  bottom: -76px;
+  width: 14px;
+  height: 82px;
+  border-radius: 999px;
+  background: #bfe7e8;
+}
+
+.study-desk::before { left: 12%; transform: rotate(7deg); }
+.study-desk::after { right: 13%; transform: rotate(-7deg); }
+
+.study-chair {
+  position: absolute;
+  left: 11%;
+  bottom: 14%;
+  width: 20%;
+  height: 42%;
+  border-radius: 34px 34px 18px 18px;
+  background: linear-gradient(160deg, #dbeafe, #a5b4fc);
+  opacity: 0.95;
+}
+
+.study-person {
+  position: absolute;
+  left: 16%;
+  bottom: 22%;
+  width: 27%;
+  height: 57%;
+}
+
+.person-head {
+  position: absolute;
+  left: 30%;
+  top: 1%;
+  width: 46%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #ffd7bd;
+  box-shadow: inset -10px -8px 0 rgba(245, 158, 11, 0.08);
+}
+
+.person-hair {
+  position: absolute;
+  inset: -8% -4% 42% -10%;
+  border-radius: 52% 48% 38% 44%;
+  background: #243047;
+}
+
+.headphone-band {
+  position: absolute;
+  left: -18%;
+  right: -18%;
+  top: 4%;
+  height: 62%;
+  border: 6px solid #4f46e5;
+  border-bottom-color: transparent;
+  border-radius: 50% 50% 0 0;
+}
+
+.headphone {
+  position: absolute;
+  top: 34%;
+  width: 22%;
+  aspect-ratio: 0.72;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2dd4bf, #0ea5e9);
+}
+
+.headphone.left { left: -17%; }
+.headphone.right { right: -17%; }
+
+.person-body {
+  position: absolute;
+  left: 18%;
+  top: 38%;
+  width: 58%;
+  height: 57%;
+  border-radius: 34px 34px 18px 18px;
+  background: linear-gradient(150deg, #14b8a6, #2563eb);
+  transform: rotate(-3deg);
+}
+
+.person-arm {
+  position: absolute;
+  top: 56%;
+  width: 48%;
+  height: 12%;
+  border-radius: 999px;
+  background: #ffd7bd;
+}
+
+.person-arm.left {
+  left: 40%;
+  transform: rotate(28deg);
+}
+
+.person-arm.right {
+  left: 48%;
+  top: 67%;
+  transform: rotate(9deg);
+}
+
+.study-laptop {
+  position: absolute;
+  right: 16%;
+  bottom: 28%;
+  width: 38%;
+  aspect-ratio: 1.45;
+  border-radius: 16px;
+  background: #26324d;
+  box-shadow: 0 16px 24px rgba(15, 23, 42, 0.14);
+}
+
+.study-laptop::after {
+  content: '';
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: -12px;
+  height: 16px;
+  border-radius: 0 0 18px 18px;
+  background: #667eea;
+}
+
+.laptop-screen {
+  position: absolute;
+  inset: 9%;
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.play-dot {
+  position: absolute;
+  left: 13%;
+  top: 22%;
+  width: 34%;
+  height: 42%;
+  border-radius: 12px;
+  background: #dbeafe;
+}
+
+.play-dot::after {
+  content: '';
+  position: absolute;
+  left: 42%;
+  top: 34%;
+  border-left: 12px solid #14b8a6;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+}
+
+.screen-line {
+  position: absolute;
+  right: 9%;
+  height: 8px;
+  border-radius: 999px;
+  background: #c7d2fe;
+}
+
+.line-a { top: 26%; width: 34%; }
+.line-b { top: 43%; width: 27%; }
+
+.screen-pill {
+  position: absolute;
+  left: 13%;
+  bottom: 13%;
+  width: 30%;
+  height: 12px;
+  border-radius: 999px;
+  background: #2dd4bf;
+}
+
+.study-notebook {
+  position: absolute;
+  left: 42%;
+  bottom: 25%;
+  width: 20%;
+  height: 9%;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #dbeafe);
+  border: 1px solid #bfdbfe;
+  transform: rotate(4deg);
+}
+
+.study-cup {
+  position: absolute;
+  right: 7%;
+  bottom: 27%;
+  width: 7%;
+  height: 15%;
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(180deg, #99f6e4, #14b8a6);
 }
 
 .auth-logo-row {
@@ -1289,7 +1758,7 @@ function handleTeenLogout() {
 .auth-logo-img { max-height: 36px; }
 
 .badge-teen-tag {
-  background: #4F46E5;
+  background: #00b9b5;
   color: #FFFFFF;
   font-weight: 800;
   font-size: 11px;
@@ -1297,7 +1766,7 @@ function handleTeenLogout() {
   border-radius: 6px;
 }
 
-.teen-auth-card h2 { font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 8px; }
+.teen-auth-card h2 { font-size: 24px; font-weight: 800; color: #0F172A; margin-bottom: 8px; }
 .teen-auth-card p { font-size: 13px; color: #64748B; line-height: 1.5; margin-bottom: 20px; }
 
 .admin-quick-pill {
@@ -1321,10 +1790,99 @@ function handleTeenLogout() {
 .input-icon-box { position: relative; }
 .input-icon-box i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94A3B8; font-size: 18px; }
 .input-icon-box input { width: 100%; padding: 10px 12px 10px 38px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 14px; outline: none; }
-.input-icon-box input:focus { border-color: #4F46E5; }
+.input-icon-box input:focus { border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14); }
 
-.btn-full-teen { width: 100%; padding: 12px; background: #4F46E5; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-full-teen { width: 100%; padding: 12px; background: #00b9b5; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: none; }
+.btn-full-teen:hover:not(:disabled) { background: #009c9a; }
+.btn-full-teen:disabled { opacity: 0.72; cursor: not-allowed; }
 .btn-back-club-link { width: 100%; background: transparent; border: none; margin-top: 16px; font-size: 13px; color: #64748B; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+@media (max-width: 960px) {
+  .teen-auth-topbar {
+    height: 70px;
+    padding: 0 18px;
+  }
+
+  .teen-auth-logo {
+    height: 36px;
+  }
+
+  .teen-auth-help-btn {
+    min-height: 38px;
+    padding: 0 12px;
+    font-size: 0.84rem;
+  }
+
+  .teen-auth-screen {
+    min-height: calc(100vh - 70px);
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 22px;
+    overflow-y: auto;
+  }
+
+  .teen-auth-visual {
+    order: 2;
+    min-height: auto;
+    width: 100%;
+  }
+
+  .teen-auth-visual::before {
+    inset: 4% 0 0;
+    border-radius: 28px;
+  }
+
+  .teen-auth-illustration-img {
+    width: min(440px, 100%);
+    max-height: 38vh;
+  }
+
+  .teen-study-illustration {
+    width: min(420px, 92%);
+    margin-top: 34px;
+  }
+
+  .teen-floating-card {
+    padding: 9px 12px;
+    border-radius: 14px;
+  }
+
+  .teen-floating-card span {
+    font-size: 0.62rem;
+  }
+
+  .teen-floating-card strong {
+    font-size: 0.9rem;
+  }
+
+  .card-english {
+    top: 4%;
+    left: 4%;
+  }
+
+  .card-spanish {
+    top: 15%;
+    right: 1%;
+  }
+
+  .card-french {
+    right: 6%;
+    bottom: 8%;
+  }
+
+  .card-practice {
+    left: 5%;
+    bottom: 10%;
+  }
+
+  .teen-auth-card {
+    order: 1;
+    max-width: 100%;
+    padding: 28px 24px;
+    margin-left: 0;
+    justify-self: center;
+  }
+}
 
 /* TOPBAR */
 .teen-topbar {
@@ -2299,6 +2857,10 @@ function handleTeenLogout() {
   box-sizing: border-box;
 }
 
+.mobile-selected-day-card {
+  display: none;
+}
+
 .bottom-detail-header {
   padding-bottom: 16px;
   border-bottom: 1px solid #F1F5F9;
@@ -2335,8 +2897,8 @@ function handleTeenLogout() {
 }
 
 .bottom-lesson-card.card-live {
-  border-color: #F87171;
-  background: #FEF2F2;
+  border-color: #E2E8F0;
+  background: #F8FAFC;
 }
 
 .bottom-card-top {
@@ -2346,7 +2908,20 @@ function handleTeenLogout() {
 }
 
 .lesson-flag-tag { font-size: 11px; font-weight: 700; color: #4F46E5; }
-.live-badge-sm { background: #EF4444; color: white; font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
+.live-badge-sm {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  width: max-content;
+  background: #EF4444;
+  color: white;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 999px;
+  line-height: 1;
+  white-space: nowrap;
+}
 .scheduled-badge-sm { font-size: 11px; font-weight: 600; color: #64748B; display: inline-flex; align-items: center; gap: 4px; }
 
 .bottom-lesson-title { font-size: 14px; font-weight: 700; color: #0F172A; }
@@ -2410,6 +2985,149 @@ function handleTeenLogout() {
 .bottom-empty-state h4 { font-size: 14px; font-weight: 700; color: #334155; margin-bottom: 4px; }
 .bottom-empty-state p { font-size: 12px; line-height: 1.5; }
 
+@media (max-width: 768px) {
+  .calendar-page-header {
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  .calendar-page-header h1 {
+    font-size: 24px;
+    line-height: 1.16;
+  }
+
+  .calendar-page-header p {
+    max-width: 30ch;
+  }
+
+  .calendar-vertical-layout {
+    gap: 16px;
+  }
+
+  .calendar-grid-card-large {
+    padding: 16px 12px;
+    border-radius: 14px;
+  }
+
+  .calendar-weekdays-row-large {
+    font-size: 12px;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+  }
+
+  .calendar-days-grid-large {
+    gap: 6px;
+  }
+
+  .calendar-day-cell-large {
+    height: 70px;
+    min-height: 70px;
+    padding: 8px 6px;
+    border-radius: 10px;
+  }
+
+  .day-number-row {
+    margin-bottom: 0;
+  }
+
+  .day-number-lg {
+    font-size: 13px;
+  }
+
+  .day-badge-counter-lg {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    overflow: hidden;
+    color: transparent;
+  }
+
+  .day-lessons-markers-lg {
+    margin-top: auto;
+    align-items: center;
+    flex-direction: row;
+    justify-content: center;
+  }
+
+  .day-lesson-pill-lg {
+    width: 10px;
+    height: 10px;
+    padding: 0;
+    border-radius: 999px;
+    justify-content: center;
+  }
+
+  .day-lesson-pill-lg .pill-text {
+    display: none;
+  }
+
+  .pill-dot {
+    width: 5px;
+    height: 5px;
+  }
+
+  .day-more-indicator {
+    display: none;
+  }
+
+  .calendar-bottom-detail-section {
+    display: none;
+  }
+
+  .mobile-selected-day-card {
+    display: block;
+    margin-top: 16px;
+    padding: 18px;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.07);
+  }
+
+  .mobile-selected-day-card .bottom-detail-header {
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+  }
+
+  .mobile-selected-day-card .bottom-detail-title-group h3 {
+    font-size: 18px;
+    line-height: 1.25;
+  }
+
+  .bottom-day-lessons-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .bottom-lesson-card {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .bottom-card-footer,
+  .bottom-card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bottom-card-top {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bottom-card-actions {
+    width: 100%;
+  }
+
+  .btn-confirm-presence-bottom,
+  .btn-open-live-bottom {
+    width: 100%;
+    justify-content: center;
+    min-height: 42px;
+  }
+}
+
 /* MODAL ADMIN */
 .teen-admin-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .teen-admin-modal-card { background: #FFFFFF; border-radius: 14px; width: 100%; max-width: 1200px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -2426,22 +3144,26 @@ function handleTeenLogout() {
   backdrop-filter: blur(4px);
   z-index: 99999;
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   animation: fadeIn 0.2s ease-out;
 }
 
 .mobile-drawer-card {
-  width: 280px;
-  max-width: 85vw;
+  width: min(380px, 92vw);
   height: 100vh;
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 0 25px rgba(0, 0, 0, 0.15);
-  animation: slideDrawer 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  padding: 20px;
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.16);
+  animation: slideDrawerFromRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 22px;
   overflow-y: auto;
   box-sizing: border-box;
+}
+
+@keyframes slideDrawerFromRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 
 .drawer-header {

@@ -1,10 +1,18 @@
 // Gerenciador de Armazenamento Local e Estado do Viva Mais Teen (Aulas Ao Vivo & Presença)
-import { DEFAULT_TEEN_COURSES, DEMO_CHAT_MESSAGES, DEMO_LIVE_PARTICIPANTS } from '../data/coursesData'
+import { DEFAULT_TEEN_COURSES, TEEN_CHAT_FALLBACK, TEEN_LIVE_PARTICIPANTS_FALLBACK } from '../data/coursesData'
 
 const STORAGE_COURSES_KEY = 'viva_teen_courses_db'
 const STORAGE_PROGRESS_KEY = 'viva_teen_user_progress'
 const STORAGE_ATTENDANCE_KEY = 'viva_teen_user_attendance'
 const STORAGE_CHAT_KEY = 'viva_teen_live_chat'
+
+function cloneDefaultCourses() {
+  return JSON.parse(JSON.stringify(DEFAULT_TEEN_COURSES))
+}
+
+function isLegacyMockCourseSet(courses) {
+  return courses.some(course => String(course?.id || '').startsWith('course-teen-'))
+}
 
 export const teenStorage = {
   // --- CARREGAMENTO E SALVAMENTO DE CURSOS ---
@@ -13,14 +21,15 @@ export const teenStorage = {
       const saved = localStorage.getItem(STORAGE_COURSES_KEY)
       if (saved) {
         const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (isLegacyMockCourseSet(parsed)) return []
           return parsed
         }
       }
     } catch (e) {
       console.warn('Erro ao carregar cursos do localStorage:', e)
     }
-    return []
+    return cloneDefaultCourses()
   },
 
   saveCourses(courses) {
@@ -33,8 +42,9 @@ export const teenStorage = {
   },
 
   resetToDefault() {
-    this.saveCourses([])
-    return []
+    const defaults = cloneDefaultCourses()
+    this.saveCourses(defaults)
+    return defaults
   },
 
   // --- CRUD DE CURSOS ---
@@ -170,7 +180,7 @@ export const teenStorage = {
     } catch (e) {
       console.warn('Erro ao ler presenças:', e)
     }
-    return ['les-en-demo-1-1'] // Inicial com 1 presença marcada
+    return []
   },
 
   hasAttended(userId = 'default_teen', lessonId) {
@@ -208,14 +218,14 @@ export const teenStorage = {
   },
 
   // --- CHAT AO VIVO DA AULA ---
-  getChatMessages(lessonId = 'les-en-demo-1-1') {
+  getChatMessages(lessonId = '') {
     try {
       const saved = localStorage.getItem(`${STORAGE_CHAT_KEY}_${lessonId}`)
       if (saved) return JSON.parse(saved)
     } catch (e) {
       console.warn('Erro ao ler chat:', e)
     }
-    return [...DEMO_CHAT_MESSAGES]
+    return [...TEEN_CHAT_FALLBACK]
   },
 
   addChatMessage(lessonId, messageObj) {
@@ -238,8 +248,8 @@ export const teenStorage = {
     return msgs
   },
 
-  getLiveParticipants(lessonId = 'les-en-demo-1-1') {
-    return [...DEMO_LIVE_PARTICIPANTS]
+  getLiveParticipants(lessonId = '') {
+    return [...TEEN_LIVE_PARTICIPANTS_FALLBACK]
   },
 
   // --- GESTÃO DE PROGRESSO DO ALUNO & GAMIFICAÇÃO ---
@@ -251,10 +261,10 @@ export const teenStorage = {
       console.warn('Erro ao carregar progresso teen:', e)
     }
     return {
-      completedLessons: ['les-en-demo-1-1'],
-      xp: 350,
-      streakDays: 5,
-      level: 'Nível 3 (Explorer)'
+      completedLessons: [],
+      xp: 0,
+      streakDays: 0,
+      level: 'Nivel 1'
     }
   },
 

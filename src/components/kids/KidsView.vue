@@ -83,11 +83,16 @@ function saveKidProfile() {
   localStorage.setItem('viva_kids_user', JSON.stringify(kidUser))
 }
 
+const galleryArtworks = computed(() => kidUser.artworks.filter(art => art?.dataUrl || art?.serverUrl))
+const galleryDrawingsCount = computed(() => galleryArtworks.value.filter(art => art.type === 'desenho').length)
+const galleryPaintingsCount = computed(() => galleryArtworks.value.filter(art => art.type === 'pintura').length)
+
 async function fetchDependents() {
   dependentsList.value = []
 }
 
 function switchProfile(profileId) {
+  saveCreativeDrafts()
   activeProfileId.value = String(profileId)
   localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
 
@@ -108,6 +113,7 @@ function switchProfile(profileId) {
 
 // --- LOGIN INTERNO NO KIDS (/kids/auth) — apenas CPF, sem senha ---
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
+const LOCAL_TEST_CPF = import.meta.env.DEV ? '41873492010' : null
 const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
@@ -175,7 +181,18 @@ async function handleKidsLogin() {
   loginError.value = ''
   loginLoading.value = true
   try {
-    const data = await api.post('/auth/login-kids', { cpf: digits, module: 'kids' })
+    const data = digits === LOCAL_TEST_CPF
+      ? {
+          token: 'local-test-kids-token',
+          user: {
+            id: 'local-kids-dependent',
+            name: 'Lucas',
+            email: 'teste.kids@vivamaisclub.com',
+            isDependent: true,
+            ageGroup: 'kids'
+          }
+        }
+      : await api.post('/auth/login-kids', { cpf: digits, module: 'kids' })
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user, module: 'kids' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
@@ -283,6 +300,8 @@ function triggerConfetti() {
 const activeGame = ref(null)
 const gamesCurrentPage = ref(1)
 const gamesPerPage = 8
+const gameRewarded = ref(false)
+const gameCountdown = ref(0)
 
 const totalGamesPages = computed(() => Math.ceil(GAMES_CATALOG.length / gamesPerPage))
 
@@ -298,15 +317,756 @@ function changeGamesPage(page) {
   }
 }
 
-function launchGame(game) {
-  activeGame.value = game
+let blocksTimer = null
+let targetTimer = null
+let flappyTimer = null
+let snakeTimer = null
+let dinoTimer = null
+let gameCountdownTimer = null
+let sequenceTimers = []
+
+const memoryIcons = ['⭐', '🎨', '🚀', '🎮', '🌈', '🏆']
+const memoryGame = reactive({
+  cards: [],
+  flipped: [],
+  matched: [],
+  moves: 0,
+  lock: false
+})
+
+const blockRows = 14
+const blockCols = 8
+const blockShapes = [
+  { color: '#00b9b5', cells: [[0, 0], [0, 1], [1, 0], [1, 1]] },
+  { color: '#8b5cf6', cells: [[0, 0], [1, 0], [2, 0], [2, 1]] },
+  { color: '#ffb800', cells: [[0, 1], [1, 0], [1, 1], [1, 2]] },
+  { color: '#38bdf8', cells: [[0, 0], [0, 1], [0, 2], [0, 3]] },
+  { color: '#ff5a79', cells: [[0, 0], [0, 1], [1, 1], [1, 2]] }
+]
+const blocksGame = reactive({
+  grid: [],
+  active: null,
+  score: 0,
+  lines: 0,
+  running: false,
+  gameOver: false
+})
+
+const targetGame = reactive({
+  score: 0,
+  timeLeft: 20,
+  running: false,
+  position: { x: 50, y: 50 }
+})
+
+const flappyGame = reactive({
+  birdY: 42,
+  velocity: 0,
+  pipes: [],
+  score: 0,
+  running: false,
+  gameOver: false
+})
+
+const snakeSize = 12
+const snakeGame = reactive({
+  snake: [],
+  food: { x: 8, y: 6 },
+  direction: 'right',
+  nextDirection: 'right',
+  score: 0,
+  running: false,
+  gameOver: false
+})
+
+const dinoGame = reactive({
+  y: 0,
+  velocity: 0,
+  obstacleX: 100,
+  score: 0,
+  running: false,
+  gameOver: false
+})
+
+const ticTacToeGame = reactive({
+  cells: Array(9).fill(''),
+  status: 'Sua vez',
+  winner: '',
+  locked: false
+})
+
+const sequenceColors = [
+  { id: 'green', label: 'Verde', color: '#10b981' },
+  { id: 'blue', label: 'Azul', color: '#38bdf8' },
+  { id: 'yellow', label: 'Amarelo', color: '#ffb800' },
+  { id: 'pink', label: 'Rosa', color: '#ec4899' }
+]
+const sequenceGame = reactive({
+  sequence: [],
+  inputIndex: 0,
+  level: 1,
+  activeColor: '',
+  showing: false,
+  status: 'Toque em iniciar'
+})
+
+const mathGame = reactive({
+  question: '',
+  answer: 0,
+  options: [],
+  score: 0,
+  round: 1,
+  totalRounds: 6,
+  done: false,
+  status: 'Escolha a resposta certa'
+})
+
+function stopGameTimers({ keepCountdown = false } = {}) {
+  if (!keepCountdown && gameCountdownTimer) {
+    clearInterval(gameCountdownTimer)
+    gameCountdownTimer = null
+    gameCountdown.value = 0
+  }
+  if (blocksTimer) {
+    clearInterval(blocksTimer)
+    blocksTimer = null
+  }
+  if (targetTimer) {
+    clearInterval(targetTimer)
+    targetTimer = null
+  }
+  if (flappyTimer) {
+    clearInterval(flappyTimer)
+    flappyTimer = null
+  }
+  if (snakeTimer) {
+    clearInterval(snakeTimer)
+    snakeTimer = null
+  }
+  if (dinoTimer) {
+    clearInterval(dinoTimer)
+    dinoTimer = null
+  }
+  sequenceTimers.forEach(timer => clearTimeout(timer))
+  sequenceTimers = []
+}
+
+function startGameAfterCountdown(game) {
+  stopGameTimers()
+  gameCountdown.value = 5
+  gameCountdownTimer = setInterval(() => {
+    gameCountdown.value -= 1
+    if (gameCountdown.value <= 0) {
+      clearInterval(gameCountdownTimer)
+      gameCountdownTimer = null
+      gameCountdown.value = 0
+      startGameRound(game)
+    } else {
+      kidsAudio.playPop()
+    }
+  }, 1000)
+}
+
+function startGameRound(game) {
+  if (!game || activeGame.value?.id !== game.id) return
+  if (game.type === 'memory') resetMemoryGame()
+  if (game.type === 'blocks') resetBlocksGame()
+  if (game.type === 'target') resetTargetGame()
+  if (game.type === 'flappy') resetFlappyGame()
+  if (game.type === 'snake') resetSnakeGame()
+  if (game.type === 'dino') resetDinoGame()
+  if (game.type === 'tictactoe') resetTicTacToeGame()
+  if (game.type === 'sequence') resetSequenceGame()
+  if (game.type === 'math') resetMathGame()
+}
+
+function restartActiveGame() {
+  if (!activeGame.value) return
+  gameRewarded.value = false
+  startGameAfterCountdown(activeGame.value)
+}
+
+function awardGameStars(amount, reason) {
+  if (gameRewarded.value) return
+  gameRewarded.value = true
+  addStars(amount, reason)
+}
+
+function shuffleList(list) {
+  return [...list].sort(() => Math.random() - 0.5)
+}
+
+function resetMemoryGame() {
+  const deck = shuffleList([...memoryIcons, ...memoryIcons]).map((icon, index) => ({
+    id: `memory-${index}-${icon}`,
+    icon
+  }))
+  memoryGame.cards = deck
+  memoryGame.flipped = []
+  memoryGame.matched = []
+  memoryGame.moves = 0
+  memoryGame.lock = false
+}
+
+function flipMemoryCard(index) {
+  if (memoryGame.lock || memoryGame.flipped.includes(index) || memoryGame.matched.includes(index)) return
+  memoryGame.flipped.push(index)
   kidsAudio.playPop()
-  addStars(15, `Jogou ${game.title}!`)
+
+  if (memoryGame.flipped.length === 2) {
+    memoryGame.moves += 1
+    const [a, b] = memoryGame.flipped
+    if (memoryGame.cards[a].icon === memoryGame.cards[b].icon) {
+      memoryGame.matched.push(a, b)
+      memoryGame.flipped = []
+      if (memoryGame.matched.length === memoryGame.cards.length) {
+        awardGameStars(25, 'Completou o jogo da memoria!')
+      }
+    } else {
+      memoryGame.lock = true
+      setTimeout(() => {
+        memoryGame.flipped = []
+        memoryGame.lock = false
+      }, 700)
+    }
+  }
+}
+
+function emptyBlocksGrid() {
+  return Array.from({ length: blockRows }, () => Array.from({ length: blockCols }, () => null))
+}
+
+function normalizeShape(shape) {
+  const minRow = Math.min(...shape.map(([row]) => row))
+  const minCol = Math.min(...shape.map(([, col]) => col))
+  return shape.map(([row, col]) => [row - minRow, col - minCol])
+}
+
+function randomBlockPiece() {
+  const base = blockShapes[Math.floor(Math.random() * blockShapes.length)]
+  return {
+    row: 0,
+    col: Math.floor(blockCols / 2) - 1,
+    color: base.color,
+    cells: base.cells.map(cell => [...cell])
+  }
+}
+
+function blockCollision(row, col, cells) {
+  return cells.some(([r, c]) => {
+    const nextRow = row + r
+    const nextCol = col + c
+    return nextCol < 0 || nextCol >= blockCols || nextRow >= blockRows || (nextRow >= 0 && blocksGame.grid[nextRow]?.[nextCol])
+  })
+}
+
+function spawnBlock() {
+  blocksGame.active = randomBlockPiece()
+  if (blockCollision(blocksGame.active.row, blocksGame.active.col, blocksGame.active.cells)) {
+    blocksGame.running = false
+    blocksGame.gameOver = true
+    stopGameTimers()
+    awardGameStars(Math.max(10, Math.min(35, 10 + blocksGame.lines * 5)), 'Jogou Blocos Coloridos!')
+  }
+}
+
+function mergeBlock() {
+  if (!blocksGame.active) return
+  const grid = blocksGame.grid.map(row => [...row])
+  for (const [r, c] of blocksGame.active.cells) {
+    const row = blocksGame.active.row + r
+    const col = blocksGame.active.col + c
+    if (row >= 0 && row < blockRows && col >= 0 && col < blockCols) {
+      grid[row][col] = blocksGame.active.color
+    }
+  }
+  const remainingRows = grid.filter(row => row.some(cell => !cell))
+  const cleared = blockRows - remainingRows.length
+  const newRows = Array.from({ length: cleared }, () => Array.from({ length: blockCols }, () => null))
+  blocksGame.grid = [...newRows, ...remainingRows]
+  blocksGame.lines += cleared
+  blocksGame.score += 10 + cleared * 80
+  spawnBlock()
+}
+
+function tickBlocks() {
+  if (!blocksGame.running || !blocksGame.active) return
+  const nextRow = blocksGame.active.row + 1
+  if (blockCollision(nextRow, blocksGame.active.col, blocksGame.active.cells)) {
+    mergeBlock()
+  } else {
+    blocksGame.active.row = nextRow
+  }
+}
+
+function resetBlocksGame() {
+  stopGameTimers()
+  blocksGame.grid = emptyBlocksGrid()
+  blocksGame.score = 0
+  blocksGame.lines = 0
+  blocksGame.running = true
+  blocksGame.gameOver = false
+  spawnBlock()
+  blocksTimer = setInterval(tickBlocks, 650)
+}
+
+function moveBlock(delta) {
+  if (!blocksGame.running || !blocksGame.active) return
+  const nextCol = blocksGame.active.col + delta
+  if (!blockCollision(blocksGame.active.row, nextCol, blocksGame.active.cells)) {
+    blocksGame.active.col = nextCol
+  }
+}
+
+function rotateBlock() {
+  if (!blocksGame.running || !blocksGame.active) return
+  const rotated = normalizeShape(blocksGame.active.cells.map(([row, col]) => [col, -row]))
+  if (!blockCollision(blocksGame.active.row, blocksGame.active.col, rotated)) {
+    blocksGame.active.cells = rotated
+  }
+}
+
+function dropBlock() {
+  if (!blocksGame.running || !blocksGame.active) return
+  while (!blockCollision(blocksGame.active.row + 1, blocksGame.active.col, blocksGame.active.cells)) {
+    blocksGame.active.row += 1
+  }
+  mergeBlock()
+}
+
+function blockCellColor(row, col) {
+  const active = blocksGame.active
+  if (active) {
+    const activeCell = active.cells.some(([r, c]) => active.row + r === row && active.col + c === col)
+    if (activeCell) return active.color
+  }
+  return blocksGame.grid[row]?.[col]
+}
+
+function moveTarget() {
+  targetGame.position = {
+    x: Math.floor(8 + Math.random() * 76),
+    y: Math.floor(10 + Math.random() * 72)
+  }
+}
+
+function resetTargetGame() {
+  stopGameTimers()
+  targetGame.score = 0
+  targetGame.timeLeft = 20
+  targetGame.running = true
+  moveTarget()
+  targetTimer = setInterval(() => {
+    targetGame.timeLeft -= 1
+    if (targetGame.timeLeft <= 0) {
+      targetGame.running = false
+      stopGameTimers()
+      awardGameStars(Math.max(10, targetGame.score), 'Cacou estrelas no Kids!')
+    }
+  }, 1000)
+}
+
+function hitTarget() {
+  if (!targetGame.running) return
+  targetGame.score += 1
+  kidsAudio.playStar()
+  moveTarget()
+}
+
+function resetFlappyGame() {
+  stopGameTimers()
+  flappyGame.birdY = 42
+  flappyGame.velocity = 0
+  flappyGame.pipes = [
+    { x: 105, gap: 44, passed: false },
+    { x: 160, gap: 36, passed: false }
+  ]
+  flappyGame.score = 0
+  flappyGame.running = true
+  flappyGame.gameOver = false
+  flappyTimer = setInterval(tickFlappyGame, 40)
+}
+
+function flapBird() {
+  if (activeGame.value?.type !== 'flappy') return
+  if (flappyGame.gameOver) {
+    resetFlappyGame()
+    return
+  }
+  flappyGame.velocity = -4.6
+  kidsAudio.playPop()
+}
+
+function finishFlappyGame() {
+  flappyGame.running = false
+  flappyGame.gameOver = true
+  stopGameTimers()
+  awardGameStars(Math.max(10, Math.min(35, 10 + flappyGame.score * 2)), 'Voou no Passarinho nas Nuvens!')
+}
+
+function tickFlappyGame() {
+  if (!flappyGame.running) return
+  flappyGame.velocity += 0.34
+  flappyGame.birdY += flappyGame.velocity
+
+  for (const pipe of flappyGame.pipes) {
+    pipe.x -= 1.35
+    if (pipe.x < -14) {
+      pipe.x = 104
+      pipe.gap = 24 + Math.random() * 48
+      pipe.passed = false
+    }
+    if (!pipe.passed && pipe.x < 22) {
+      pipe.passed = true
+      flappyGame.score += 1
+      kidsAudio.playStar()
+    }
+    const hitsPipeX = pipe.x < 25 && pipe.x > 9
+    const hitsPipeY = flappyGame.birdY < pipe.gap - 13 || flappyGame.birdY > pipe.gap + 13
+    if (hitsPipeX && hitsPipeY) finishFlappyGame()
+  }
+
+  if (flappyGame.birdY < 2 || flappyGame.birdY > 88) finishFlappyGame()
+}
+
+function resetSnakeGame() {
+  stopGameTimers()
+  snakeGame.snake = [{ x: 4, y: 6 }, { x: 3, y: 6 }, { x: 2, y: 6 }]
+  snakeGame.food = { x: 8, y: 6 }
+  snakeGame.direction = 'right'
+  snakeGame.nextDirection = 'right'
+  snakeGame.score = 0
+  snakeGame.running = true
+  snakeGame.gameOver = false
+  snakeTimer = setInterval(tickSnakeGame, 180)
+}
+
+function setSnakeDirection(direction) {
+  if (activeGame.value?.type !== 'snake') return
+  if (gameCountdown.value > 0 || snakeGame.gameOver) return
+  const opposite = { up: 'down', down: 'up', left: 'right', right: 'left' }
+  if (opposite[direction] === snakeGame.direction) return
+  snakeGame.nextDirection = direction
+}
+
+function snakeCellAt(x, y) {
+  if (snakeGame.food.x === x && snakeGame.food.y === y) return 'food'
+  return snakeGame.snake.some(part => part.x === x && part.y === y) ? 'snake' : ''
+}
+
+function placeSnakeFood() {
+  let next
+  do {
+    next = {
+      x: Math.floor(Math.random() * snakeSize),
+      y: Math.floor(Math.random() * snakeSize)
+    }
+  } while (snakeGame.snake.some(part => part.x === next.x && part.y === next.y))
+  snakeGame.food = next
+}
+
+function finishSnakeGame() {
+  snakeGame.running = false
+  snakeGame.gameOver = true
+  stopGameTimers()
+  awardGameStars(Math.max(10, Math.min(40, 10 + snakeGame.score * 4)), 'Jogou Cobrinha do Jardim!')
+}
+
+function tickSnakeGame() {
+  if (!snakeGame.running) return
+  snakeGame.direction = snakeGame.nextDirection
+  const head = { ...snakeGame.snake[0] }
+  if (snakeGame.direction === 'up') head.y -= 1
+  if (snakeGame.direction === 'down') head.y += 1
+  if (snakeGame.direction === 'left') head.x -= 1
+  if (snakeGame.direction === 'right') head.x += 1
+
+  const hitWall = head.x < 0 || head.x >= snakeSize || head.y < 0 || head.y >= snakeSize
+  const hitSelf = snakeGame.snake.some(part => part.x === head.x && part.y === head.y)
+  if (hitWall || hitSelf) {
+    finishSnakeGame()
+    return
+  }
+
+  snakeGame.snake.unshift(head)
+  if (head.x === snakeGame.food.x && head.y === snakeGame.food.y) {
+    snakeGame.score += 1
+    kidsAudio.playStar()
+    placeSnakeFood()
+  } else {
+    snakeGame.snake.pop()
+  }
+}
+
+function resetDinoGame() {
+  stopGameTimers()
+  dinoGame.y = 0
+  dinoGame.velocity = 0
+  dinoGame.obstacleX = 100
+  dinoGame.score = 0
+  dinoGame.running = true
+  dinoGame.gameOver = false
+  dinoTimer = setInterval(tickDinoGame, 34)
+}
+
+function jumpDino() {
+  if (activeGame.value?.type !== 'dino') return
+  if (dinoGame.gameOver) {
+    resetDinoGame()
+    return
+  }
+  if (dinoGame.y <= 0.5) {
+    dinoGame.velocity = 7.6
+    kidsAudio.playPop()
+  }
+}
+
+function finishDinoGame() {
+  dinoGame.running = false
+  dinoGame.gameOver = true
+  stopGameTimers()
+  awardGameStars(Math.max(10, Math.min(40, 10 + Math.floor(dinoGame.score / 8))), 'Correu com o Dino Saltador!')
+}
+
+function tickDinoGame() {
+  if (!dinoGame.running) return
+  dinoGame.score += 1
+  dinoGame.obstacleX -= 1.45
+  if (dinoGame.obstacleX < -8) {
+    dinoGame.obstacleX = 105
+  }
+
+  dinoGame.y += dinoGame.velocity
+  dinoGame.velocity -= 0.38
+  if (dinoGame.y < 0) {
+    dinoGame.y = 0
+    dinoGame.velocity = 0
+  }
+
+  const collisionX = dinoGame.obstacleX > 16 && dinoGame.obstacleX < 29
+  const collisionY = dinoGame.y < 15
+  if (collisionX && collisionY) finishDinoGame()
+}
+
+function checkTicTacToeWinner(cells) {
+  const lines = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
+  ]
+  for (const [a, b, c] of lines) {
+    if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a]
+  }
+  return cells.every(Boolean) ? 'draw' : ''
+}
+
+function resetTicTacToeGame() {
+  ticTacToeGame.cells = Array(9).fill('')
+  ticTacToeGame.status = 'Sua vez'
+  ticTacToeGame.winner = ''
+  ticTacToeGame.locked = false
+}
+
+function finishTicTacToe(winner) {
+  ticTacToeGame.winner = winner
+  ticTacToeGame.locked = true
+  if (winner === 'X') {
+    ticTacToeGame.status = 'Voce venceu!'
+    awardGameStars(20, 'Venceu o Jogo da Velha!')
+  } else if (winner === 'O') {
+    ticTacToeGame.status = 'O computador venceu'
+  } else {
+    ticTacToeGame.status = 'Empate!'
+    awardGameStars(10, 'Empatou no Jogo da Velha!')
+  }
+}
+
+function playTicTacToe(index) {
+  if (ticTacToeGame.locked || ticTacToeGame.cells[index]) return
+  ticTacToeGame.cells[index] = 'X'
+  kidsAudio.playPop()
+  const playerWinner = checkTicTacToeWinner(ticTacToeGame.cells)
+  if (playerWinner) {
+    finishTicTacToe(playerWinner)
+    return
+  }
+
+  ticTacToeGame.locked = true
+  ticTacToeGame.status = 'Computador pensando...'
+  setTimeout(() => {
+    const empty = ticTacToeGame.cells.map((cell, i) => cell ? null : i).filter(i => i !== null)
+    const choice = empty[Math.floor(Math.random() * empty.length)]
+    if (choice !== undefined) ticTacToeGame.cells[choice] = 'O'
+    const botWinner = checkTicTacToeWinner(ticTacToeGame.cells)
+    if (botWinner) {
+      finishTicTacToe(botWinner)
+    } else {
+      ticTacToeGame.locked = false
+      ticTacToeGame.status = 'Sua vez'
+    }
+  }, 420)
+}
+
+function randomSequenceColor() {
+  return sequenceColors[Math.floor(Math.random() * sequenceColors.length)].id
+}
+
+function showSequence() {
+  sequenceTimers.forEach(timer => clearTimeout(timer))
+  sequenceTimers = []
+  sequenceGame.showing = true
+  sequenceGame.inputIndex = 0
+  sequenceGame.status = 'Observe a sequencia'
+
+  sequenceGame.sequence.forEach((colorId, index) => {
+    sequenceTimers.push(setTimeout(() => {
+      sequenceGame.activeColor = colorId
+      kidsAudio.playPop()
+    }, 650 * index))
+    sequenceTimers.push(setTimeout(() => {
+      sequenceGame.activeColor = ''
+      if (index === sequenceGame.sequence.length - 1) {
+        sequenceGame.showing = false
+        sequenceGame.status = 'Agora repita'
+      }
+    }, 650 * index + 360))
+  })
+}
+
+function resetSequenceGame() {
+  stopGameTimers()
+  sequenceGame.sequence = [randomSequenceColor()]
+  sequenceGame.inputIndex = 0
+  sequenceGame.level = 1
+  sequenceGame.activeColor = ''
+  sequenceGame.status = 'Observe a sequencia'
+  showSequence()
+}
+
+function pressSequenceColor(colorId) {
+  if (sequenceGame.showing || sequenceGame.sequence.length === 0) return
+  sequenceGame.activeColor = colorId
+  sequenceTimers.push(setTimeout(() => { sequenceGame.activeColor = '' }, 160))
+  if (sequenceGame.sequence[sequenceGame.inputIndex] !== colorId) {
+    sequenceGame.status = 'Ops, tente de novo'
+    awardGameStars(Math.max(8, sequenceGame.level * 4), 'Treinou memoria de cores!')
+    return
+  }
+
+  sequenceGame.inputIndex += 1
+  if (sequenceGame.inputIndex >= sequenceGame.sequence.length) {
+    sequenceGame.level += 1
+    sequenceGame.status = 'Muito bem!'
+    if (sequenceGame.level > 5) {
+      awardGameStars(30, 'Completou Sequencia de Cores!')
+      sequenceGame.status = 'Sequencia completa!'
+      return
+    }
+    sequenceGame.sequence.push(randomSequenceColor())
+    sequenceTimers.push(setTimeout(showSequence, 680))
+  }
+}
+
+function buildMathQuestion() {
+  const a = Math.floor(Math.random() * 9) + 1
+  const b = Math.floor(Math.random() * 9) + 1
+  const useMultiply = mathGame.round > 3 && Math.random() > 0.5
+  const answer = useMultiply ? a * b : a + b
+  const question = useMultiply ? `${a} x ${b}` : `${a} + ${b}`
+  const optionSet = new Set([answer])
+  while (optionSet.size < 3) {
+    optionSet.add(Math.max(1, answer + Math.floor(Math.random() * 9) - 4))
+  }
+  mathGame.question = question
+  mathGame.answer = answer
+  mathGame.options = shuffleList([...optionSet])
+  mathGame.status = 'Escolha a resposta certa'
+}
+
+function resetMathGame() {
+  mathGame.score = 0
+  mathGame.round = 1
+  mathGame.done = false
+  buildMathQuestion()
+}
+
+function answerMath(option) {
+  if (mathGame.done) return
+  if (Number(option) === Number(mathGame.answer)) {
+    mathGame.score += 1
+    mathGame.status = 'Acertou!'
+    kidsAudio.playStar()
+  } else {
+    mathGame.status = 'Quase!'
+    kidsAudio.playPop()
+  }
+
+  if (mathGame.round >= mathGame.totalRounds) {
+    mathGame.done = true
+    awardGameStars(10 + mathGame.score * 4, 'Jogou Matematica Rapida!')
+  } else {
+    mathGame.round += 1
+    setTimeout(buildMathQuestion, 420)
+  }
+}
+
+function launchGame(game) {
+  stopGameTimers()
+  activeGame.value = game
+  gameRewarded.value = false
+  kidsAudio.playPop()
+  nextTick(() => {
+    startGameAfterCountdown(game)
+  })
 }
 
 function closeGame() {
+  stopGameTimers()
   activeGame.value = null
   kidsAudio.playPop()
+}
+
+function onGameKeydown(e) {
+  if (!activeGame.value) return
+  if (gameCountdown.value > 0) {
+    e.preventDefault()
+    return
+  }
+  if (activeGame.value.type === 'flappy' && (e.key === ' ' || e.key === 'ArrowUp')) {
+    e.preventDefault()
+    flapBird()
+    return
+  }
+  if (activeGame.value.type === 'dino' && (e.key === ' ' || e.key === 'ArrowUp')) {
+    e.preventDefault()
+    jumpDino()
+    return
+  }
+  if (activeGame.value.type === 'snake') {
+    if (e.key === 'ArrowLeft') setSnakeDirection('left')
+    if (e.key === 'ArrowRight') setSnakeDirection('right')
+    if (e.key === 'ArrowUp') setSnakeDirection('up')
+    if (e.key === 'ArrowDown') setSnakeDirection('down')
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault()
+    return
+  }
+  if (activeGame.value.type !== 'blocks') return
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    moveBlock(-1)
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    moveBlock(1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    rotateBlock()
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    tickBlocks()
+  } else if (e.key === ' ') {
+    e.preventDefault()
+    dropBlock()
+  }
 }
 
 // --- LOUSA DE DESENHO LIVRE ---
@@ -331,21 +1091,52 @@ const SWATCH_COLORS = [
 
 const STAMPS = ['⭐', '🎨', '🚀', '🐱', '🐶', '🦄', '🌸', '👑', '🍕', '⚽']
 
+function getCreativeDraftKey(type, suffix = 'main') {
+  return `viva_kids_${type}_draft_${activeProfileId.value || 'titular'}_${suffix}`
+}
+
+function drawDataUrlOnCanvas(ctx, canvas, dataUrl, afterLoad) {
+  const img = new Image()
+  img.onload = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    if (afterLoad) afterLoad()
+  }
+  img.src = dataUrl
+}
+
+function saveFreehandDraft() {
+  if (!freehandCanvasRef.value) return
+  localStorage.setItem(getCreativeDraftKey('draw'), freehandCanvasRef.value.toDataURL('image/png'))
+}
+
 function initFreehandCanvas() {
   const canvas = freehandCanvasRef.value
   if (!canvas) return
   freehandCtx = canvas.getContext('2d')
 
   const container = canvas.parentElement
-  const width = Math.max(Math.floor(container?.clientWidth || 600) - 20, 300)
-  const height = Math.max(Math.min(window.innerHeight * 0.6, 520), 380)
+  const width = Math.max(Math.floor(container?.clientWidth || 600) - 44, 300)
+  const height = window.innerWidth <= 768
+    ? Math.max(Math.min(window.innerHeight * 0.46, 430), 320)
+    : Math.max(Math.min(window.innerHeight * 0.6, 520), 380)
 
   canvas.width = width
   canvas.height = height
 
   freehandCtx.fillStyle = '#ffffff'
   freehandCtx.fillRect(0, 0, width, height)
-  pushFreehandHistory()
+  history.value = []
+  historyIndex.value = -1
+
+  const savedDraft = localStorage.getItem(getCreativeDraftKey('draw'))
+  if (savedDraft) {
+    drawDataUrlOnCanvas(freehandCtx, canvas, savedDraft, pushFreehandHistory)
+  } else {
+    pushFreehandHistory()
+  }
 }
 
 function pushFreehandHistory() {
@@ -365,6 +1156,7 @@ function undoFreehand() {
     img.onload = () => {
       freehandCtx.clearRect(0, 0, freehandCanvasRef.value.width, freehandCanvasRef.value.height)
       freehandCtx.drawImage(img, 0, 0)
+      saveFreehandDraft()
     }
     img.src = history.value[historyIndex.value]
     kidsAudio.playPop()
@@ -378,6 +1170,7 @@ function redoFreehand() {
     img.onload = () => {
       freehandCtx.clearRect(0, 0, freehandCanvasRef.value.width, freehandCanvasRef.value.height)
       freehandCtx.drawImage(img, 0, 0)
+      saveFreehandDraft()
     }
     img.src = history.value[historyIndex.value]
     kidsAudio.playPop()
@@ -389,6 +1182,7 @@ function clearFreehand() {
   freehandCtx.fillStyle = '#ffffff'
   freehandCtx.fillRect(0, 0, freehandCanvasRef.value.width, freehandCanvasRef.value.height)
   pushFreehandHistory()
+  saveFreehandDraft()
   kidsAudio.playPop()
 }
 
@@ -414,6 +1208,7 @@ function startFreehandDraw(e) {
     freehandCtx.textBaseline = 'middle'
     freehandCtx.fillText(activeStamp.value, x, y)
     pushFreehandHistory()
+    saveFreehandDraft()
     kidsAudio.playPop()
     return
   }
@@ -447,6 +1242,7 @@ function stopFreehandDraw() {
     freehandCtx.closePath()
     isDrawing.value = false
     pushFreehandHistory()
+    saveFreehandDraft()
   }
 }
 
@@ -466,6 +1262,7 @@ async function saveFreehandArtwork() {
   if (ach) ach.unlocked = true
 
   saveKidProfile()
+  saveFreehandDraft()
   addStars(10, 'Desenho Salvo na Galeria!')
 
   // Upload em background para o backend
@@ -489,13 +1286,82 @@ let paintCtx = null
 const activeColoringId = ref(COLORING_TEMPLATES[0].id)
 const paintColor = ref('#00b9b5')
 const coloringCategory = ref('all')
+const showPaintPicker = ref(true)
+const paintPickerPage = ref(0)
+const paintPickerPageSize = ref(typeof window !== 'undefined' && window.innerWidth <= 768 ? 1 : 3)
+const freehandZoom = ref(1)
+const paintZoom = ref(1)
+
+const activeColoringTemplate = computed(() => (
+  COLORING_TEMPLATES.find(t => t.id === activeColoringId.value) || COLORING_TEMPLATES[0]
+))
 
 const filteredColorings = computed(() => {
   if (coloringCategory.value === 'all') return COLORING_TEMPLATES
   return COLORING_TEMPLATES.filter(c => c.category === coloringCategory.value)
 })
 
-function loadColoringTemplate(id) {
+const visiblePaintTemplates = computed(() => {
+  const start = paintPickerPage.value * paintPickerPageSize.value
+  return COLORING_TEMPLATES.slice(start, start + paintPickerPageSize.value)
+})
+
+const totalPaintPickerPages = computed(() => Math.ceil(COLORING_TEMPLATES.length / paintPickerPageSize.value))
+
+function syncPaintPickerLayout() {
+  const nextSize = window.innerWidth <= 768 ? 1 : 3
+  if (paintPickerPageSize.value !== nextSize) {
+    paintPickerPageSize.value = nextSize
+    paintPickerPage.value = 0
+  }
+}
+
+function changePaintPickerPage(direction) {
+  paintPickerPage.value = (paintPickerPage.value + direction + totalPaintPickerPages.value) % totalPaintPickerPages.value
+  kidsAudio.playPop()
+}
+
+function savePaintDraft() {
+  if (!paintCanvasRef.value) return
+  localStorage.setItem(
+    getCreativeDraftKey('paint', activeColoringId.value),
+    paintCanvasRef.value.toDataURL('image/png')
+  )
+  localStorage.setItem(getCreativeDraftKey('paint_active'), activeColoringId.value)
+}
+
+function openPaintPicker() {
+  savePaintDraft()
+  showPaintPicker.value = true
+  kidsAudio.playPop()
+}
+
+function selectColoringTemplate(id) {
+  savePaintDraft()
+  activeColoringId.value = id
+  showPaintPicker.value = false
+  kidsAudio.playClick()
+  nextTick(() => loadColoringTemplate(id))
+}
+
+function resetPaintTemplate() {
+  localStorage.removeItem(getCreativeDraftKey('paint', activeColoringId.value))
+  loadColoringTemplate(activeColoringId.value, { restoreDraft: false })
+}
+
+function changeCanvasZoom(target, amount) {
+  const zoomRef = target === 'paint' ? paintZoom : freehandZoom
+  zoomRef.value = Math.min(2.25, Math.max(0.75, Number((zoomRef.value + amount).toFixed(2))))
+  kidsAudio.playClick()
+}
+
+function resetCanvasZoom(target) {
+  const zoomRef = target === 'paint' ? paintZoom : freehandZoom
+  zoomRef.value = 1
+  kidsAudio.playPop()
+}
+
+function loadColoringTemplate(id, { restoreDraft = true } = {}) {
   activeColoringId.value = id
   const tmpl = COLORING_TEMPLATES.find(t => t.id === id) || COLORING_TEMPLATES[0]
   const canvas = paintCanvasRef.value
@@ -509,6 +1375,12 @@ function loadColoringTemplate(id) {
   canvas.width = width
   canvas.height = height
 
+  const savedDraft = restoreDraft ? localStorage.getItem(getCreativeDraftKey('paint', id)) : null
+  if (savedDraft) {
+    drawDataUrlOnCanvas(paintCtx, canvas, savedDraft)
+    return
+  }
+
   const img = new Image()
   img.crossOrigin = 'anonymous'
   img.onload = () => {
@@ -516,7 +1388,7 @@ function loadColoringTemplate(id) {
     paintCtx.fillRect(0, 0, width, height)
 
     // Ajusta proporção para caber perfeitamente no canvas
-    const drawingMargin = window.innerWidth <= 768 ? 0 : 40
+    const drawingMargin = window.innerWidth <= 768 ? 54 : 40
     const scale = Math.min((width - drawingMargin) / img.width, (height - drawingMargin) / img.height)
     const dw = img.width * scale
     const dh = img.height * scale
@@ -613,6 +1485,7 @@ function floodFill(startX, startY, fillColor) {
   }
 
   paintCtx.putImageData(imgData, 0, 0)
+  savePaintDraft()
   kidsAudio.playPop()
 }
 
@@ -639,6 +1512,7 @@ async function savePaintArtwork() {
   if (ach) ach.unlocked = true
 
   saveKidProfile()
+  savePaintDraft()
   addStars(10, 'Pintura Salva com Sucesso!')
 
   // Upload em background para o backend
@@ -657,14 +1531,20 @@ async function savePaintArtwork() {
 }
 
 // --- CONTROLE DE NAVEGAÇÃO & ABA ---
+function saveCreativeDrafts() {
+  saveFreehandDraft()
+  savePaintDraft()
+}
+
 function switchTab(tab) {
+  saveCreativeDrafts()
   activeTab.value = tab
   showHeaderMenu.value = false
   kidsAudio.playClick()
 
   if (tab === 'draw') {
     nextTick(() => initFreehandCanvas())
-  } else if (tab === 'paint') {
+  } else if (tab === 'paint' && !showPaintPicker.value) {
     nextTick(() => loadColoringTemplate(activeColoringId.value))
   }
 }
@@ -694,12 +1574,19 @@ function onWindowClick(e) {
 
 onMounted(async () => {
   document.addEventListener('click', onWindowClick)
+  window.addEventListener('keydown', onGameKeydown)
+  window.addEventListener('resize', syncPaintPickerLayout)
+  syncPaintPickerLayout()
   loadKidProfile(activeProfileId.value)
   await fetchDependents()
 })
 
 onBeforeUnmount(() => {
+  saveCreativeDrafts()
   document.removeEventListener('click', onWindowClick)
+  window.removeEventListener('keydown', onGameKeydown)
+  window.removeEventListener('resize', syncPaintPickerLayout)
+  stopGameTimers()
 })
 
 watch(() => props.user, () => {
@@ -722,16 +1609,10 @@ watch(() => props.user, () => {
           <img src="/logo-viva-mais.png" alt="Viva Mais Club" class="brand-logo-img" />
           <span class="badge-kids-pill">KIDS</span>
         </div>
-
-        <button class="btn-help-top" @click="openHelp">
-          <i class="ph ph-question"></i>
-          <span>Precisa de ajuda?</span>
-        </button>
       </header>
 
       <!-- Main Body: Card alinhado no lado direito -->
       <div class="kids-auth-main-container">
-        <img src="/kids/banners/turma.png" alt="Turma Viva Mais Kids" class="auth-banner-character" />
         <div class="kids-auth-form-col">
           <div class="kids-auth-card">
             <div class="tab-content-area">
@@ -765,6 +1646,11 @@ watch(() => props.user, () => {
                   <i class="ph ph-arrow-right"></i>
                 </button>
               </form>
+
+              <button type="button" class="btn-kids-back-main" @click="emit('goHome')">
+                <i class="ph ph-arrow-left"></i>
+                <span>Voltar ao menu principal</span>
+              </button>
 
               <div class="kids-security-box">
                 <i class="ph-fill ph-shield-check"></i>
@@ -800,7 +1686,7 @@ watch(() => props.user, () => {
             <span>Início</span>
           </button>
           <button class="nav-tab-btn" :class="{ active: activeTab === 'games' }" @click="switchTab('games')">
-            <i class="ph-bold ph-game-controller nav-ico"></i>
+            <i class="ph-fill ph-game-controller nav-ico"></i>
             <span>Jogos</span>
           </button>
           <button class="nav-tab-btn" :class="{ active: activeTab === 'paint' }" @click="switchTab('paint')">
@@ -840,14 +1726,16 @@ watch(() => props.user, () => {
             <strong>{{ kidUser.stars }}</strong>
           </div>
 
-          <!-- Menu Opções / Áudio / Portal / Mobile Profile -->
+          <!-- Menu de Perfil -->
           <div ref="headerMenuRef" class="kids-menu-wrap">
-            <button class="kids-menu-btn" @click="showHeaderMenu = !showHeaderMenu" title="Mais Opções">
-              <i class="ph ph-dots-three-vertical"></i>
+            <button class="kids-profile-menu-btn" @click="showHeaderMenu = !showHeaderMenu" title="Perfil">
+              <i class="ph-fill ph-user-circle"></i>
+              <span>{{ kidUser.name }}</span>
+              <i class="ph ph-caret-down"></i>
             </button>
 
             <div v-if="showHeaderMenu" class="kids-dropdown-box">
-              <div class="dropdown-kid-info" @click="switchTab('profile')">
+              <div class="dropdown-kid-info">
                 <i class="ph-fill ph-user-circle dropdown-avatar-ph"></i>
                 <div class="dropdown-kid-details">
                   <strong>{{ kidUser.name }}</strong>
@@ -855,30 +1743,28 @@ watch(() => props.user, () => {
                 </div>
               </div>
 
-              <!-- Seletor de Criança dentro do Menu (Essencial no Mobile) -->
+              <button class="dropdown-item" @click="switchTab('profile')">
+                <i class="ph ph-user-circle"></i> Ver meu Perfil
+              </button>
+
               <div class="dropdown-profile-picker">
-                <span class="dropdown-picker-label">Trocar Perfil:</span>
-                <select
-                  :value="activeProfileId"
-                  @change="switchProfile($event.target.value)"
-                  class="dropdown-dep-select"
+                <span class="dropdown-picker-label">Trocar dependente</span>
+                <button
+                  v-for="dep in kidProfileOptions"
+                  :key="dep.id"
+                  type="button"
+                  class="dropdown-profile-option"
+                  :class="{ active: String(dep.id) === String(activeProfileId) }"
+                  @click="switchProfile(dep.id); showHeaderMenu = false"
                 >
-                  <option v-for="dep in kidProfileOptions" :key="dep.id" :value="dep.id">
-                    {{ dep.name.split(' ')[0] }}
-                  </option>
-                </select>
+                  <span>{{ dep.name.split(' ')[0] }}</span>
+                  <i v-if="String(dep.id) === String(activeProfileId)" class="ph-bold ph-check"></i>
+                </button>
               </div>
 
               <div class="dropdown-sep"></div>
-              <button class="dropdown-item" @click="toggleAudio">
-                <i :class="isAudioMuted ? 'ph ph-speaker-simple-slash' : 'ph ph-speaker-simple-high'"></i>
-                {{ isAudioMuted ? 'Ativar Sons' : 'Efeitos Sonoros' }}
-              </button>
-              <button class="dropdown-item" @click="emit('goHome')">
-                <i class="ph ph-house"></i> Voltar ao Portal Viva Mais
-              </button>
               <button v-if="hasKidsAccess" class="dropdown-item text-danger" @click="handleLogout">
-                <i class="ph ph-sign-out"></i> Sair da Conta
+                <i class="ph ph-sign-out"></i> Sair
               </button>
             </div>
           </div>
@@ -891,51 +1777,32 @@ watch(() => props.user, () => {
         <!-- 1. HOME HUB -->
         <section v-if="activeTab === 'home'" class="kids-section-fade">
           <div class="kids-hero-banner-container">
-            <img src="/kids/banners/home-bg.png" alt="Viva Mais Club Kids" class="kids-hero-img" />
-            <img src="/kids/banners/turma.png" alt="Turma Viva Mais Kids" class="banner-character home-banner-character" />
+            <img src="/kids/banners/home-dashboard-banner-v3.png" alt="Viva Mais Club Kids" class="kids-hero-img home-dashboard-img" />
             
             <div class="hero-content-overlay">
-              <h1 class="hero-main-title">Olá, <span class="highlight-name">{{ kidUser.name }}!</span><br>Vamos brincar?</h1>
-              <p class="hero-desc">Jogue mini-games divertidos, pinte desenhos incríveis e crie suas próprias artes na lousa!</p>
-              
-              <div class="hero-actions">
-                <button type="button" class="btn-hero-action btn-game" @click="switchTab('games')">
-                  <i class="ph-fill ph-game-controller"></i>
-                  <span>Explorar Jogos</span>
-                </button>
-                <button type="button" class="btn-hero-action btn-paint" @click="switchTab('paint')">
-                  <i class="ph-fill ph-paint-brush"></i>
-                  <span>Livro de Pintura</span>
-                </button>
-                <button type="button" class="btn-hero-action btn-draw" @click="switchTab('draw')">
-                  <i class="ph-bold ph-chalkboard-simple"></i>
-                  <span>Lousa de Desenho</span>
-                </button>
-              </div>
+              <h1 class="hero-main-title">Olá, <span class="highlight-name">{{ kidUser.name }}!</span></h1>
+              <p class="hero-desc">Vamos criar algo incrível hoje?</p>
             </div>
           </div>
 
           <h2 class="section-title">✨ Escolha sua Aventura de Hoje</h2>
           <div class="hub-grid">
             
-            <!-- Card 1: Sala de Jogos -->
             <div class="hub-card card-games" @click="switchTab('games')">
               <div class="card-top-content">
-                <div class="card-icon-box bg-mint">
+                <div class="card-icon-box bg-purple">
                   <i class="ph-fill ph-game-controller"></i>
                 </div>
                 <div class="card-text-col">
                   <h3>Sala de Jogos</h3>
-                  <p>Subway Surfers, Angry Birds, Banana Kong, Traffic Rider e muitos outros jogos incríveis!</p>
+                  <p>Memoria, blocos coloridos e desafios rapidos feitos dentro do Viva Kids.</p>
                 </div>
               </div>
-              <button class="btn-card-action btn-outline-mint">
+              <button class="btn-card-action btn-game">
                 <span>Jogar Agora</span>
                 <i class="ph ph-arrow-right"></i>
               </button>
-              <div class="card-watermark-icon mint-watermark">
-                <i class="ph ph-game-controller"></i>
-              </div>
+              <img src="/kids/illustrations/adventure-games-clean.png" alt="" class="card-illustration games-illustration" loading="lazy" />
             </div>
 
             <!-- Card 2: Livro de Pintura -->
@@ -953,9 +1820,7 @@ watch(() => props.user, () => {
                 <span>Colorir Agora</span>
                 <i class="ph ph-arrow-right"></i>
               </button>
-              <div class="card-watermark-icon yellow-watermark">
-                <i class="ph ph-palette"></i>
-              </div>
+              <img src="/kids/illustrations/adventure-paint-clean.png" alt="" class="card-illustration paint-illustration" loading="lazy" />
             </div>
 
             <!-- Card 3: Lousa de Desenho -->
@@ -973,20 +1838,17 @@ watch(() => props.user, () => {
                 <span>Soltar a Criatividade</span>
                 <i class="ph ph-arrow-right"></i>
               </button>
-              <div class="card-watermark-icon purple-watermark">
-                <i class="ph ph-pencil-line"></i>
-              </div>
+              <img src="/kids/illustrations/adventure-draw-clean.png" alt="" class="card-illustration draw-illustration" loading="lazy" />
             </div>
 
           </div>
         </section>
 
-        <!-- 2. SALA DE JOGOS (LAYOUT OFICIAL VIVA MAIS KIDS) -->
+        <!-- 2. SALA DE JOGOS (Viva Kids) -->
         <section v-else-if="activeTab === 'games'" class="kids-section-fade">
           <!-- Banner da Sala de Jogos -->
           <div class="games-hero-banner-container">
-            <img src="/kids/banners/games-bg.png" alt="Sala de Jogos" class="games-hero-img" />
-            <img src="/kids/banners/games-character.webp" alt="Garoto gamer" class="banner-character games-banner-character" />
+            <img src="/kids/banners/games-bg-light-gamer-wide-v1.png" alt="Sala de Jogos" class="games-hero-img" />
             <div class="games-hero-content">
               <div class="hero-banner-inline-row">
                 <div class="games-circle-badge">
@@ -1009,12 +1871,15 @@ watch(() => props.user, () => {
             >
               <div class="kid-game-thumb-box">
                 <img
+                  v-if="game.image"
                   :src="game.image"
                   :alt="game.title"
                   class="kid-game-thumb"
                   loading="lazy"
-                  @error="(e) => { e.target.src = 'https://www.madkidgames.com/games/subway-surfers/thumb_2.jpg' }"
                 />
+                <div v-else class="kid-game-thumb local-game-thumb" :style="{ background: game.accent }">
+                  <span>{{ game.thumb }}</span>
+                </div>
                 <span v-if="game.badge" class="kid-game-badge">{{ game.badge }}</span>
                 <span class="kid-game-stars"><i class="ph-fill ph-star"></i> +15</span>
               </div>
@@ -1061,18 +1926,9 @@ watch(() => props.user, () => {
 
         <!-- 3. LIVRO DE PINTURA (LAYOUT OFICIAL VIVA MAIS KIDS) -->
         <section v-else-if="activeTab === 'paint'" class="kids-section-fade paint-section-wrapper">
-          <!-- Elementos decorativos no fundo -->
-          <div class="paint-bg-decor decor-top-left"></div>
-          <div class="paint-bg-decor decor-bottom-right"></div>
-          <div class="paint-floating-star star-1">✨</div>
-          <div class="paint-floating-star star-2">⭐</div>
-          <div class="paint-floating-bubble bubble-1"></div>
-          <div class="paint-floating-bubble bubble-2"></div>
-
           <!-- Banner do Livro de Pintura Mágica -->
           <div class="paint-hero-banner-container">
-            <img src="/kids/banners/paint-bg.png" alt="Livro de Pintura Mágica" class="paint-hero-img" />
-            <img src="/kids/banners/paint-character.webp" alt="Artista Viva Mais Kids" class="banner-character paint-banner-character" />
+            <img src="/kids/banners/paint-bg-light-v3.png" alt="Livro de Pintura Mágica" class="paint-hero-img" />
             <div class="paint-hero-content">
               <div class="hero-banner-inline-row">
                 <div class="paint-circle-badge">
@@ -1086,31 +1942,52 @@ watch(() => props.user, () => {
             </div>
           </div>
 
-          <!-- Workspace da Pintura -->
-          <div class="paint-workspace-card">
-            <!-- Sidebar com Desenhos -->
-            <aside class="paint-templates-sidebar">
-              <div class="templates-header">
-                <i class="ph-fill ph-image"></i>
-                <span>Escolha o Desenho:</span>
+          <div v-if="showPaintPicker" class="paint-template-picker-card">
+            <div class="paint-picker-heading">
+              <div>
+                <span class="paint-picker-kicker">Escolha uma pintura</span>
+                <h2>Qual desenho vamos colorir?</h2>
               </div>
-              <div class="templates-list-scroll">
-                <button
-                  v-for="tmpl in COLORING_TEMPLATES"
-                  :key="tmpl.id"
-                  type="button"
-                  class="tmpl-card-btn"
-                  :class="{ active: tmpl.id === activeColoringId }"
-                  @click="loadColoringTemplate(tmpl.id)"
-                >
-                  <img :src="tmpl.svgUrl" :alt="tmpl.title" class="tmpl-thumb-img" />
-                  <span class="tmpl-thumb-title">{{ tmpl.title }}</span>
+              <div class="paint-picker-arrows">
+                <button type="button" aria-label="Voltar pinturas" @click="changePaintPickerPage(-1)">
+                  <i class="ph ph-arrow-left"></i>
+                </button>
+                <button type="button" aria-label="Avançar pinturas" @click="changePaintPickerPage(1)">
+                  <i class="ph ph-arrow-right"></i>
                 </button>
               </div>
-            </aside>
+            </div>
+
+            <div class="paint-template-carousel">
+              <button
+                v-for="tmpl in visiblePaintTemplates"
+                :key="tmpl.id"
+                type="button"
+                class="paint-template-big-card"
+                :class="{ active: tmpl.id === activeColoringId }"
+                @click="selectColoringTemplate(tmpl.id)"
+              >
+                <span class="paint-template-preview">
+                  <img :src="tmpl.svgUrl" :alt="tmpl.title" />
+                </span>
+                <strong>{{ tmpl.title }}</strong>
+                <small>{{ tmpl.category }}</small>
+              </button>
+            </div>
+          </div>
+
+          <!-- Workspace da Pintura -->
+          <div v-else class="paint-workspace-card paint-workspace-active">
 
             <!-- Área Principal do Canvas -->
             <main class="paint-canvas-area">
+              <div class="paint-active-template-bar">
+                <div>
+                  <span>Pintura escolhida</span>
+                  <strong>{{ activeColoringTemplate.title }}</strong>
+                </div>
+              </div>
+
               <!-- Paleta de Cores -->
               <div class="paint-palette-bar">
                 <span class="palette-title">Escolha uma cor:</span>
@@ -1133,17 +2010,34 @@ watch(() => props.user, () => {
               </div>
 
               <!-- Canvas com Borda Tracejada e Fundo Branco -->
+              <div class="canvas-zoom-controls">
+                <button type="button" aria-label="Diminuir zoom" @click="changeCanvasZoom('paint', -0.15)">
+                  <i class="ph ph-minus"></i>
+                </button>
+                <button type="button" class="zoom-value" @click="resetCanvasZoom('paint')">
+                  {{ Math.round(paintZoom * 100) }}%
+                </button>
+                <button type="button" aria-label="Aumentar zoom" @click="changeCanvasZoom('paint', 0.15)">
+                  <i class="ph ph-plus"></i>
+                </button>
+              </div>
+
               <div class="paint-dashed-wrapper">
                 <canvas
                   ref="paintCanvasRef"
                   @click="handlePaintClick"
                   class="paint-studio-canvas"
+                  :style="{ transform: `scale(${paintZoom})` }"
                 ></canvas>
               </div>
 
               <!-- Ações do Canvas -->
               <div class="paint-actions-footer">
-                <button type="button" class="btn-paint-ctrl" @click="loadColoringTemplate(activeColoringId)">
+                <button type="button" class="btn-paint-ctrl" @click="openPaintPicker">
+                  <i class="ph ph-images"></i>
+                  <span>Trocar pintura</span>
+                </button>
+                <button type="button" class="btn-paint-ctrl" @click="resetPaintTemplate">
                   <i class="ph ph-arrow-counter-clockwise"></i>
                   <span>Recomeçar</span>
                 </button>
@@ -1161,8 +2055,7 @@ watch(() => props.user, () => {
         <section v-else-if="activeTab === 'draw'" class="kids-section-fade lousa-section-wrapper">
           <!-- Banner da Lousa -->
           <div class="lousa-hero-banner-container">
-            <img src="/kids/banners/draw-bg.png" alt="Lousa de Desenho Livre" class="lousa-hero-img" />
-            <img src="/kids/banners/draw-character.webp" alt="Artista Viva Mais Kids" class="banner-character draw-banner-character" />
+            <img src="/kids/banners/draw-bg-light-v2.png" alt="Lousa de Desenho Livre" class="lousa-hero-img" />
             <div class="lousa-hero-content">
               <div class="hero-banner-inline-row">
                 <div class="lousa-circle-badge">
@@ -1301,6 +2194,18 @@ watch(() => props.user, () => {
             </div>
 
             <!-- Canvas da Lousa Livre -->
+            <div class="canvas-zoom-controls lousa-zoom-controls">
+              <button type="button" aria-label="Diminuir zoom" @click="changeCanvasZoom('draw', -0.15)">
+                <i class="ph ph-minus"></i>
+              </button>
+              <button type="button" class="zoom-value" @click="resetCanvasZoom('draw')">
+                {{ Math.round(freehandZoom * 100) }}%
+              </button>
+              <button type="button" aria-label="Aumentar zoom" @click="changeCanvasZoom('draw', 0.15)">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+
             <div class="lousa-canvas-dashed-frame">
               <canvas
                 ref="freehandCanvasRef"
@@ -1312,6 +2217,7 @@ watch(() => props.user, () => {
                 @touchmove.prevent="freehandDrawMove"
                 @touchend.prevent="stopFreehandDraw"
                 class="lousa-studio-canvas"
+                :style="{ transform: `scale(${freehandZoom})` }"
               ></canvas>
             </div>
 
@@ -1329,8 +2235,7 @@ watch(() => props.user, () => {
         <section v-else-if="activeTab === 'profile'" class="kids-section-fade profile-section-wrapper">
           <!-- Banner do Perfil -->
           <div class="profile-hero-banner-container">
-            <img src="/kids/banners/home-bg.png" alt="Perfil" class="profile-hero-img" />
-            <img src="/kids/banners/profile-character.webp" alt="Mascote do perfil" class="banner-character profile-banner-character" />
+            <img src="/kids/banners/profile-bg-light-v2.png" alt="Perfil" class="profile-hero-img" />
             <div class="profile-hero-content">
               <div class="profile-user-inline">
                 <div class="profile-big-avatar-circle">
@@ -1341,10 +2246,6 @@ watch(() => props.user, () => {
                   <div class="profile-badges-line">
                     <span class="profile-plan-pill"><i class="ph-fill ph-star"></i> Assinante Viva Mais <i class="ph-bold ph-check"></i></span>
                     <span class="profile-turmo-pill"><i class="ph-fill ph-plant"></i> Desbravador em Turmo</span>
-                  </div>
-                  <div class="profile-stats-line">
-                    <span class="profile-stat-badge"><i class="ph-fill ph-game-controller"></i> <strong>58</strong> Partidas</span>
-                    <span class="profile-stat-badge"><i class="ph-fill ph-trophy"></i> <strong>20</strong> Itens Coletados</span>
                   </div>
                 </div>
               </div>
@@ -1381,13 +2282,13 @@ watch(() => props.user, () => {
               <span class="ach-status-badge">Conquistado ⭐</span>
             </div>
 
-            <div class="ach-card card-locked">
-              <div class="ach-icon-circle icon-lock"><i class="ph-fill ph-lock-key"></i></div>
+            <div class="ach-card card-unlocked">
+              <div class="ach-icon-circle icon-game"><i class="ph-fill ph-game-controller"></i></div>
               <div class="ach-body">
-                <h4>Campeão dos Jogos</h4>
-                <p>Ganhe 50 partidas em qualquer jogo</p>
+                <h4>Campeao dos Jogos</h4>
+                <p>Jogou desafios na Sala de Jogos</p>
               </div>
-              <span class="ach-progress-pill">10/50</span>
+              <span class="ach-status-badge">Ativo ⭐</span>
             </div>
 
             <div class="ach-card card-locked">
@@ -1404,27 +2305,46 @@ watch(() => props.user, () => {
           <div class="profile-section-header-bar">
             <div class="profile-section-heading">
               <i class="ph-fill ph-image"></i>
-              <span>Galeria de Desenhos e Pinturas</span>
+              <span>Minha Galeria</span>
             </div>
-            <button type="button" class="btn-outline-view-all" @click="switchTab('draw')">
-              Ver todas as obras
-            </button>
           </div>
 
-          <div v-if="kidUser.artworks.length === 0" class="empty-gallery-dashed">
+          <div v-if="galleryArtworks.length === 0" class="empty-gallery-dashed">
             <div class="empty-ico-circle">
               <i class="ph-fill ph-palette"></i>
             </div>
             <h3>Sua galeria ainda está vazia!</h3>
             <p>Vá até a <strong>Lousa de Desenho</strong> ou o <strong>Livro de Pintura</strong> para salvar sua primeira obra!</p>
-            <button type="button" class="btn-create-artwork-pill" @click="switchTab('draw')">
-              <i class="ph-bold ph-pencil-simple-line"></i>
-              <span>Criar Desenho</span>
-            </button>
+            <div class="gallery-action-row">
+              <button type="button" class="btn-create-artwork-pill" @click="switchTab('draw')">
+                <i class="ph-bold ph-pencil-simple-line"></i>
+                <span>Criar desenho</span>
+              </button>
+              <button type="button" class="btn-create-artwork-pill alt" @click="switchTab('paint')">
+                <i class="ph-bold ph-paint-brush"></i>
+                <span>Fazer pintura</span>
+              </button>
+            </div>
           </div>
           <div v-else class="artworks-grid-4col">
+            <div class="gallery-summary-card">
+              <div>
+                <span>{{ galleryDrawingsCount }} desenhos</span>
+                <strong>{{ galleryPaintingsCount }} pinturas</strong>
+              </div>
+              <div class="gallery-action-row compact">
+                <button type="button" class="btn-create-artwork-pill" @click="switchTab('draw')">
+                  <i class="ph-bold ph-pencil-simple-line"></i>
+                  <span>Novo desenho</span>
+                </button>
+                <button type="button" class="btn-create-artwork-pill alt" @click="switchTab('paint')">
+                  <i class="ph-bold ph-paint-brush"></i>
+                  <span>Nova pintura</span>
+                </button>
+              </div>
+            </div>
             <div
-              v-for="art in kidUser.artworks"
+              v-for="art in galleryArtworks"
               :key="art.id"
               class="profile-art-card"
             >
@@ -1434,6 +2354,7 @@ watch(() => props.user, () => {
               <div class="profile-art-info">
                 <h4>{{ art.title }}</h4>
                 <span class="art-date">{{ art.date }}</span>
+                <span class="art-type-pill">{{ art.type === 'pintura' ? 'Pintura' : 'Desenho' }}</span>
                 <div class="art-social-footer">
                   <span><i class="ph-fill ph-heart"></i> 24</span>
                   <span><i class="ph-fill ph-star"></i> 5</span>
@@ -1448,43 +2369,273 @@ watch(() => props.user, () => {
       <!-- Barra de Navegação Mobile (Bottom Bar) -->
       <nav class="kids-bottom-bar">
         <button class="bottom-item" :class="{ active: activeTab === 'home' }" @click="switchTab('home')">
-          <span class="bottom-ico">🏠</span>
+          <i class="ph-fill ph-house bottom-ico"></i>
           <span>Início</span>
         </button>
         <button class="bottom-item" :class="{ active: activeTab === 'games' }" @click="switchTab('games')">
-          <span class="bottom-ico">🎮</span>
+          <i class="ph-fill ph-game-controller bottom-ico"></i>
           <span>Jogos</span>
         </button>
         <button class="bottom-item" :class="{ active: activeTab === 'paint' }" @click="switchTab('paint')">
-          <span class="bottom-ico">🖌️</span>
+          <i class="ph-fill ph-paint-brush bottom-ico"></i>
           <span>Pintura</span>
         </button>
         <button class="bottom-item" :class="{ active: activeTab === 'draw' }" @click="switchTab('draw')">
-          <span class="bottom-ico">🎨</span>
+          <i class="ph-fill ph-palette bottom-ico"></i>
           <span>Lousa</span>
         </button>
         <button class="bottom-item" :class="{ active: activeTab === 'profile' }" @click="switchTab('profile')">
-          <span class="bottom-ico">🏆</span>
+          <i class="ph-fill ph-trophy bottom-ico"></i>
           <span>Perfil</span>
         </button>
       </nav>
 
     </div>
 
-    <!-- Modal do Jogo Ativo -->
+    <!-- Modal de jogos do Viva Kids -->
     <div v-if="activeGame" class="game-modal-overlay">
       <div class="game-modal-box">
         <div class="game-modal-top">
-          <h2>🎮 {{ activeGame.title }}</h2>
-          <button class="btn-close-game" @click="closeGame">✖</button>
+          <div>
+            <h2>{{ activeGame.thumb }} {{ activeGame.title }}</h2>
+            <p>{{ activeGame.description }}</p>
+          </div>
+          <button class="btn-close-game" @click="closeGame" aria-label="Fechar jogo">
+            <i class="ph ph-x"></i>
+          </button>
         </div>
-        <div class="game-iframe-wrap">
-          <iframe
-            :src="activeGame.iframeUrl"
-            class="game-iframe"
-            allow="autoplay; fullscreen; gamepad"
-            sandbox="allow-scripts allow-same-origin allow-popups"
-          ></iframe>
+
+        <div class="game-play-area">
+          <div v-if="gameCountdown > 0" class="game-countdown-overlay" aria-live="polite">
+            <span>Prepare-se</span>
+            <strong>{{ gameCountdown }}</strong>
+          </div>
+
+          <div v-if="activeGame.type === 'memory'" class="memory-game-shell">
+            <div class="game-score-row">
+              <span>Jogadas: <strong>{{ memoryGame.moves }}</strong></span>
+              <span>Pares: <strong>{{ memoryGame.matched.length / 2 }}/{{ memoryIcons.length }}</strong></span>
+            </div>
+
+            <div class="memory-grid">
+              <button
+                v-for="(card, index) in memoryGame.cards"
+                :key="card.id"
+                type="button"
+                class="memory-card"
+                :class="{ flipped: memoryGame.flipped.includes(index) || memoryGame.matched.includes(index) }"
+                @click="flipMemoryCard(index)"
+              >
+                <span>{{ memoryGame.flipped.includes(index) || memoryGame.matched.includes(index) ? card.icon : '?' }}</span>
+              </button>
+            </div>
+
+            <button class="btn-auth-action btn-game-reset" type="button" @click="restartActiveGame">
+              <span>Recomecar</span>
+              <i class="ph ph-arrow-counter-clockwise"></i>
+            </button>
+          </div>
+
+          <div v-else-if="activeGame.type === 'blocks'" class="blocks-game-shell">
+            <div class="game-score-row">
+              <span>Pontos: <strong>{{ blocksGame.score }}</strong></span>
+              <span>Linhas: <strong>{{ blocksGame.lines }}</strong></span>
+            </div>
+
+            <div class="blocks-board">
+              <div v-for="row in blockRows" :key="`row-${row}`" class="blocks-row">
+                <span
+                  v-for="col in blockCols"
+                  :key="`cell-${row}-${col}`"
+                  class="blocks-cell"
+                  :class="{ filled: blockCellColor(row - 1, col - 1) }"
+                  :style="{ backgroundColor: blockCellColor(row - 1, col - 1) || '' }"
+                ></span>
+              </div>
+
+              <div v-if="blocksGame.gameOver" class="blocks-game-over">
+                <strong>Fim de jogo!</strong>
+                <button class="btn-auth-action" type="button" @click="restartActiveGame">Jogar de novo</button>
+              </div>
+            </div>
+
+            <div class="blocks-controls">
+              <button type="button" @click="moveBlock(-1)"><i class="ph ph-arrow-left"></i></button>
+              <button type="button" @click="rotateBlock"><i class="ph ph-arrow-clockwise"></i></button>
+              <button type="button" @click="moveBlock(1)"><i class="ph ph-arrow-right"></i></button>
+              <button type="button" class="wide" @click="dropBlock"><i class="ph ph-arrow-fat-down"></i> Soltar</button>
+            </div>
+          </div>
+
+          <div v-else-if="activeGame.type === 'flappy'" class="flappy-game-shell">
+            <div class="game-score-row">
+              <span>Pontos: <strong>{{ flappyGame.score }}</strong></span>
+              <span>{{ flappyGame.gameOver ? 'Fim de jogo' : 'Toque para voar' }}</span>
+            </div>
+
+            <div class="flappy-stage" @click="flapBird">
+              <div
+                v-for="(pipe, index) in flappyGame.pipes"
+                :key="`pipe-${index}`"
+                class="flappy-pipe"
+                :style="{ left: `${pipe.x}%` }"
+              >
+                <span class="pipe-top" :style="{ height: `${Math.max(8, pipe.gap - 16)}%` }"></span>
+                <span class="pipe-bottom" :style="{ height: `${Math.max(8, 100 - pipe.gap - 16)}%` }"></span>
+              </div>
+              <span class="flappy-bird" :style="{ top: `${flappyGame.birdY}%` }">🐤</span>
+              <div v-if="flappyGame.gameOver" class="game-overlay-message">
+                <strong>Fim de jogo!</strong>
+                <button class="btn-auth-action" type="button" @click.stop="restartActiveGame">Jogar de novo</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="activeGame.type === 'snake'" class="snake-game-shell">
+            <div class="game-score-row">
+              <span>Frutas: <strong>{{ snakeGame.score }}</strong></span>
+              <span>{{ snakeGame.gameOver ? 'Fim de jogo' : 'Use as setas' }}</span>
+            </div>
+
+            <div class="snake-board">
+              <span
+                v-for="cell in snakeSize * snakeSize"
+                :key="`snake-cell-${cell}`"
+                class="snake-cell"
+                :class="snakeCellAt((cell - 1) % snakeSize, Math.floor((cell - 1) / snakeSize))"
+              ></span>
+              <div v-if="snakeGame.gameOver" class="game-overlay-message">
+                <strong>Fim de jogo!</strong>
+                <button class="btn-auth-action" type="button" @click="restartActiveGame">Jogar de novo</button>
+              </div>
+            </div>
+
+            <div class="snake-controls">
+              <button type="button" class="up" aria-label="Cima" @click="setSnakeDirection('up')"><i class="ph ph-arrow-up"></i></button>
+              <button type="button" class="left" aria-label="Esquerda" @click="setSnakeDirection('left')"><i class="ph ph-arrow-left"></i></button>
+              <button type="button" class="down" aria-label="Baixo" @click="setSnakeDirection('down')"><i class="ph ph-arrow-down"></i></button>
+              <button type="button" class="right" aria-label="Direita" @click="setSnakeDirection('right')"><i class="ph ph-arrow-right"></i></button>
+            </div>
+          </div>
+
+          <div v-else-if="activeGame.type === 'dino'" class="dino-game-shell">
+            <div class="game-score-row">
+              <span>Distancia: <strong>{{ dinoGame.score }}</strong></span>
+              <span>{{ dinoGame.gameOver ? 'Fim de jogo' : 'Toque para pular' }}</span>
+            </div>
+
+            <div class="dino-stage" @click="jumpDino">
+              <span class="dino-ground"></span>
+              <span class="dino-player" :style="{ bottom: `${20 + dinoGame.y}%` }">🦕</span>
+              <span class="dino-obstacle" :style="{ left: `${dinoGame.obstacleX}%` }">🌵</span>
+              <div v-if="dinoGame.gameOver" class="game-overlay-message">
+                <strong>Fim de jogo!</strong>
+                <button class="btn-auth-action" type="button" @click.stop="restartActiveGame">Jogar de novo</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="activeGame.type === 'target'" class="target-game-shell">
+            <div class="game-score-row">
+              <span>Estrelas: <strong>{{ targetGame.score }}</strong></span>
+              <span>Tempo: <strong>{{ targetGame.timeLeft }}s</strong></span>
+            </div>
+
+            <div class="target-stage">
+              <button
+                v-if="targetGame.running"
+                type="button"
+                class="target-star"
+                :style="{ left: `${targetGame.position.x}%`, top: `${targetGame.position.y}%` }"
+                @click="hitTarget"
+              >
+                🌟
+              </button>
+              <div v-else class="target-finished">
+                <strong>Tempo encerrado!</strong>
+                <span>{{ targetGame.score }} estrela(s) encontradas</span>
+                <button class="btn-auth-action" type="button" @click="restartActiveGame">Jogar de novo</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="activeGame.type === 'tictactoe'" class="tictactoe-game-shell">
+            <div class="game-score-row">
+              <span>{{ ticTacToeGame.status }}</span>
+            </div>
+
+            <div class="tictactoe-board">
+              <button
+                v-for="(cell, index) in ticTacToeGame.cells"
+                :key="`ttt-${index}`"
+                type="button"
+                class="tictactoe-cell"
+                :class="{ player: cell === 'X', computer: cell === 'O' }"
+                @click="playTicTacToe(index)"
+              >
+                {{ cell }}
+              </button>
+            </div>
+
+            <button class="btn-auth-action btn-game-reset" type="button" @click="restartActiveGame">
+              <span>Jogar de novo</span>
+              <i class="ph ph-arrow-counter-clockwise"></i>
+            </button>
+          </div>
+
+          <div v-else-if="activeGame.type === 'sequence'" class="sequence-game-shell">
+            <div class="game-score-row">
+              <span>Nivel: <strong>{{ sequenceGame.level }}</strong></span>
+              <span>{{ sequenceGame.status }}</span>
+            </div>
+
+            <div class="sequence-pad">
+              <button
+                v-for="color in sequenceColors"
+                :key="color.id"
+                type="button"
+                class="sequence-button"
+                :class="{ active: sequenceGame.activeColor === color.id }"
+                :style="{ backgroundColor: color.color }"
+                @click="pressSequenceColor(color.id)"
+              >
+                <span>{{ color.label }}</span>
+              </button>
+            </div>
+
+            <button class="btn-auth-action btn-game-reset" type="button" @click="restartActiveGame">
+              <span>Iniciar de novo</span>
+              <i class="ph ph-arrow-counter-clockwise"></i>
+            </button>
+          </div>
+
+          <div v-else-if="activeGame.type === 'math'" class="math-game-shell">
+            <div class="game-score-row">
+              <span>Rodada: <strong>{{ mathGame.round }}/{{ mathGame.totalRounds }}</strong></span>
+              <span>Pontos: <strong>{{ mathGame.score }}</strong></span>
+            </div>
+
+            <div class="math-card">
+              <span class="math-status">{{ mathGame.done ? 'Fim do desafio!' : mathGame.status }}</span>
+              <strong class="math-question">{{ mathGame.done ? `${mathGame.score} acerto(s)` : mathGame.question }}</strong>
+
+              <div v-if="!mathGame.done" class="math-options">
+                <button
+                  v-for="option in mathGame.options"
+                  :key="`math-${option}`"
+                  type="button"
+                  @click="answerMath(option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+
+              <button v-else class="btn-auth-action btn-game-reset" type="button" @click="restartActiveGame">
+                <span>Jogar de novo</span>
+                <i class="ph ph-arrow-counter-clockwise"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1517,12 +2668,185 @@ watch(() => props.user, () => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-image: url('/kids/banners/auth-bg.png');
-  background-size: cover;
-  background-position: center center;
+  background-image: url('/kids/banners/auth-kids-integrated-landscape-v3.png');
+  background-size: auto 100%;
+  background-position: left bottom;
   background-repeat: no-repeat;
-  background-color: #ebf6fb;
+  background-color: #f2fbfb;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.kids-login-view::before {
+  content: none;
+  position: absolute;
+  inset: 68px 0 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.52;
+  background:
+    radial-gradient(circle at 10% 17%, #ffcf32 0 13px, transparent 14px),
+    radial-gradient(circle at 31% 23%, rgba(176, 136, 255, 0.45) 0 10px, transparent 11px),
+    radial-gradient(circle at 52% 19%, #0bb8bf 0 8px, transparent 9px),
+    radial-gradient(circle at 59% 17%, #ffb800 0 12px, transparent 13px),
+    radial-gradient(circle at 72% 62%, rgba(6, 40, 84, 0.12) 0 11px, transparent 12px),
+    radial-gradient(circle at 86% 28%, rgba(255, 255, 255, 0.72) 0 8px, transparent 9px);
+  animation: kidsAmbientFloat 7s ease-in-out infinite alternate;
+}
+
+.kids-login-view::after {
+  content: none;
+  position: absolute;
+  left: -5%;
+  right: -5%;
+  bottom: -12%;
+  height: 38%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 29% 48%, rgba(5, 36, 83, 0.08) 0%, rgba(5, 36, 83, 0) 38%),
+    linear-gradient(7deg, rgba(146, 220, 163, 0.54) 0%, rgba(201, 238, 186, 0.72) 35%, rgba(242, 252, 232, 0.86) 58%, rgba(255, 255, 255, 0) 59%);
+  filter: blur(0.1px);
+}
+
+@keyframes kidsAmbientFloat {
+  from { transform: translate3d(0, 0, 0) rotate(0deg); }
+  to { transform: translate3d(14px, -10px, 0) rotate(1.5deg); }
+}
+
+.kids-dashboard-view {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  flex: 1;
+}
+
+.kids-page-decor {
+  position: absolute;
+  inset: 72px 0 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.decor-shape {
+  position: absolute;
+  display: block;
+  opacity: 0.52;
+  will-change: transform;
+  filter: drop-shadow(0 12px 18px rgba(5, 36, 83, 0.05));
+  transition: left 900ms ease, top 900ms ease, opacity 900ms ease;
+}
+
+.decor-circle {
+  border-radius: 999px;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.86), rgba(255, 214, 74, 0.82) 52%, rgba(255, 184, 0, 0.5) 100%);
+}
+
+.decor-ring {
+  border-radius: 999px;
+  border: 7px solid rgba(0, 188, 196, 0.28);
+  box-shadow: inset 0 0 0 8px rgba(255, 255, 255, 0.45);
+}
+
+.decor-star,
+.decor-plus {
+  font-weight: 900;
+  line-height: 1;
+  color: rgba(0, 188, 196, 0.42);
+  text-shadow: 0 8px 20px rgba(0, 188, 196, 0.1);
+}
+
+.decor-circle-a {
+  width: 82px;
+  height: 82px;
+  left: 3%;
+  top: 19%;
+  animation: kidsPageDriftA 13s ease-in-out infinite alternate;
+}
+
+.decor-circle-b {
+  width: 44px;
+  height: 44px;
+  right: 6%;
+  top: 39%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.9), rgba(19, 198, 200, 0.55) 62%, rgba(16, 185, 129, 0.36) 100%);
+  animation: kidsPageDriftB 11s ease-in-out infinite alternate;
+}
+
+.decor-circle-c {
+  width: 58px;
+  height: 58px;
+  left: 12%;
+  bottom: 16%;
+  opacity: 0.35;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.88), rgba(176, 136, 255, 0.48) 62%, rgba(124, 58, 237, 0.22) 100%);
+  animation: kidsPageDriftC 15s ease-in-out infinite alternate;
+}
+
+.decor-ring-a {
+  width: 74px;
+  height: 74px;
+  right: 18%;
+  top: 16%;
+  animation: kidsPageSpinFloat 18s ease-in-out infinite alternate;
+}
+
+.decor-ring-b {
+  width: 46px;
+  height: 46px;
+  left: 22%;
+  top: 52%;
+  border-color: rgba(255, 184, 0, 0.22);
+  animation: kidsPageDriftB 16s ease-in-out infinite alternate-reverse;
+}
+
+.decor-star-a {
+  left: 7%;
+  top: 47%;
+  font-size: 48px;
+  color: rgba(255, 184, 0, 0.36);
+  animation: kidsPageTwinkle 8s ease-in-out infinite alternate;
+}
+
+.decor-star-b {
+  right: 11%;
+  bottom: 18%;
+  font-size: 34px;
+  color: rgba(255, 214, 74, 0.42);
+  animation: kidsPageTwinkle 9s ease-in-out infinite alternate-reverse;
+}
+
+.decor-plus-a {
+  right: 31%;
+  top: 58%;
+  font-size: 42px;
+  animation: kidsPageSpinFloat 17s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes kidsPageDriftA {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(28px, -22px, 0) scale(1.05); }
+}
+
+@keyframes kidsPageDriftB {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-24px, 18px, 0) scale(0.96); }
+}
+
+@keyframes kidsPageDriftC {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(18px, 26px, 0) scale(1.08); }
+}
+
+@keyframes kidsPageSpinFloat {
+  from { transform: translate3d(0, 0, 0) rotate(0deg); }
+  to { transform: translate3d(-18px, -16px, 0) rotate(16deg); }
+}
+
+@keyframes kidsPageTwinkle {
+  from { transform: translate3d(0, 0, 0) scale(0.94) rotate(-4deg); opacity: 0.25; }
+  to { transform: translate3d(12px, -14px, 0) scale(1.08) rotate(8deg); opacity: 0.58; }
 }
 
 /* Header Topbar Branco */
@@ -1595,7 +2919,7 @@ watch(() => props.user, () => {
   align-items: center;
   max-width: 100%;
   margin: 0;
-  padding: 40px 10vw 48px 40px;
+  padding: 40px clamp(32px, 4vw, 72px) 48px 40px;
   width: 100%;
   min-height: calc(100vh - 68px);
   box-sizing: border-box;
@@ -1603,16 +2927,47 @@ watch(() => props.user, () => {
   z-index: 5;
 }
 
+.kids-auth-main-container::before {
+  content: none;
+  position: absolute;
+  left: -6%;
+  right: -4%;
+  bottom: -8%;
+  height: 38%;
+  border-radius: 50% 50% 0 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 28% 38%, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 48%),
+    linear-gradient(8deg, rgba(132, 216, 159, 0.62) 0%, rgba(201, 240, 188, 0.78) 48%, rgba(242, 252, 232, 0.88) 72%, rgba(255, 255, 255, 0) 73%);
+  filter: saturate(1.08);
+}
+
+.auth-ground-shadow {
+  position: absolute;
+  left: 4.2%;
+  bottom: 34px;
+  width: min(48vw, 780px);
+  height: clamp(44px, 5.4vw, 78px);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.62;
+  background: radial-gradient(ellipse at center, rgba(5, 36, 83, 0.24) 0%, rgba(5, 36, 83, 0.10) 45%, rgba(5, 36, 83, 0) 72%);
+  filter: blur(8px);
+  transform: rotate(-1deg);
+}
+
 .auth-banner-character {
   position: absolute;
-  left: 4%;
-  bottom: 12px;
-  width: clamp(600px, 62vw, 980px);
-  max-height: calc(100vh - 90px);
+  left: 2.8%;
+  bottom: 4px;
+  width: clamp(520px, 50vw, 820px);
+  max-height: calc(100vh - 128px);
   object-fit: contain;
   object-position: bottom center;
-  z-index: 1;
+  z-index: 2;
   pointer-events: none;
+  filter: drop-shadow(0 18px 20px rgba(5, 36, 83, 0.18));
 }
 
 /* Coluna da Direita (Card de Login) */
@@ -1637,13 +2992,24 @@ watch(() => props.user, () => {
 
 @media (max-width: 992px) {
   .kids-login-view {
-    background-position: 30% center;
-    overflow: visible;
+    background-image: url('/kids/banners/auth-kids-mobile-integrated-v1.png');
+    background-size: cover;
+    background-position: center bottom;
+    overflow: hidden;
   }
   .kids-auth-main-container {
     justify-content: center;
     align-items: flex-start;
-    padding: 32px 20px 40px;
+    padding: 28px 20px 40px;
+  }
+  .auth-banner-character {
+    display: none;
+  }
+  .kids-auth-main-container::before {
+    content: none;
+  }
+  .auth-ground-shadow {
+    display: none;
   }
   .kids-auth-topbar {
     padding: 16px 20px;
@@ -1792,6 +3158,32 @@ watch(() => props.user, () => {
   cursor: not-allowed;
 }
 
+.btn-kids-back-main {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1.5px solid #d7edf0;
+  border-radius: 12px;
+  background: #fff;
+  color: #0b2d63;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-kids-back-main:hover {
+  border-color: #00b9b5;
+  color: #008779;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 185, 181, 0.13);
+}
+
 .auth-divider-line {
   display: flex;
   align-items: center;
@@ -1869,9 +3261,8 @@ watch(() => props.user, () => {
 
 @media (max-width: 992px) {
   .kids-auth-main-container {
-    grid-template-columns: 1fr;
     gap: 32px;
-    padding: 10px 20px 40px;
+    padding: 28px 20px 40px;
   }
 
   .kids-auth-topbar {
@@ -2031,24 +3422,36 @@ watch(() => props.user, () => {
   position: relative;
 }
 
-.kids-menu-btn {
+.kids-profile-menu-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
   background: white;
   border: 1px solid #e2e8f0;
-  width: 36px;
+  min-width: 42px;
   height: 36px;
-  border-radius: 50%;
+  padding: 0 12px;
+  border-radius: 999px;
   cursor: pointer;
   font-family: inherit;
   font-weight: 700;
   color: #052453;
-  font-size: 1.2rem;
+  font-size: 0.9rem;
   transition: all 0.2s;
 }
 
-.kids-menu-btn:hover {
+.kids-profile-menu-btn i:first-child {
+  color: #0284c7;
+  font-size: 1.25rem;
+}
+
+.kids-profile-menu-btn i:last-child {
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.kids-profile-menu-btn:hover {
   background: #f8fafc;
   border-color: #cbd5e1;
 }
@@ -2113,6 +3516,8 @@ watch(() => props.user, () => {
 
 /* --- CORPO PRINCIPAL --- */
 .kids-main-body {
+  position: relative;
+  z-index: 2;
   max-width: 1440px;
   width: 100%;
   margin: 0 auto;
@@ -2122,6 +3527,7 @@ watch(() => props.user, () => {
 }
 
 .kids-section-fade {
+  position: relative;
   animation: fadeIn 0.25s ease-out;
 }
 
@@ -2134,12 +3540,11 @@ watch(() => props.user, () => {
 .kids-hero-banner-container {
   position: relative;
   width: 100%;
-  height: clamp(215px, 21vw, 310px);
-  border-radius: 60px;
-  overflow: visible;
-  box-shadow: 0 16px 40px rgba(2, 100, 229, 0.16);
-  margin-bottom: 36px;
-  line-height: 0;
+  height: clamp(280px, 28vw, 405px);
+  border-radius: 34px;
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
+  margin-bottom: 28px;
   display: block;
 }
 
@@ -2148,7 +3553,79 @@ watch(() => props.user, () => {
   height: 100%;
   display: block;
   object-fit: cover;
-  border-radius: 60px;
+  object-position: center center;
+  border-radius: 34px;
+}
+
+.home-dashboard-img {
+  object-position: right top;
+}
+
+.kids-hero-banner-container::before,
+.games-hero-banner-container::before,
+.paint-hero-banner-container::before,
+.lousa-hero-banner-container::before,
+.profile-hero-banner-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.72;
+  background:
+    radial-gradient(circle at 13% 19%, rgba(255, 216, 84, 0.78) 0 9px, transparent 10px),
+    radial-gradient(circle at 92% 16%, rgba(255, 216, 84, 0.62) 0 8px, transparent 9px),
+    radial-gradient(circle at 22% 69%, rgba(255, 255, 255, 0.92) 0 7px, transparent 8px),
+    radial-gradient(circle at 86% 30%, rgba(255, 255, 255, 0.82) 0 6px, transparent 7px);
+  animation: kidsBannerSparkles 5.8s ease-in-out infinite alternate;
+}
+
+.kids-hero-banner-container::after,
+.games-hero-banner-container::after,
+.paint-hero-banner-container::after,
+.lousa-hero-banner-container::after,
+.profile-hero-banner-container::after {
+  content: '';
+  position: absolute;
+  right: 6%;
+  bottom: 5%;
+  width: min(34vw, 460px);
+  height: clamp(22px, 4vw, 58px);
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(ellipse at center, rgba(5, 36, 83, 0.22) 0%, rgba(5, 36, 83, 0.10) 42%, rgba(5, 36, 83, 0) 74%);
+  filter: blur(9px);
+  transform: rotate(-2deg);
+}
+
+.paint-hero-banner-container::after,
+.lousa-hero-banner-container::after {
+  right: 9%;
+  width: min(30vw, 390px);
+}
+
+.profile-hero-banner-container::after {
+  right: 10%;
+  bottom: 4%;
+  width: min(31vw, 420px);
+}
+
+.kids-hero-banner-container::after {
+  right: 7%;
+  bottom: 4%;
+  width: min(27vw, 360px);
+}
+
+@keyframes kidsBannerSparkles {
+  from {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.56;
+  }
+  to {
+    transform: translate3d(10px, -8px, 0);
+    opacity: 0.86;
+  }
 }
 
 .banner-character {
@@ -2162,17 +3639,29 @@ watch(() => props.user, () => {
 }
 
 .home-banner-character {
-  right: 2%;
-  bottom: 0;
+  right: 7%;
+  bottom: -14%;
   width: auto;
-  max-width: 50%;
-  height: 108%;
+  max-width: 40%;
+  height: 114%;
+  filter: drop-shadow(0 18px 20px rgba(5, 36, 83, 0.18));
+}
+
+.home-turma-character {
+  right: 3.5%;
+  bottom: -4px;
+  height: 96%;
+  max-width: 55%;
+  filter: drop-shadow(0 18px 22px rgba(5, 36, 83, 0.18));
 }
 
 .games-banner-character {
   right: 9%;
-  width: clamp(170px, 23vw, 350px);
-  height: 104%;
+  bottom: -3%;
+  width: auto;
+  max-width: 34%;
+  height: 94%;
+  filter: drop-shadow(0 20px 24px rgba(5, 36, 83, 0.16));
 }
 
 .paint-banner-character {
@@ -2210,20 +3699,20 @@ watch(() => props.user, () => {
 }
 
 .kids-hero-banner-container .hero-content-overlay {
-  width: 56%;
-  padding-right: 48px;
-  background: linear-gradient(90deg, rgba(5, 36, 83, 0.48) 0%, rgba(5, 36, 83, 0.26) 68%, rgba(5, 36, 83, 0) 100%);
-  border-radius: 60px 0 0 60px;
+  width: 48%;
+  padding: 48px 0 48px 62px;
+  background: transparent;
+  border-radius: 0;
 }
 
 .kids-hero-banner-container .hero-main-title {
-  color: #ffffff !important;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.22);
+  color: #062854 !important;
+  text-shadow: none;
 }
 
 .kids-hero-banner-container .hero-desc {
-  color: rgba(255, 255, 255, 0.95) !important;
-  text-shadow: 0 1px 5px rgba(5, 36, 83, 0.22);
+  color: #0c356b !important;
+  text-shadow: none;
 }
 
 .hero-tag {
@@ -2247,27 +3736,27 @@ watch(() => props.user, () => {
 }
 
 .hero-main-title {
-  font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+  font-size: clamp(2.55rem, 4.1vw, 4.35rem);
   font-weight: 900;
-  line-height: 1.08;
+  line-height: 1.04;
   color: #ffffff !important;
-  margin: 0 0 8px 0;
-  letter-spacing: -0.5px;
+  margin: 0 0 18px 0;
+  letter-spacing: 0;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
 
 .hero-main-title .highlight-name {
-  color: #ffb800 !important;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  color: #0aaec0 !important;
+  text-shadow: none;
 }
 
 .hero-desc {
   color: rgba(255, 255, 255, 0.95) !important;
-  font-size: 0.92rem;
-  line-height: 1.4;
-  font-weight: 500;
-  max-width: 440px;
-  margin: 0 0 16px 0;
+  font-size: clamp(1.25rem, 2vw, 2rem);
+  line-height: 1.34;
+  font-weight: 800;
+  max-width: 560px;
+  margin: 0;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
@@ -2279,11 +3768,11 @@ watch(() => props.user, () => {
 }
 
 .btn-hero-action {
-  padding: 8px 16px;
+  padding: 12px 20px;
   border-radius: 50px;
   font-family: inherit;
-  font-size: 0.84rem;
-  font-weight: 700;
+  font-size: 0.92rem;
+  font-weight: 800;
   border: none;
   cursor: pointer;
   display: inline-flex;
@@ -2297,9 +3786,9 @@ watch(() => props.user, () => {
 }
 
 .btn-hero-action.btn-game {
-  background: #00c49f;
+  background: #0bb8bf;
   color: #ffffff;
-  box-shadow: 0 6px 18px rgba(0, 196, 159, 0.35);
+  box-shadow: 0 10px 24px rgba(11, 184, 191, 0.28);
 }
 
 .btn-hero-action.btn-paint {
@@ -2311,7 +3800,7 @@ watch(() => props.user, () => {
 .btn-hero-action.btn-draw {
   background: #ffffff;
   color: #062854;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 20px rgba(5, 36, 83, 0.1);
   border: 1.5px solid #ffffff;
 }
 
@@ -2321,14 +3810,17 @@ watch(() => props.user, () => {
 
 @media (max-width: 768px) {
   .kids-hero-banner-container {
-    height: 160px !important;
-    min-height: 160px !important;
-    max-height: 160px !important;
-    border-radius: 20px !important;
+    height: 210px !important;
+    min-height: 210px !important;
+    max-height: 210px !important;
+    border-radius: 24px !important;
     margin-bottom: 20px !important;
   }
   .kids-hero-img {
-    border-radius: 20px !important;
+    border-radius: 24px !important;
+  }
+  .home-dashboard-img {
+    object-position: right top;
   }
   .banner-character {
     bottom: 0;
@@ -2340,38 +3832,45 @@ watch(() => props.user, () => {
     height: 104% !important;
   }
   .home-banner-character {
-    right: -4%;
-    bottom: 0;
+    right: -2%;
+    bottom: -10%;
     width: auto;
-    max-width: 62%;
+    max-width: 52%;
     height: 104%;
+  }
+  .home-turma-character {
+    right: -8%;
+    bottom: -2px;
+    max-width: 62%;
+    height: 86%;
   }
   .hero-content-overlay {
     position: absolute !important;
-    width: 65% !important;
-    padding: 12px 16px !important;
+    width: 56% !important;
+    padding: 22px 22px !important;
     background: transparent !important;
   }
   .hero-main-title {
-    font-size: 1.15rem !important;
-    line-height: 1.1 !important;
-    margin: 0 0 3px 0 !important;
+    font-size: 1.65rem !important;
+    line-height: 1.06 !important;
+    margin: 0 0 10px 0 !important;
   }
   .hero-desc {
-    font-size: 0.68rem !important;
-    line-height: 1.25 !important;
-    margin: 0 0 8px 0 !important;
-    display: -webkit-box !important;
-    -webkit-line-clamp: 2 !important;
-    -webkit-box-orient: vertical !important;
-    overflow: hidden !important;
+    font-size: 1rem !important;
+    line-height: 1.32 !important;
+    margin: 0 !important;
+    display: block !important;
   }
   .hero-actions {
-    display: none !important;
+    gap: 8px !important;
+    margin-top: 14px !important;
   }
   .btn-hero-action {
-    padding: 4px 9px !important;
-    font-size: 0.68rem !important;
+    padding: 8px 12px !important;
+    font-size: 0.72rem !important;
+  }
+  .btn-hero-action span {
+    display: none !important;
   }
 }
 
@@ -2390,17 +3889,22 @@ watch(() => props.user, () => {
 
 .hub-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24px;
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+  justify-content: center;
 }
 
 .hub-card {
   background: #ffffff;
   border-radius: 24px;
-  padding: 24px 22px;
+  min-height: 212px;
+  padding: 28px 26px;
   cursor: pointer;
   border: 1px solid #f1f5f9;
-  box-shadow: 0 4px 16px rgba(5, 36, 83, 0.03);
+  box-shadow: 0 10px 28px rgba(5, 36, 83, 0.06);
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   flex-direction: column;
@@ -2416,21 +3920,24 @@ watch(() => props.user, () => {
 }
 
 .card-games {
-  border-color: #e6fbf5;
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #e0f2fe 0%, #eef2ff 58%, #fff7ed 100%);
 }
 .card-games:hover {
-  border-color: #10b981;
+  border-color: #38bdf8;
 }
 
 .card-paint {
   border-color: #fef8e7;
+  background: linear-gradient(135deg, #f8f4ff 0%, #fffafd 100%);
 }
 .card-paint:hover {
   border-color: #f59e0b;
 }
 
 .card-draw {
-  border-color: #f3e8ff;
+  border-color: #fef8e7;
+  background: linear-gradient(135deg, #f8f4ff 0%, #fffafd 100%);
 }
 .card-draw:hover {
   border-color: #8b5cf6;
@@ -2440,6 +3947,9 @@ watch(() => props.user, () => {
   display: flex;
   gap: 14px;
   align-items: flex-start;
+  width: 64%;
+  position: relative;
+  z-index: 2;
 }
 
 .card-icon-box {
@@ -2484,11 +3994,14 @@ watch(() => props.user, () => {
   font-size: 0.85rem;
   line-height: 1.4;
   margin: 0;
+  max-width: 98%;
 }
 
 .btn-card-action {
   width: fit-content;
-  padding: 7px 18px;
+  min-width: 46px;
+  min-height: 46px;
+  padding: 9px 18px;
   border-radius: 50px;
   font-family: inherit;
   font-size: 0.85rem;
@@ -2500,6 +4013,36 @@ watch(() => props.user, () => {
   transition: all 0.2s ease;
   background: transparent;
   z-index: 2;
+}
+
+.card-illustration {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  width: min(48%, 250px);
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 16px 16px rgba(5, 36, 83, 0.14));
+}
+
+.games-illustration {
+  right: -22px;
+  bottom: -22px;
+  width: min(58%, 286px);
+}
+
+.paint-illustration {
+  right: -8px;
+  bottom: -10px;
+  width: min(50%, 258px);
+}
+
+.draw-illustration {
+  right: -8px;
+  bottom: -8px;
+  width: min(48%, 248px);
 }
 
 .btn-outline-mint {
@@ -2543,10 +4086,20 @@ watch(() => props.user, () => {
     padding: 10px 20px;
   }
   .kids-main-body {
-    padding: 16px 20px 60px;
+    padding: 16px 20px 128px;
   }
   .hub-grid {
     grid-template-columns: 1fr;
+  }
+  .hub-card {
+    min-height: 170px;
+  }
+  .card-top-content {
+    width: 58%;
+  }
+  .card-illustration {
+    width: min(38%, 230px);
+    right: 12px;
   }
 }
 
@@ -2556,11 +4109,42 @@ watch(() => props.user, () => {
     padding: 32px 24px;
     text-align: center;
   }
-  .hero-desc {
+  .kids-hero-banner .hero-desc {
     margin: 0 auto 20px;
   }
-  .hero-actions {
+  .kids-hero-banner .hero-actions {
     justify-content: center;
+  }
+}
+
+@media (max-width: 520px) {
+  .hub-card {
+    min-height: 205px;
+    padding: 22px 18px;
+  }
+  .card-top-content {
+    width: 100%;
+    padding-right: 118px;
+  }
+  .card-icon-box {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+    border-radius: 14px;
+  }
+  .card-text-col h3 {
+    font-size: 1.08rem;
+  }
+  .card-text-col p {
+    font-size: 0.78rem;
+  }
+  .card-illustration {
+    width: 142px;
+    right: -8px;
+    bottom: 4px;
+  }
+  .games-illustration {
+    bottom: -8px;
   }
 }
 
@@ -2568,11 +4152,11 @@ watch(() => props.user, () => {
 .games-hero-banner-container {
   position: relative;
   width: 100%;
-  height: clamp(260px, 28vw, 400px);
-  max-height: 400px;
-  border-radius: 60px;
-  overflow: visible;
-  box-shadow: 0 12px 36px rgba(0, 185, 181, 0.12);
+  height: clamp(280px, 28vw, 405px);
+  max-height: 405px;
+  border-radius: 34px;
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
@@ -2585,8 +4169,8 @@ watch(() => props.user, () => {
   height: 100%;
   display: block;
   object-fit: cover;
-  object-position: right center;
-  border-radius: 60px;
+  object-position: center top;
+  border-radius: 34px;
 }
 
 .games-hero-content {
@@ -2628,15 +4212,16 @@ watch(() => props.user, () => {
 .hero-banner-text-block {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
-  gap: 4px;
+  gap: 7px;
 }
 
 .games-main-title {
   font-size: clamp(1.8rem, 2.8vw, 2.6rem);
   font-weight: 900;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
+  color: #062854;
+  text-shadow: none;
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -2645,11 +4230,34 @@ watch(() => props.user, () => {
 .games-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
+  color: #315272;
+  text-shadow: none;
   margin: 0;
   line-height: 1.35;
   max-width: 480px;
+}
+
+.btn-games-hero {
+  margin-top: 10px;
+  border: none;
+  border-radius: 999px;
+  background: #0bb8bf;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  padding: 10px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(11, 184, 191, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-games-hero:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(2, 42, 91, 0.22);
 }
 
 @media (max-width: 768px) {
@@ -2665,7 +4273,7 @@ watch(() => props.user, () => {
   }
   .games-hero-content {
     position: absolute !important;
-    width: 68% !important;
+    width: 64% !important;
     padding: 12px 16px !important;
     background: transparent !important;
   }
@@ -2695,19 +4303,25 @@ watch(() => props.user, () => {
     overflow: hidden !important;
     max-width: 180px !important;
   }
+  .btn-games-hero {
+    margin-top: 4px !important;
+    padding: 7px 12px !important;
+    font-size: 0.72rem !important;
+  }
+  .games-banner-character {
+    right: 2% !important;
+    bottom: -2% !important;
+    width: auto !important;
+    max-width: 34% !important;
+    height: 90% !important;
+  }
 }
 
 .kids-games-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
   margin-bottom: 36px;
-}
-
-@media (max-width: 1200px) {
-  .kids-games-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
 }
 
 @media (max-width: 900px) {
@@ -2757,6 +4371,19 @@ watch(() => props.user, () => {
   display: block;
   border-radius: 16px;
   transition: transform 0.3s ease;
+}
+
+.local-game-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.local-game-thumb span {
+  font-size: clamp(4rem, 10vw, 7rem);
+  line-height: 1;
+  filter: drop-shadow(0 10px 18px rgba(15, 23, 42, 0.18));
 }
 
 .kid-game-card:hover .kid-game-thumb {
@@ -2931,94 +4558,21 @@ watch(() => props.user, () => {
   width: 100%;
 }
 
-.paint-bg-decor {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 50%;
-  z-index: 0;
-}
-
-.decor-top-left {
-  top: -40px;
-  left: -60px;
-  width: 280px;
-  height: 280px;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, transparent 70%);
-  filter: blur(20px);
-}
-
-.decor-bottom-right {
-  bottom: -60px;
-  right: -60px;
-  width: 320px;
-  height: 320px;
-  background: radial-gradient(circle, rgba(0, 185, 181, 0.14) 0%, transparent 70%);
-  filter: blur(24px);
-}
-
-.paint-floating-star {
-  position: absolute;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.65;
-  animation: floatStar 4s ease-in-out infinite alternate;
-}
-
-.star-1 {
-  top: 10px;
-  right: -10px;
-  font-size: 1.5rem;
-}
-
-.star-2 {
-  bottom: 80px;
-  left: -25px;
-  font-size: 1.8rem;
-  animation-delay: 1.5s;
-}
-
-.paint-floating-bubble {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.bubble-1 {
-  width: 34px;
-  height: 34px;
-  background: rgba(56, 189, 248, 0.18);
-  top: 35%;
-  right: -25px;
-}
-
-.bubble-2 {
-  width: 22px;
-  height: 22px;
-  background: rgba(244, 114, 182, 0.2);
-  bottom: 12%;
-  left: -15px;
-}
-
-@keyframes floatStar {
-  from { transform: translateY(0px) rotate(0deg); }
-  to { transform: translateY(-8px) rotate(15deg); }
-}
-
 .paint-hero-banner-container {
   position: relative;
   width: 100%;
-  height: clamp(260px, 28vw, 400px);
-  max-height: 400px;
-  border-radius: 60px;
-  overflow: visible;
-  box-shadow: 0 12px 36px rgba(124, 58, 237, 0.12);
+  height: clamp(280px, 28vw, 405px);
+  max-height: 405px;
+  border-radius: 34px;
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
   align-items: center;
   z-index: 1;
   box-sizing: border-box;
+  background: #e9fbfb;
 }
 
 .paint-hero-img {
@@ -3026,8 +4580,8 @@ watch(() => props.user, () => {
   height: 100%;
   display: block;
   object-fit: cover;
-  object-position: right center;
-  border-radius: 60px;
+  object-position: right top;
+  border-radius: 34px;
 }
 
 .paint-hero-content {
@@ -3063,8 +4617,8 @@ watch(() => props.user, () => {
 .paint-main-title {
   font-size: clamp(1.8rem, 2.8vw, 2.6rem);
   font-weight: 900;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
+  color: #062854;
+  text-shadow: none;
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -3073,8 +4627,8 @@ watch(() => props.user, () => {
 .paint-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.4);
+  color: #0c356b;
+  text-shadow: none;
   margin: 0;
   line-height: 1.35;
   max-width: 480px;
@@ -3132,10 +4686,155 @@ watch(() => props.user, () => {
   z-index: 2;
 }
 
+.paint-workspace-active {
+  grid-template-columns: 1fr;
+}
+
+.paint-template-picker-card {
+  background: #ffffff;
+  border-radius: 26px;
+  border: 1.5px solid #eef2f6;
+  box-shadow: 0 8px 30px rgba(5, 36, 83, 0.04);
+  padding: 24px;
+  position: relative;
+  z-index: 2;
+}
+
+.paint-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.paint-picker-kicker {
+  color: #00a99c;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.paint-picker-heading h2 {
+  color: #052453;
+  font-size: clamp(1.35rem, 2vw, 2rem);
+  margin: 4px 0 0;
+  line-height: 1.1;
+}
+
+.paint-picker-arrows {
+  display: inline-flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.paint-picker-arrows button {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  border: 0;
+  background: #00bba6;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 1.2rem;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 187, 166, 0.24);
+}
+
+.paint-template-carousel {
+  display: grid;
+  grid-template-columns: repeat(var(--paint-template-cols, 3), minmax(0, 1fr));
+  gap: 18px;
+}
+
+.paint-template-big-card {
+  border: 2px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 24px;
+  padding: 16px;
+  min-height: 280px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.paint-template-big-card:hover,
+.paint-template-big-card.active {
+  transform: translateY(-3px);
+  border-color: #00bba6;
+  box-shadow: 0 12px 26px rgba(5, 36, 83, 0.1);
+}
+
+.paint-template-preview {
+  flex: 1;
+  min-height: 190px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.paint-template-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.paint-template-big-card strong {
+  color: #052453;
+  font-size: 1.02rem;
+  font-weight: 900;
+}
+
+.paint-template-big-card small {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.paint-active-template-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 18px;
+  padding: 12px 16px;
+}
+
+.paint-active-template-bar span {
+  display: block;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.paint-active-template-bar strong {
+  color: #052453;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
 @media (max-width: 900px) {
   .paint-workspace-card {
     grid-template-columns: 1fr;
     padding: 16px;
+  }
+
+  .paint-template-carousel {
+    grid-template-columns: 1fr;
+  }
+
+  .paint-template-big-card {
+    min-height: 240px;
   }
 }
 
@@ -3218,6 +4917,41 @@ watch(() => props.user, () => {
   gap: 16px;
 }
 
+.canvas-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  align-self: flex-end;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 5px;
+  box-shadow: 0 6px 16px rgba(5, 36, 83, 0.06);
+}
+
+.canvas-zoom-controls button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #e6fbf9;
+  color: #008f8c;
+  display: grid;
+  place-items: center;
+  font-family: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.canvas-zoom-controls .zoom-value {
+  width: auto;
+  min-width: 58px;
+  padding: 0 10px;
+  background: #00bba6;
+  color: #ffffff;
+}
+
 .paint-palette-bar {
   display: flex;
   align-items: center;
@@ -3296,16 +5030,18 @@ watch(() => props.user, () => {
   align-items: center;
   justify-content: center;
   min-height: 460px;
-  overflow: hidden;
-  padding: 12px;
+  overflow: auto;
+  padding: 22px;
 }
 
 .paint-studio-canvas {
   background: #ffffff;
   cursor: crosshair;
-  max-width: 100%;
+  max-width: none;
   height: auto;
   display: block;
+  flex: 0 0 auto;
+  transform-origin: top center;
 }
 
 .paint-actions-footer {
@@ -3367,11 +5103,11 @@ watch(() => props.user, () => {
 .lousa-hero-banner-container {
   position: relative;
   width: 100%;
-  height: clamp(260px, 28vw, 400px);
-  max-height: 400px;
-  border-radius: 60px;
-  overflow: visible;
-  box-shadow: 0 12px 36px rgba(0, 185, 181, 0.12);
+  height: clamp(280px, 28vw, 405px);
+  max-height: 405px;
+  border-radius: 34px;
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
@@ -3384,8 +5120,8 @@ watch(() => props.user, () => {
   height: 100%;
   display: block;
   object-fit: cover;
-  object-position: right center;
-  border-radius: 60px;
+  object-position: center top;
+  border-radius: 34px;
 }
 
 .lousa-hero-content {
@@ -3421,8 +5157,8 @@ watch(() => props.user, () => {
 .lousa-main-title {
   font-size: clamp(1.8rem, 2.8vw, 2.6rem);
   font-weight: 900;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
+  color: #062854;
+  text-shadow: none;
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -3431,8 +5167,8 @@ watch(() => props.user, () => {
 .lousa-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
+  color: #0c356b;
+  text-shadow: none;
   margin: 0;
   line-height: 1.35;
   max-width: 480px;
@@ -3680,16 +5416,18 @@ watch(() => props.user, () => {
   align-items: center;
   justify-content: center;
   min-height: 440px;
-  overflow: hidden;
+  overflow: auto;
   padding: 10px;
 }
 
 .lousa-studio-canvas {
   background: #ffffff;
   cursor: crosshair;
-  max-width: 100%;
+  max-width: none;
   height: auto;
   display: block;
+  flex: 0 0 auto;
+  transform-origin: top center;
 }
 
 .lousa-bottom-bar {
@@ -3718,11 +5456,29 @@ watch(() => props.user, () => {
 
 /* No celular, a criação vem antes das ferramentas. */
 @media (max-width: 768px) {
+  .paint-template-picker-card {
+    padding: 16px;
+    --paint-template-cols: 1;
+  }
+
+  .paint-picker-heading {
+    align-items: flex-start;
+  }
+
+  .paint-picker-arrows button {
+    width: 42px;
+    height: 42px;
+  }
+
+  .paint-template-preview {
+    min-height: 180px;
+  }
+
   .paint-workspace-card {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 8px;
+    padding: 12px;
   }
 
   .paint-templates-sidebar {
@@ -3764,41 +5520,81 @@ watch(() => props.user, () => {
     order: 2;
   }
 
+  .paint-active-template-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .paint-dashed-wrapper {
     order: 1;
-    min-height: 440px;
-    padding: 2px;
+    min-height: 360px;
+    padding: 12px;
+    align-items: flex-start;
+    justify-content: flex-start;
   }
 
   .paint-palette-bar {
     order: 2;
     border-radius: 18px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-direction: column;
+    padding: 14px;
+    width: 100%;
   }
 
   .paint-actions-footer {
+    order: 4;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .canvas-zoom-controls {
     order: 3;
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .btn-paint-ctrl,
+  .btn-paint-save-award {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    border-radius: 16px;
+    white-space: normal;
+    text-align: center;
   }
 
   .lousa-canvas-dashed-frame {
     order: 1;
     min-height: 360px;
+    padding: 12px;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .lousa-zoom-controls {
+    order: 2;
+    align-self: stretch;
+    justify-content: center;
   }
 
   .lousa-top-toolbar {
-    order: 2;
-  }
-
-  .lousa-stamps-picker-bar {
     order: 3;
   }
 
-  .lousa-colors-bar {
+  .lousa-stamps-picker-bar {
     order: 4;
+  }
+
+  .lousa-colors-bar {
+    order: 5;
     border-radius: 18px;
   }
 
   .lousa-bottom-bar {
-    order: 5;
+    order: 6;
   }
 }
 
@@ -3929,10 +5725,10 @@ watch(() => props.user, () => {
 .profile-hero-banner-container {
   position: relative;
   width: 100%;
-  height: clamp(260px, 28vw, 400px);
-  max-height: 400px;
-  border-radius: 60px;
-  overflow: visible;
+  height: clamp(280px, 28vw, 405px);
+  max-height: 405px;
+  border-radius: 34px;
+  overflow: hidden;
   box-shadow: 0 14px 36px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
@@ -3945,21 +5741,23 @@ watch(() => props.user, () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: right center;
+  object-position: center top;
   display: block;
-  border-radius: 60px;
+  border-radius: 34px;
 }
 
 .profile-hero-content {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
   bottom: 0;
+  width: 54%;
   padding: 24px 36px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 18px;
   z-index: 5;
   box-sizing: border-box;
 }
@@ -3994,8 +5792,8 @@ watch(() => props.user, () => {
 .profile-name-title {
   font-size: clamp(1.8rem, 2.8vw, 2.5rem);
   font-weight: 900;
-  color: #ffffff;
-  text-shadow: 0 2px 8px rgba(5, 36, 83, 0.42);
+  color: #062854;
+  text-shadow: none;
   margin: 0;
   line-height: 1.1;
   letter-spacing: -0.5px;
@@ -4103,10 +5901,12 @@ watch(() => props.user, () => {
   }
   .profile-hero-content {
     position: absolute !important;
-    width: 100% !important;
+    width: 62% !important;
     padding: 12px 16px !important;
     background: transparent !important;
     justify-content: flex-start !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
   }
   .profile-user-inline {
     gap: 10px !important;
@@ -4209,6 +6009,11 @@ watch(() => props.user, () => {
   color: #d97706;
 }
 
+.icon-game {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
 .icon-lock {
   background: #f1f5f9;
   color: #94a3b8;
@@ -4263,24 +6068,6 @@ watch(() => props.user, () => {
 
 .profile-section-header-bar .profile-section-heading {
   margin: 0;
-}
-
-.btn-outline-view-all {
-  background: #ffffff;
-  border: 1.5px solid #00bba6;
-  color: #008f8c;
-  border-radius: 50px;
-  padding: 7px 18px;
-  font-family: inherit;
-  font-size: 0.84rem;
-  font-weight: 800;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-outline-view-all:hover {
-  background: #00bba6;
-  color: #ffffff;
 }
 
 .empty-gallery-dashed {
@@ -4340,9 +6127,49 @@ watch(() => props.user, () => {
   transition: transform 0.15s, box-shadow 0.15s;
 }
 
+.btn-create-artwork-pill.alt {
+  background: #7c3aed;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.24);
+}
+
 .btn-create-artwork-pill:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 18px rgba(0, 187, 166, 0.4);
+}
+
+.gallery-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gallery-action-row.compact .btn-create-artwork-pill {
+  margin-top: 0;
+  padding: 9px 16px;
+  font-size: 0.82rem;
+}
+
+.gallery-summary-card {
+  grid-column: 1 / -1;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 22px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gallery-summary-card span,
+.gallery-summary-card strong {
+  display: inline-flex;
+  align-items: center;
+  color: #052453;
+  font-weight: 900;
+  margin-right: 12px;
 }
 
 .artworks-grid-4col {
@@ -4405,7 +6232,19 @@ watch(() => props.user, () => {
   font-size: 0.75rem;
   color: #64748b;
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+}
+
+.art-type-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #e6fbf9;
+  color: #008f8c;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 3px 9px;
+  margin-bottom: 9px;
 }
 
 .art-social-footer {
@@ -4488,6 +6327,16 @@ watch(() => props.user, () => {
   color: #00b9b5;
 }
 
+.bottom-item:focus {
+  outline: none;
+}
+
+.bottom-item:focus-visible {
+  outline: 2px solid rgba(0, 185, 181, 0.45);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
 /* --- MODAL DO JOGO --- */
 .game-modal-overlay {
   position: fixed;
@@ -4505,8 +6354,8 @@ watch(() => props.user, () => {
   background: white;
   border-radius: 24px;
   width: 100%;
-  max-width: 960px;
-  height: 85vh;
+  max-width: 900px;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -4525,6 +6374,14 @@ watch(() => props.user, () => {
 .game-modal-top h2 {
   font-size: 1.2rem;
   font-weight: 800;
+  color: #ffffff !important;
+  margin: 0;
+}
+
+.game-modal-top p {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.86rem;
 }
 
 .btn-close-game {
@@ -4538,16 +6395,522 @@ watch(() => props.user, () => {
   cursor: pointer;
 }
 
-.game-iframe-wrap {
+.game-play-area {
+  position: relative;
   flex: 1;
-  width: 100%;
-  background: #000;
+  min-height: 0;
+  padding: clamp(16px, 3vw, 28px);
+  background: #f8fafc;
+  overflow: auto;
 }
 
-.game-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
+.game-countdown-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(248, 250, 252, 0.82);
+  backdrop-filter: blur(4px);
+  color: #052453;
+  text-align: center;
+}
+
+.game-countdown-overlay span {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.game-countdown-overlay strong {
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #00b9a5;
+  color: #ffffff;
+  font-size: 3.6rem;
+  line-height: 1;
+  box-shadow: 0 18px 34px rgba(0, 185, 165, 0.24);
+}
+
+.game-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.game-score-row span {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.game-score-row strong {
+  color: #052453;
+}
+
+.memory-game-shell,
+.blocks-game-shell,
+.target-game-shell,
+.flappy-game-shell,
+.snake-game-shell,
+.dino-game-shell,
+.tictactoe-game-shell,
+.sequence-game-shell,
+.math-game-shell {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(58px, 1fr));
+  gap: 10px;
+}
+
+.memory-card {
+  aspect-ratio: 1;
+  border: 2px solid #c7d2fe;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #4f46e5, #8b5cf6);
+  color: #ffffff;
+  font-size: clamp(1.5rem, 7vw, 2.8rem);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(79, 70, 229, 0.18);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.memory-card.flipped {
+  background: #ffffff;
+  color: #052453;
+  transform: translateY(-2px);
+}
+
+.btn-game-reset {
+  width: min(260px, 100%);
+  margin: 18px auto 0;
+}
+
+.blocks-board {
+  position: relative;
+  width: min(320px, 86vw);
+  margin: 0 auto;
+  padding: 10px;
+  border-radius: 20px;
+  background: #052453;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 18px 38px rgba(5, 36, 83, 0.22);
+}
+
+.blocks-row {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.blocks-row + .blocks-row {
+  margin-top: 4px;
+}
+
+.blocks-cell {
+  aspect-ratio: 1;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.blocks-cell.filled {
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.blocks-game-over,
+.game-overlay-message,
+.target-finished {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(5, 36, 83, 0.86);
+  color: #ffffff;
+  text-align: center;
+  padding: 18px;
+}
+
+.blocks-game-over {
+  border-radius: 20px;
+}
+
+.blocks-controls {
+  width: min(360px, 92vw);
+  margin: 16px auto 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.blocks-controls button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: #00b9b5;
+  color: white;
+  font-size: 1.15rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.blocks-controls button.wide {
+  grid-column: 1 / -1;
+}
+
+.target-stage {
+  position: relative;
+  height: min(430px, 58vh);
+  min-height: 320px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.9)), #eef2ff;
+  border: 2px solid #dbeafe;
+  overflow: hidden;
+}
+
+.target-star {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 74px;
+  height: 74px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  font-size: 2.35rem;
+  cursor: pointer;
+  box-shadow: 0 14px 28px rgba(255, 184, 0, 0.28);
+  animation: starPulse 0.82s ease-in-out infinite alternate;
+}
+
+@keyframes starPulse {
+  from { transform: translate(-50%, -50%) scale(0.94); }
+  to { transform: translate(-50%, -50%) scale(1.08); }
+}
+
+.target-finished {
+  background: rgba(255, 255, 255, 0.88);
+  color: #052453;
+}
+
+.flappy-stage,
+.dino-stage {
+  position: relative;
+  height: min(430px, 58vh);
+  min-height: 320px;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 2px solid #bae6fd;
+  cursor: pointer;
+  user-select: none;
+  background:
+    linear-gradient(180deg, #7dd3fc 0%, #e0f2fe 72%, #bbf7d0 72%, #86efac 100%);
+}
+
+.flappy-bird {
+  position: absolute;
+  left: 18%;
+  transform: translate(-50%, -50%);
+  font-size: 2.7rem;
+  z-index: 3;
+  filter: drop-shadow(0 8px 10px rgba(5, 36, 83, 0.18));
+}
+
+.flappy-pipe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14%;
+}
+
+.pipe-top,
+.pipe-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 0 0 16px 16px;
+  background: linear-gradient(180deg, #10b981, #059669);
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.22);
+}
+
+.pipe-top {
+  top: 0;
+}
+
+.pipe-bottom {
+  bottom: 0;
+  border-radius: 16px 16px 0 0;
+}
+
+.snake-board {
+  position: relative;
+  width: min(420px, 88vw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 4px;
+  padding: 12px;
+  border-radius: 24px;
+  background: #dcfce7;
+  border: 2px solid #86efac;
+  box-shadow: 0 18px 34px rgba(16, 185, 129, 0.12);
+}
+
+.snake-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.snake-cell.snake {
+  background: #10b981;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.snake-cell.food {
+  background: #ff5a79;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(255, 90, 121, 0.18);
+}
+
+.snake-controls {
+  width: min(224px, 72vw);
+  margin: 18px auto 0;
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(2, 58px);
+  justify-content: center;
+  gap: 10px;
+}
+
+.snake-controls button {
+  width: 64px;
+  height: 58px;
+  border: 0;
+  border-radius: 18px;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 1.3rem;
+  cursor: pointer;
+  box-shadow: 0 8px 16px rgba(16, 185, 129, 0.22);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.snake-controls button:hover {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+.snake-controls .up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.snake-controls .left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.snake-controls .down {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.snake-controls .right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.dino-stage {
+  background:
+    linear-gradient(180deg, #bfdbfe 0%, #fef3c7 72%, #fde68a 72%, #f59e0b 100%);
+}
+
+.dino-ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18%;
+  height: 4px;
+  background: rgba(120, 53, 15, 0.35);
+}
+
+.dino-player {
+  position: absolute;
+  left: 20%;
+  font-size: 3rem;
+  z-index: 3;
+  filter: drop-shadow(0 8px 10px rgba(5, 36, 83, 0.16));
+}
+
+.dino-obstacle {
+  position: absolute;
+  bottom: 20%;
+  font-size: 2.5rem;
+  transform: translateX(-50%);
+}
+
+.game-overlay-message {
+  z-index: 5;
+  background: rgba(5, 36, 83, 0.82);
+}
+
+.tictactoe-board {
+  width: min(360px, 88vw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.tictactoe-cell {
+  aspect-ratio: 1;
+  border: 2px solid #bae6fd;
+  border-radius: 20px;
+  background: #ffffff;
+  color: #052453;
+  font-family: inherit;
+  font-size: clamp(2.2rem, 12vw, 4rem);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.12);
+}
+
+.tictactoe-cell.player {
+  color: #00b9b5;
+  background: #ecfeff;
+}
+
+.tictactoe-cell.computer {
+  color: #8b5cf6;
+  background: #f5f3ff;
+}
+
+.sequence-pad {
+  width: min(420px, 88vw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.sequence-button {
+  min-height: 132px;
+  border: 0;
+  border-radius: 24px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: inset 0 -10px 0 rgba(0, 0, 0, 0.12), 0 14px 28px rgba(15, 23, 42, 0.13);
+  opacity: 0.72;
+  transform: scale(0.98);
+  transition: transform 0.12s ease, opacity 0.12s ease, filter 0.12s ease;
+}
+
+.sequence-button.active {
+  opacity: 1;
+  transform: scale(1.04);
+  filter: brightness(1.12);
+}
+
+.math-card {
+  width: min(460px, 90vw);
+  margin: 0 auto;
+  background: #ffffff;
+  border: 2px solid #dcfce7;
+  border-radius: 26px;
+  padding: clamp(20px, 5vw, 34px);
+  text-align: center;
+  box-shadow: 0 16px 34px rgba(16, 185, 129, 0.12);
+}
+
+.math-status {
+  display: inline-flex;
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.math-question {
+  display: block;
+  color: #052453;
+  font-size: clamp(2.8rem, 12vw, 5rem);
+  line-height: 1;
+  margin-bottom: 22px;
+}
+
+.math-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.math-options button {
+  min-height: 64px;
+  border: 0;
+  border-radius: 18px;
+  background: #10b981;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 1.6rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 640px) {
+  .game-modal-overlay {
+    padding: 10px;
+  }
+
+  .game-modal-box {
+    border-radius: 20px;
+    max-height: 92vh;
+  }
+
+  .game-modal-top {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .memory-grid {
+    gap: 8px;
+  }
+
+  .target-star {
+    width: 64px;
+    height: 64px;
+    font-size: 2rem;
+  }
+
+  .sequence-button {
+    min-height: 104px;
+  }
+
+  .math-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* --- TOAST --- */
@@ -4583,8 +6946,25 @@ watch(() => props.user, () => {
   .kids-stars-pill {
     display: none !important;
   }
+  .kids-profile-menu-btn {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+  }
+  .kids-profile-menu-btn span,
+  .kids-profile-menu-btn i:last-child {
+    display: none;
+  }
+  .kids-dropdown-box {
+    right: 0;
+    width: min(260px, calc(100vw - 28px));
+  }
   .kids-bottom-bar {
     display: flex;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+  .kids-main-body {
+    padding-bottom: calc(148px + env(safe-area-inset-bottom));
   }
   .kids-hero-banner {
     flex-direction: column;
@@ -4595,7 +6975,7 @@ watch(() => props.user, () => {
     max-width: 160px;
     margin-top: 14px;
   }
-  .hero-actions {
+  .kids-hero-banner .hero-actions {
     justify-content: center;
   }
   .studio-layout {
@@ -4660,46 +7040,32 @@ watch(() => props.user, () => {
   cursor: pointer;
 }
 
-.mock-pills-bar {
-  margin-top: 14px;
-  background: #f4fbfd;
-  border: 1.5px dashed #00b9b5;
-  border-radius: 16px;
-  padding: 10px 12px;
-  text-align: left;
-}
-
-.mock-label {
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 800;
-  color: #009c9a;
-  margin-bottom: 6px;
-}
-
-.mock-pills-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.mock-pill {
-  background: white;
-  border: 1.5px solid #e6f8f8;
-  border-radius: 12px;
-  padding: 6px 10px;
-  font-family: inherit;
-  font-size: 0.8rem;
-  font-weight: 700;
+.dropdown-profile-option {
+  width: 100%;
+  border: 1px solid #d8f3f3;
+  background: #ffffff;
   color: #052453;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   cursor: pointer;
-  text-align: left;
-  transition: all 0.15s;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.mock-pill:hover {
-  background: #e6f8f8;
+.dropdown-profile-option:hover,
+.dropdown-profile-option.active {
+  background: #e9fbfb;
   border-color: #00b9b5;
+  color: #007f7c;
+}
+
+.dropdown-profile-option i {
+  font-size: 0.95rem;
 }
 
 </style>
