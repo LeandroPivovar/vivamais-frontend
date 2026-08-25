@@ -262,8 +262,7 @@ const confirmReset = async () => {
   inset: 0;
   background:
     radial-gradient(circle, rgba(0, 185, 181, 0.55) 1.5px, transparent 2px) 18% 25% / 18px 18px no-repeat,
-    radial-gradient(circle, rgba(1, 117, 194, 0.36) 1.5px, transparent 2px) 82% 63% / 18px 18px no-repeat,
-    repeating-radial-gradient(circle at 100% 0, transparent 0 30px, rgba(0, 185, 181, 0.16) 31px 32px);
+    radial-gradient(circle, rgba(1, 117, 194, 0.36) 1.5px, transparent 2px) 82% 63% / 18px 18px no-repeat;
   opacity: 0.72;
 }
 
