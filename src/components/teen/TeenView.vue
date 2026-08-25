@@ -1398,7 +1398,7 @@ function handleTeenLogout() {
   padding: 44px 46px;
   width: 100%;
   max-width: 520px;
-  box-shadow: none;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
   position: relative;
   z-index: 3;
   justify-self: start;
