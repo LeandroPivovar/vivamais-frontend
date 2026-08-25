@@ -90,8 +90,15 @@ const confirmReset = async () => {
 
 <template>
   <div class="login-page">
+    <!-- HERO SUPERIOR APENAS NO MOBILE/TABLET (Estilo Kids com Logo Centralizada) -->
+    <header class="mobile-hero-header" aria-hidden="true">
+      <div class="mobile-hero-logo-box">
+        <img src="/logo.png" alt="Viva Mais Club" class="mobile-hero-logo" />
+      </div>
+    </header>
+
     <div class="login-container">
-      <!-- COLUNA DA ESQUERDA: BENEFÍCIOS -->
+      <!-- COLUNA DA ESQUERDA: BENEFÍCIOS (Visível apenas em Desktop) -->
       <section class="benefits-section" aria-label="Benefícios Viva Mais Club">
         <div class="benefits-top-row">
           <img src="/logo.png" alt="Viva Mais Club" class="benefits-brand-logo" />
@@ -144,9 +151,9 @@ const confirmReset = async () => {
       <div class="login-card-container">
         <div class="auth-card">
           <div class="card-header-block">
-            <h2 class="card-heading">Bem-vindo de volta! 👋</h2>
+            <h2 class="card-heading">Seja bem-vindo(a)! 👋</h2>
             <p class="card-subheading">
-              Faça login para acessar sua conta<br />e aproveitar todos os benefícios.
+              Faça login para acessar seus benefícios<br />e acompanhar sua assinatura.
             </p>
           </div>
 
@@ -635,35 +642,123 @@ const confirmReset = async () => {
   text-decoration: none;
 }
 
-.return-login-link:hover {
-  color: #06285C;
-  text-decoration: underline;
+/* ==========================================================================
+   MOBILE HERO HEADER (Visível apenas em Mobile/Tablet)
+   ========================================================================== */
+.mobile-hero-header {
+  display: none;
+}
+
+.mobile-hero-logo-box {
+  background: #FFFFFF;
+  padding: 12px 28px;
+  border-radius: 20px;
+  box-shadow: 0 10px 28px rgba(5, 36, 83, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-hero-logo {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 
 /* ==========================================================================
-   RESPONSIVIDADE (Mobile & Tablets - Esconde texto e centraliza/sobe o card)
+   RESPONSIVIDADE (Mobile & Tablets - Layout Estilo Kids com Logo no Topo)
    ========================================================================== */
-@media (max-width: 1024px) {
+@media (max-width: 860px) {
   .login-page {
-    align-items: flex-start;
-    padding-top: clamp(24px, 6vh, 60px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    background-color: #F8FAFD;
+    background-image: none;
+    padding: 0;
+    overflow-y: auto;
+  }
+
+  .mobile-hero-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 24vh;
+    padding: 34px 20px 48px;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.15) 0 40px, transparent 41px),
+      radial-gradient(circle at 85% 80%, rgba(0, 181, 176, 0.3) 0 60px, transparent 61px),
+      linear-gradient(145deg, #052453 0%, #0B3C82 55%, #00B5B0 100%);
+    position: relative;
+    box-sizing: border-box;
   }
 
   .login-container {
-    grid-template-columns: 1fr;
-    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 460px;
+    padding: 0 16px 32px;
+    margin-top: -24px;
+    z-index: 10;
     gap: 0;
-    justify-items: center;
   }
 
   .benefits-section {
     display: none;
   }
 
+  .login-card-container {
+    width: 100%;
+  }
+
   .auth-card {
-    box-shadow: 0 8px 30px rgba(8, 40, 92, 0.08);
+    background: #FFFFFF;
+    border-radius: 28px;
+    box-shadow: 0 -8px 32px rgba(5, 36, 83, 0.09), 0 10px 30px rgba(5, 36, 83, 0.05);
+    border: 1px solid #EAEFF6;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .card-header-block {
+    padding: 28px 22px 14px;
+    text-align: center;
+  }
+
+  .card-heading {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #06285C;
+    margin-bottom: 4px;
+  }
+
+  .card-subheading {
+    font-size: 0.86rem;
+    color: #60728C;
+    line-height: 1.4;
+  }
+
+  .auth-form {
+    padding: 0 22px 28px;
+  }
+
+  .field-input {
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  .submit-btn-primary {
+    height: 50px;
+    border-radius: 12px;
+    font-size: 1rem;
   }
 }
 </style>
+
 
 
