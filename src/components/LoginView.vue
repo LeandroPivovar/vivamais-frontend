@@ -673,13 +673,15 @@ const confirmReset = async () => {
   .login-page {
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
     align-items: stretch;
-    justify-content: flex-start;
+    height: 100dvh;
     min-height: 100vh;
-    height: auto;
     background-color: #F8FAFD;
     background-image: none;
     padding: 0;
+    margin: 0;
+    overflow-y: auto;
     overflow-x: hidden;
   }
 
@@ -688,15 +690,15 @@ const confirmReset = async () => {
     align-items: center;
     justify-content: center;
     width: 100%;
-    min-height: 150px;
-    padding: 24px 20px 42px;
+    flex: 1;
+    min-height: 140px;
+    padding: 24px 20px 52px;
     background:
       radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.15) 0 40px, transparent 41px),
       radial-gradient(circle at 85% 80%, rgba(0, 181, 176, 0.3) 0 60px, transparent 61px),
       linear-gradient(145deg, #052453 0%, #0B3C82 55%, #00B5B0 100%);
     position: relative;
     box-sizing: border-box;
-    flex-shrink: 0;
   }
 
   .login-container {
@@ -705,10 +707,10 @@ const confirmReset = async () => {
     width: 100%;
     max-width: 100%;
     padding: 0;
-    margin: -24px 0 0 0;
+    margin: -36px 0 0 0;
     z-index: 10;
     gap: 0;
-    flex: 1;
+    flex-shrink: 0;
   }
 
   .benefits-section {
@@ -717,62 +719,63 @@ const confirmReset = async () => {
 
   .login-card-container {
     width: 100%;
-    flex: 1;
     display: flex;
   }
 
   .auth-card {
     background: #FFFFFF;
     border-radius: 32px 32px 0 0;
-    box-shadow: 0 -8px 28px rgba(5, 36, 83, 0.10);
+    box-shadow: 0 -14px 34px rgba(15, 23, 42, 0.10);
     border: none;
     width: 100%;
     max-width: 100%;
-    flex: 1;
+    height: auto;
+    flex: none;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
     margin: 0;
-    padding: 0;
+    padding: 24px 22px 24px;
+    box-sizing: border-box;
   }
 
   .card-header-block {
-    padding: 22px 20px 8px;
+    padding: 0 0 12px;
     text-align: center;
-    max-width: 440px;
+    max-width: 420px;
     margin: 0 auto;
     width: 100%;
   }
 
   .card-heading {
-    font-size: 1.35rem;
+    font-size: 1.45rem;
     font-weight: 800;
     color: #06285C;
     margin-bottom: 4px;
   }
 
   .card-subheading {
-    font-size: 0.85rem;
+    font-size: 0.86rem;
     color: #60728C;
     line-height: 1.4;
+    margin: 0;
   }
 
   .auth-form {
-    padding: 0 20px 20px;
-    max-width: 440px;
+    padding: 0;
+    max-width: 420px;
     margin: 0 auto;
     width: 100%;
   }
 
   .field-input {
-    height: 46px;
-    border-radius: 10px;
+    height: 48px;
+    border-radius: 12px;
   }
 
   .submit-btn-primary {
-    height: 48px;
-    border-radius: 10px;
-    font-size: 0.95rem;
+    height: 50px;
+    border-radius: 12px;
+    font-size: 1rem;
     margin-top: 4px;
   }
 }
