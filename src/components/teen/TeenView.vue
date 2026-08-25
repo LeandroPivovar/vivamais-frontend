@@ -79,7 +79,6 @@ const studentProfileId = computed(() => activeProfile.value?.id || props.user?.i
 
 // Login Teen State — apenas CPF, sem senha (mesma sessão local do Kids)
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
-const LOCAL_TEST_CPF = import.meta.env.DEV ? '41873492010' : null
 const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
@@ -393,18 +392,7 @@ async function handleTeenLogin() {
   loginLoading.value = true
   loginError.value = ''
   try {
-    const data = cpf === LOCAL_TEST_CPF
-      ? {
-          token: 'local-test-teen-token',
-          user: {
-            id: 'local-teen-dependent',
-            name: 'Sofia',
-            email: 'teste.teen@vivamaisclub.com',
-            isDependent: true,
-            ageGroup: 'teen'
-          }
-        }
-      : await api.post('/auth/login-kids', { cpf, module: 'teen' })
+    const data = await api.post('/auth/login-kids', { cpf, module: 'teen' })
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user, module: 'teen' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))

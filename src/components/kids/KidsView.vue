@@ -113,7 +113,6 @@ function switchProfile(profileId) {
 
 // --- LOGIN INTERNO NO KIDS (/kids/auth) — apenas CPF, sem senha ---
 const KIDS_TEEN_SESSION_KEY = 'viva_kidsteen_session'
-const LOCAL_TEST_CPF = import.meta.env.DEV ? '41873492010' : null
 const loginCpf = ref('')
 const loginLoading = ref(false)
 const loginError = ref('')
@@ -181,18 +180,7 @@ async function handleKidsLogin() {
   loginError.value = ''
   loginLoading.value = true
   try {
-    const data = digits === LOCAL_TEST_CPF
-      ? {
-          token: 'local-test-kids-token',
-          user: {
-            id: 'local-kids-dependent',
-            name: 'Lucas',
-            email: 'teste.kids@vivamaisclub.com',
-            isDependent: true,
-            ageGroup: 'kids'
-          }
-        }
-      : await api.post('/auth/login-kids', { cpf: digits, module: 'kids' })
+    const data = await api.post('/auth/login-kids', { cpf: digits, module: 'kids' })
     if (data?.token) {
       kidsTeenSession.value = { token: data.token, user: data.user, module: 'kids' }
       localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
