@@ -42,12 +42,12 @@ const courseForm = ref({
   tag: 'NOVO 🔥',
   instructor: {
     name: 'Professor Teen',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatar: '',
     role: 'Especialista em Idiomas'
   },
   rating: 5.0,
   totalHours: '20h',
-  banner: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
+  banner: '',
   description: ''
 })
 
@@ -63,11 +63,11 @@ const lessonForm = ref({
   title: '',
   duration: '45 min',
   durationSeconds: 2700,
-  videoUrl: 'https://www.youtube.com/embed/juKd26qkNAw',
-  thumbnail: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop&q=80',
+  videoUrl: '',
+  thumbnail: '',
   description: '',
-  liveDate: '2026-08-20T19:00',
-  formattedDate: '20/08 às 19:00',
+  liveDate: '',
+  formattedDate: '',
   status: 'agendada' // 'ao_vivo' | 'agendada' | 'concluida'
 })
 
@@ -75,8 +75,8 @@ const materialForm = ref({
   id: '',
   title: '',
   type: 'pdf',
-  size: '2.5 MB',
-  downloadUrl: '#',
+  size: '',
+  downloadUrl: '',
   description: ''
 })
 
@@ -148,12 +148,12 @@ function openNewCourseModal() {
     tag: 'NOVO 🔥',
     instructor: {
       name: 'Professor(a) Teen',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      avatar: '',
       role: 'Especialista em Idiomas'
     },
     rating: 5.0,
     totalHours: '15h',
-    banner: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
+    banner: '',
     description: ''
   }
   showCourseModal.value = true
@@ -242,11 +242,11 @@ function openNewLessonModal(modId) {
     title: '',
     duration: '45 min',
     durationSeconds: 2700,
-    videoUrl: 'https://www.youtube.com/embed/juKd26qkNAw',
-    thumbnail: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop&q=80',
+    videoUrl: '',
+    thumbnail: '',
     description: '',
-    liveDate: '2026-08-20T19:00',
-    formattedDate: '20/08 às 19:00',
+    liveDate: '',
+    formattedDate: '',
     status: 'agendada'
   }
   showLessonModal.value = true
@@ -264,8 +264,8 @@ function openEditLessonModal(modId, lesson) {
     videoUrl: lesson.videoUrl || '',
     thumbnail: lesson.thumbnail || '',
     description: lesson.description || '',
-    liveDate: lesson.liveDate || '2026-08-20T19:00',
-    formattedDate: lesson.formattedDate || '20/08 às 19:00',
+    liveDate: lesson.liveDate || '',
+    formattedDate: lesson.formattedDate || '',
     status: lesson.status || 'agendada'
   }
   showLessonModal.value = true
@@ -288,7 +288,7 @@ function saveLesson() {
     liveDate: lessonForm.value.liveDate,
     formattedDate: lessonForm.value.formattedDate,
     status: lessonForm.value.status || 'agendada',
-    viewersCount: lessonForm.value.status === 'ao_vivo' ? 45 : 0
+    viewersCount: 0
   }
 
   teenStorage.saveLesson(selectedCourse.value.id, selectedModuleId.value, lessonData)
@@ -315,8 +315,8 @@ function openNewMaterialModal() {
     id: `mat-${Date.now()}`,
     title: '',
     type: 'pdf',
-    size: '2.5 MB',
-    downloadUrl: '#',
+    size: '',
+    downloadUrl: '',
     description: ''
   }
   showMaterialModal.value = true
@@ -351,7 +351,7 @@ function resetAllData() {
     loadData()
     emit('triggerDevModal', {
       title: 'Dados Restaurados',
-      message: 'Os cursos padrão de Inglês, Espanhol, Japonês, Francês e Alemão foram restaurados com sucesso!'
+      message: 'Os cursos foram restaurados para a lista vazia padrão.'
     })
   }
 }
@@ -841,7 +841,7 @@ function resetAllData() {
             <input 
               v-model="courseForm.banner" 
               type="url" 
-              placeholder="https://images.unsplash.com/..."
+              placeholder="Cole a URL da capa do curso"
               class="form-control"
             />
           </div>
@@ -968,7 +968,7 @@ function resetAllData() {
               <input 
                 v-model="lessonForm.formattedDate" 
                 type="text" 
-                placeholder="Ex: Hoje às 19:00 ou 20/08 às 19:30"
+                placeholder="Ex: Hoje às 19:00"
                 class="form-control"
                 required
               />
@@ -992,7 +992,7 @@ function resetAllData() {
               <input 
                 v-model="lessonForm.thumbnail" 
                 type="url" 
-                placeholder="https://images.unsplash.com/..."
+                placeholder="Cole a URL da miniatura"
                 class="form-control"
               />
             </div>

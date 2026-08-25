@@ -2074,7 +2074,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           </div>
         </div>
 
-        <!-- Tabelas demonstrativas das comissões idênticas às imagens -->
+        <!-- Tabelas de comissão por nível -->
         <h4 style="margin: 24px 0 12px; color: var(--secondary); text-align: center;">Demonstrativo de Comissão por Nível</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
           <!-- Tabela Familiar -->

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import LoginView from './components/LoginView.vue'
 import DashboardView from './components/DashboardView.vue'
 import AdminView from './components/AdminView.vue'
@@ -25,6 +25,8 @@ const showPublicCheckout = ref(false)
 
 // Abas de navegação: 'home', 'perfil', 'financeiro'
 const currentTab = ref('home')
+const tabsWithBottomNavigation = ['perfil', 'indicacoes']
+const shouldLiftFloatingChat = computed(() => tabsWithBottomNavigation.includes(currentTab.value))
 
 // Modo de layout de visualização: 'desktop' ou 'pwa' (inicializado dinamicamente pelo tamanho da tela)
 const layoutMode = ref(window.innerWidth < 768 ? 'pwa' : 'desktop')
@@ -521,10 +523,10 @@ onBeforeUnmount(() => {
     <!-- VERSÃO PWA MOBILE (SIMULADOR) -->
     <div v-else class="pwa-layout">
       <div class="pwa-simulator">
-        <!-- Status Bar Fake -->
+        <!-- Status Bar -->
         <div class="pwa-status-bar">
-          <span class="fake-time">14:04</span>
-          <div class="fake-icons">
+          <span class="device-time">14:04</span>
+          <div class="device-icons">
             <i class="ph ph-wifi-high"></i>
             <i class="ph ph-battery-full"></i>
           </div>
@@ -665,10 +667,19 @@ onBeforeUnmount(() => {
 
     <!-- Botão flutuante de chat ao vivo (todas as páginas, exceto admin) -->
     <template v-if="currentUser?.role !== 'admin'">
-      <div v-if="showChatPanel" ref="chatPanelRef" class="chat-fab-panel">
+      <div
+        v-if="showChatPanel"
+        ref="chatPanelRef"
+        :class="['chat-fab-panel', { 'avoid-context-nav': shouldLiftFloatingChat }]"
+      >
         <ChatAoVivoView />
       </div>
-      <button ref="chatButtonRef" class="chat-fab" @click="toggleChatPanel" :aria-label="showChatPanel ? 'Fechar chat' : 'Abrir chat'">
+      <button
+        ref="chatButtonRef"
+        :class="['chat-fab', { 'avoid-context-nav': shouldLiftFloatingChat }]"
+        @click="toggleChatPanel"
+        :aria-label="showChatPanel ? 'Fechar chat' : 'Abrir chat'"
+      >
         <i :class="showChatPanel ? 'ph ph-x' : 'ph ph-chat-circle-dots'"></i>
         <span v-if="chatHasUnread && !showChatPanel" class="chat-fab-dot"></span>
       </button>
@@ -991,7 +1002,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.fake-icons {
+.device-icons {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -1102,11 +1113,31 @@ onBeforeUnmount(() => {
     bottom: calc(18px + env(safe-area-inset-bottom));
   }
 
+  .chat-fab.avoid-context-nav {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+  }
+
   .chat-fab-panel {
     right: 8px;
     left: 8px;
     width: auto;
     bottom: calc(86px + env(safe-area-inset-bottom));
+  }
+
+  .chat-fab-panel.avoid-context-nav {
+    bottom: calc(160px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 180px);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .chat-fab.avoid-context-nav {
+    bottom: calc(108px + env(safe-area-inset-bottom));
+  }
+
+  .chat-fab-panel.avoid-context-nav {
+    bottom: calc(176px + env(safe-area-inset-bottom));
+    max-height: calc(100vh - 210px);
   }
 }
 </style>

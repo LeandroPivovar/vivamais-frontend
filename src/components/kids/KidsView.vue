@@ -163,6 +163,21 @@ const kidProfileOptions = computed(() => {
   return []
 })
 
+function finishKidsLogin(data) {
+  kidsTeenSession.value = { token: data.token, user: data.user, module: 'kids' }
+  localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
+  dependentsList.value = []
+  activeProfileId.value = 'session'
+  localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
+  kidUser.name = data.user?.name ? data.user.name.split(' ')[0] : kidUser.name
+  saveKidProfile()
+  kidsAudio.playVictory()
+  triggerConfetti()
+  forceAuth.value = false
+  activeTab.value = 'home'
+  window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
+}
+
 watch(() => props.subRoute, (val) => {
   if (val === 'auth') {
     forceAuth.value = true
@@ -182,18 +197,7 @@ async function handleKidsLogin() {
   try {
     const data = await api.post('/auth/login-kids', { cpf: digits, module: 'kids' })
     if (data?.token) {
-      kidsTeenSession.value = { token: data.token, user: data.user, module: 'kids' }
-      localStorage.setItem(KIDS_TEEN_SESSION_KEY, JSON.stringify(kidsTeenSession.value))
-      dependentsList.value = []
-      activeProfileId.value = 'session'
-      localStorage.setItem('viva_kids_active_profile', activeProfileId.value)
-      kidUser.name = data.user?.name ? data.user.name.split(' ')[0] : kidUser.name
-      saveKidProfile()
-      kidsAudio.playVictory()
-      triggerConfetti()
-      forceAuth.value = false
-      activeTab.value = 'home'
-      window.history.pushState({ tab: 'kids-dashboard' }, '', '/kids/dashboard')
+      finishKidsLogin(data)
     }
   } catch (err) {
     loginError.value = err?.message || 'CPF não cadastrado ou sem permissão de acesso.'
@@ -290,6 +294,7 @@ const gamesCurrentPage = ref(1)
 const gamesPerPage = 8
 const gameRewarded = ref(false)
 const gameCountdown = ref(0)
+const gameLoading = ref(false)
 
 const totalGamesPages = computed(() => Math.ceil(GAMES_CATALOG.length / gamesPerPage))
 
@@ -404,17 +409,19 @@ const mathGame = reactive({
   options: [],
   score: 0,
   round: 1,
-  totalRounds: 6,
+  totalRounds: 8,
   done: false,
   status: 'Escolha a resposta certa'
 })
 
-function stopGameTimers({ keepCountdown = false } = {}) {
-  if (!keepCountdown && gameCountdownTimer) {
+function stopGameTimers() {
+  if (gameCountdownTimer) {
+    clearTimeout(gameCountdownTimer)
     clearInterval(gameCountdownTimer)
     gameCountdownTimer = null
-    gameCountdown.value = 0
   }
+  gameCountdown.value = 0
+  gameLoading.value = false
   if (blocksTimer) {
     clearInterval(blocksTimer)
     blocksTimer = null
@@ -439,22 +446,6 @@ function stopGameTimers({ keepCountdown = false } = {}) {
   sequenceTimers = []
 }
 
-function startGameAfterCountdown(game) {
-  stopGameTimers()
-  gameCountdown.value = 5
-  gameCountdownTimer = setInterval(() => {
-    gameCountdown.value -= 1
-    if (gameCountdown.value <= 0) {
-      clearInterval(gameCountdownTimer)
-      gameCountdownTimer = null
-      gameCountdown.value = 0
-      startGameRound(game)
-    } else {
-      kidsAudio.playPop()
-    }
-  }, 1000)
-}
-
 function startGameRound(game) {
   if (!game || activeGame.value?.id !== game.id) return
   if (game.type === 'memory') resetMemoryGame()
@@ -470,8 +461,23 @@ function startGameRound(game) {
 
 function restartActiveGame() {
   if (!activeGame.value) return
+  stopGameTimers()
   gameRewarded.value = false
-  startGameAfterCountdown(activeGame.value)
+  gameLoading.value = false
+  gameCountdown.value = 3
+  kidsAudio.playPop()
+
+  gameCountdownTimer = setInterval(() => {
+    gameCountdown.value -= 1
+    if (gameCountdown.value <= 0) {
+      clearInterval(gameCountdownTimer)
+      gameCountdownTimer = null
+      gameCountdown.value = 0
+      startGameRound(activeGame.value)
+    } else {
+      kidsAudio.playPop()
+    }
+  }, 1000)
 }
 
 function awardGameStars(amount, reason) {
@@ -956,15 +962,45 @@ function pressSequenceColor(colorId) {
 }
 
 function buildMathQuestion() {
-  const a = Math.floor(Math.random() * 9) + 1
-  const b = Math.floor(Math.random() * 9) + 1
-  const useMultiply = mathGame.round > 3 && Math.random() > 0.5
-  const answer = useMultiply ? a * b : a + b
-  const question = useMultiply ? `${a} x ${b}` : `${a} + ${b}`
-  const optionSet = new Set([answer])
-  while (optionSet.size < 3) {
-    optionSet.add(Math.max(1, answer + Math.floor(Math.random() * 9) - 4))
+  const opRand = Math.random()
+  const op = opRand < 0.45 ? '+' : (opRand < 0.8 ? '-' : 'x')
+  let a, b, answer, question
+
+  if (op === '+') {
+    a = Math.floor(Math.random() * 12) + 1
+    b = Math.floor(Math.random() * 10) + 1
+    answer = a + b
+    question = `${a} + ${b} = ?`
+  } else if (op === '-') {
+    b = Math.floor(Math.random() * 8) + 1
+    a = b + Math.floor(Math.random() * 10) + 1
+    answer = a - b
+    question = `${a} - ${b} = ?`
+  } else {
+    a = [2, 3, 4, 5][Math.floor(Math.random() * 4)]
+    b = Math.floor(Math.random() * 5) + 1
+    answer = a * b
+    question = `${a} × ${b} = ?`
   }
+
+  const optionSet = new Set([answer])
+  const offsets = [-3, -2, -1, 1, 2, 3, 4]
+  shuffleList(offsets).forEach(offset => {
+    if (optionSet.size < 3) {
+      const candidate = answer + offset
+      if (candidate > 0 && candidate !== answer) {
+        optionSet.add(candidate)
+      }
+    }
+  })
+  let fallback = 1
+  while (optionSet.size < 3) {
+    if (!optionSet.has(fallback) && fallback !== answer) {
+      optionSet.add(fallback)
+    }
+    fallback++
+  }
+
   mathGame.question = question
   mathGame.answer = answer
   mathGame.options = shuffleList([...optionSet])
@@ -1002,10 +1038,16 @@ function launchGame(game) {
   stopGameTimers()
   activeGame.value = game
   gameRewarded.value = false
+  gameLoading.value = true
+  gameCountdown.value = 0
   kidsAudio.playPop()
-  nextTick(() => {
-    startGameAfterCountdown(game)
-  })
+
+  const loadingDelay = Math.floor(4000 + Math.random() * 2000)
+  gameCountdownTimer = setTimeout(() => {
+    gameLoading.value = false
+    gameCountdownTimer = null
+    startGameRound(game)
+  }, loadingDelay)
 }
 
 function closeGame() {
@@ -1137,12 +1179,11 @@ function initFreehandCanvas({ restoreDraft = true } = {}) {
   freehandCtx = canvas.getContext('2d')
 
   const container = canvas.parentElement
-  const width = Math.max(Math.floor(container?.clientWidth || 600) - 44, 300)
-  const height = window.innerWidth <= 768
-    ? Math.max(Math.min(window.innerHeight * 0.46, 430), 320)
-    : Math.max(Math.min(window.innerHeight * 0.6, 520), 380)
+  const availableWidth = Math.max(Math.floor(container?.clientWidth || 600) - 24, 280)
+  const targetWidth = Math.min(availableWidth, 840)
+  const targetHeight = Math.round(targetWidth * 0.62)
 
-  const canvasSize = setCanvasDisplaySize(canvas, width, height)
+  const canvasSize = setCanvasDisplaySize(canvas, targetWidth, targetHeight)
 
   freehandCtx.fillStyle = '#ffffff'
   freehandCtx.fillRect(0, 0, canvasSize.width, canvasSize.height)
@@ -1403,10 +1444,11 @@ function loadColoringTemplate(id, { restoreDraft = true } = {}) {
   paintCtx = canvas.getContext('2d')
 
   const container = canvas.parentElement
-  const width = Math.max(Math.floor(container?.clientWidth || 600) - 44, 300)
-  const height = Math.max(Math.min(window.innerHeight * 0.6, 520), 380)
+  const availableWidth = Math.max(Math.floor(container?.clientWidth || 600) - 24, 280)
+  const targetWidth = Math.min(availableWidth, 840)
+  const targetHeight = Math.round(targetWidth * 0.62)
 
-  const canvasSize = setCanvasDisplaySize(canvas, width, height)
+  const canvasSize = setCanvasDisplaySize(canvas, targetWidth, targetHeight)
 
   const savedDraft = restoreDraft ? localStorage.getItem(getCreativeDraftKey('paint', id)) : null
   if (savedDraft) {
@@ -1619,10 +1661,32 @@ function onWindowClick(e) {
   }
 }
 
+let resizeCanvasTimer = null
+function handleWindowResize() {
+  syncPaintPickerLayout()
+  clearTimeout(resizeCanvasTimer)
+  resizeCanvasTimer = setTimeout(() => {
+    if (activeTab.value === 'draw' && freehandCanvasRef.value) {
+      const data = freehandCanvasRef.value.toDataURL()
+      initFreehandCanvas({ restoreDraft: false })
+      if (data && freehandCtx) {
+        drawDataUrlOnCanvas(freehandCtx, freehandCanvasRef.value, data)
+      }
+    }
+    if (activeTab.value === 'paint' && paintCanvasRef.value) {
+      const data = paintCanvasRef.value.toDataURL()
+      loadColoringTemplate(activeColoringId.value, { restoreDraft: false })
+      if (data && paintCtx) {
+        drawDataUrlOnCanvas(paintCtx, paintCanvasRef.value, data)
+      }
+    }
+  }, 150)
+}
+
 onMounted(async () => {
   document.addEventListener('click', onWindowClick)
   window.addEventListener('keydown', onGameKeydown)
-  window.addEventListener('resize', syncPaintPickerLayout)
+  window.addEventListener('resize', handleWindowResize)
   syncPaintPickerLayout()
   loadKidProfile(activeProfileId.value)
   await fetchDependents()
@@ -1632,7 +1696,7 @@ onBeforeUnmount(() => {
   saveCreativeDrafts()
   document.removeEventListener('click', onWindowClick)
   window.removeEventListener('keydown', onGameKeydown)
-  window.removeEventListener('resize', syncPaintPickerLayout)
+  window.removeEventListener('resize', handleWindowResize)
   stopGameTimers()
 })
 
@@ -2429,7 +2493,16 @@ watch(() => props.user, () => {
         </div>
 
         <div class="game-play-area">
-          <div v-if="gameCountdown > 0" class="game-countdown-overlay" aria-live="polite">
+          <div v-if="gameLoading" class="game-loading-overlay" aria-live="polite">
+            <div class="kid-loader-box">
+              <div class="kid-loader-ring"></div>
+              <div class="kid-loader-star">⭐</div>
+            </div>
+            <strong class="game-loading-title">Carregando o jogo...</strong>
+            <span class="game-loading-sub">Preparando uma super aventura para você!</span>
+          </div>
+
+          <div v-else-if="gameCountdown > 0" class="game-countdown-overlay" aria-live="polite">
             <span>Prepare-se</span>
             <strong>{{ gameCountdown }}</strong>
           </div>
@@ -3096,7 +3169,7 @@ watch(() => props.user, () => {
     min-height: 100vh;
     display: grid;
     grid-template-columns: 1fr;
-    grid-template-rows: 58vh 42vh;
+    grid-template-rows: 50vh 50vh;
     gap: 0;
     padding: 0;
     width: 100vw;
@@ -3110,7 +3183,10 @@ watch(() => props.user, () => {
     align-items: flex-start;
     justify-content: center;
     width: 100%;
-    min-height: 58vh;
+    height: 100%;
+    min-height: 48vh;
+    padding: 0;
+    box-sizing: border-box;
     background:
       radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.62) 0 42px, transparent 43px),
       radial-gradient(circle at 82% 22%, rgba(255, 255, 255, 0.5) 0 34px, transparent 35px),
@@ -3123,8 +3199,10 @@ watch(() => props.user, () => {
     width: 100%;
     height: 100%;
     max-width: none;
+    max-height: none;
     object-fit: cover;
     object-position: center top;
+    transform: none;
   }
 
   .kids-auth-form-col {
@@ -3136,11 +3214,11 @@ watch(() => props.user, () => {
     border-radius: 32px 32px 0 0;
     background: #ffffff;
     box-shadow: 0 -14px 34px rgba(15, 23, 42, 0.10);
-    padding: 42px 22px 28px;
+    padding: 22px 22px 24px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-end;
     align-items: center;
     position: relative;
     z-index: 10;
@@ -3162,7 +3240,7 @@ watch(() => props.user, () => {
     font-weight: 800;
     color: #052453;
     text-align: center;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
 
   .kids-auth-card .card-desc {
@@ -3170,7 +3248,7 @@ watch(() => props.user, () => {
     font-size: 0.88rem;
     color: #64748b;
     text-align: center;
-    margin: 0 0 16px 0;
+    margin: 0 0 12px 0;
     line-height: 1.4;
   }
 
@@ -3179,8 +3257,8 @@ watch(() => props.user, () => {
   }
 
   .kids-custom-form {
-    margin-top: 10px;
-    gap: 12px;
+    margin-top: 6px;
+    gap: 10px;
   }
 
   .kids-auth-card .form-group-custom label {
@@ -3211,6 +3289,14 @@ watch(() => props.user, () => {
 
   .kids-auth-card .btn-auth-action i {
     display: none;
+  }
+}
+
+@media (max-width: 768px) and (min-height: 820px) {
+  .kids-auth-form-col {
+    min-height: calc(50vh + 34px);
+    padding: 28px 22px 32px;
+    justify-content: center;
   }
 }
 
@@ -4119,7 +4205,7 @@ watch(() => props.user, () => {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  width: 64%;
+  width: 100%;
   position: relative;
   z-index: 2;
 }
@@ -4191,7 +4277,7 @@ watch(() => props.user, () => {
   position: absolute;
   right: 0;
   bottom: -2px;
-  width: min(48%, 250px);
+  width: min(40%, 210px);
   height: auto;
   object-fit: contain;
   pointer-events: none;
@@ -4200,21 +4286,21 @@ watch(() => props.user, () => {
 }
 
 .games-illustration {
-  right: -22px;
-  bottom: -22px;
-  width: min(58%, 286px);
+  right: -10px;
+  bottom: -12px;
+  width: min(48%, 235px);
 }
 
 .paint-illustration {
   right: -8px;
   bottom: -10px;
-  width: min(50%, 258px);
+  width: min(42%, 222px);
 }
 
 .draw-illustration {
   right: -8px;
   bottom: -8px;
-  width: min(48%, 248px);
+  width: min(40%, 210px);
 }
 
 .btn-outline-mint {
@@ -4267,7 +4353,7 @@ watch(() => props.user, () => {
     min-height: 170px;
   }
   .card-top-content {
-    width: 58%;
+    width: 100%;
   }
   .card-illustration {
     width: min(38%, 230px);
@@ -4296,7 +4382,7 @@ watch(() => props.user, () => {
   }
   .card-top-content {
     width: 100%;
-    padding-right: 118px;
+    padding-right: 0;
   }
   .card-icon-box {
     width: 48px;
@@ -4323,7 +4409,7 @@ watch(() => props.user, () => {
 /* --- SALA DE JOGOS (BANNER COM MENINO E GRID DE 4 COLUNAS) --- */
 .games-hero-banner-container {
   position: relative;
-  width: 100%;
+  width: 100% !important;
   height: clamp(280px, 28vw, 405px);
   max-height: 405px;
   border-radius: 34px;
@@ -4338,7 +4424,7 @@ watch(() => props.user, () => {
 }
 
 .games-hero-img {
-  width: 100%;
+  width: 100% !important;
   height: 100%;
   display: block;
   object-fit: cover;
@@ -4446,7 +4532,7 @@ watch(() => props.user, () => {
   }
   .games-hero-content {
     position: absolute !important;
-    width: 64% !important;
+    width: 100% !important;
     padding: 12px 16px !important;
     background: transparent !important;
   }
@@ -5132,6 +5218,7 @@ watch(() => props.user, () => {
   color: #ffffff;
 }
 
+
 .paint-palette-bar {
   display: flex;
   align-items: center;
@@ -5158,21 +5245,21 @@ watch(() => props.user, () => {
 .palette-swatches-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-wrap: wrap;
-  flex: 1 1 420px;
-  min-width: min(100%, 240px);
-  max-width: 100%;
+  width: 100%;
 }
 
 .swatch-btn {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
   border-radius: 50%;
   border: 2px solid #ffffff;
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
 }
 
 .swatch-btn:hover {
@@ -5558,18 +5645,21 @@ watch(() => props.user, () => {
 .lousa-swatches-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .lousa-swatch-btn {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
   border-radius: 50%;
   border: 2px solid #ffffff;
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
 }
 
 .lousa-swatch-btn:hover {
@@ -6113,12 +6203,17 @@ watch(() => props.user, () => {
   background: #ffffff;
   border-radius: 22px;
   border: 1.5px solid #f1f5f9;
-  padding: 18px 16px;
+  padding: 28px 16px 18px;
   display: flex;
   align-items: center;
   gap: 12px;
   box-shadow: 0 4px 16px rgba(5, 36, 83, 0.03);
   position: relative;
+}
+
+.ach-body {
+  min-width: 0;
+  padding-right: 4px;
 }
 
 .ach-card.card-unlocked {
@@ -6167,6 +6262,7 @@ watch(() => props.user, () => {
   font-weight: 800;
   color: #052453;
   margin: 0 0 3px;
+  line-height: 1.15;
 }
 
 .ach-body p {
@@ -6178,23 +6274,26 @@ watch(() => props.user, () => {
 
 .ach-status-badge {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  font-size: 0.72rem;
+  top: 8px;
+  right: 16px;
+  font-size: 0.68rem;
   font-weight: 800;
   color: #d97706;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .ach-progress-pill {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 8px;
+  right: 16px;
   font-size: 0.75rem;
   font-weight: 700;
   background: #f1f5f9;
   color: #64748b;
   padding: 2px 8px;
   border-radius: 50px;
+  line-height: 1.1;
 }
 
 .profile-section-header-bar {
@@ -6522,6 +6621,80 @@ watch(() => props.user, () => {
   font-size: 0.86rem;
 }
 
+.game-play-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: clamp(12px, 2vw, 20px);
+  background: #f8fafc;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.game-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  color: #052453;
+  text-align: center;
+  padding: 20px;
+}
+
+.game-loading-spinner {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  display: grid;
+  place-items: center;
+}
+
+.spinner-orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 5px solid #e0f2fe;
+  border-top-color: #00b9b5;
+  border-right-color: #f59e0b;
+  animation: gameSpin 1s linear infinite;
+}
+
+.spinner-stars {
+  font-size: 2.2rem;
+  animation: starPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes gameSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes starPulse {
+  from { transform: scale(0.85); }
+  to { transform: scale(1.18) rotate(15deg); }
+}
+
+.game-loading-title {
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: #052453;
+}
+
+.game-loading-sub {
+  font-size: 0.9rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
 .btn-close-game {
   background: rgba(255, 255, 255, 0.2);
   border: none;
@@ -6531,15 +6704,6 @@ watch(() => props.user, () => {
   border-radius: 50%;
   font-size: 1rem;
   cursor: pointer;
-}
-
-.game-play-area {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  padding: clamp(14px, 2.2vw, 22px);
-  background: #f8fafc;
-  overflow: hidden;
 }
 
 .game-countdown-overlay {
@@ -7158,7 +7322,7 @@ watch(() => props.user, () => {
   }
 
   .card-top-content {
-    width: 66%;
+    width: 100%;
     gap: 12px;
   }
 
@@ -7298,7 +7462,7 @@ watch(() => props.user, () => {
   }
 
   .card-top-content {
-    width: min(68%, 320px);
+    width: 100%;
   }
 
   .kids-games-grid {
@@ -7359,7 +7523,7 @@ watch(() => props.user, () => {
   }
 
   .card-top-content {
-    width: 64%;
+    width: 100%;
   }
 }
 
@@ -7540,4 +7704,192 @@ watch(() => props.user, () => {
   font-size: 0.95rem;
 }
 
+
+@media (max-width: 768px) {
+  .kids-app-container,
+  .kids-dashboard-view {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .kids-top-header {
+    width: 100%;
+    max-width: 100vw;
+    min-height: 62px;
+    padding: 9px 12px;
+    gap: 8px;
+    box-sizing: border-box;
+    overflow: visible;
+  }
+
+  .kids-brand {
+    min-width: 0;
+    max-width: calc(100vw - 70px);
+    gap: 7px;
+    overflow: hidden;
+  }
+
+  .kids-logo-img {
+    height: 30px;
+    max-width: 132px;
+  }
+
+  .badge-kids {
+    flex: 0 0 auto;
+    font-size: 0.66rem;
+    padding: 2px 7px;
+  }
+
+  .kids-desktop-nav {
+    display: none !important;
+  }
+
+  .kids-header-right {
+    flex: 0 0 auto;
+    margin-left: auto;
+    gap: 0;
+  }
+
+  .kids-profile-menu-btn {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .kids-main-body {
+    width: 100%;
+    max-width: 100vw;
+    padding: 14px 12px calc(94px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .kids-hero-banner-container {
+    border-radius: 24px;
+    margin-bottom: 22px;
+  }
+
+  .kids-hero-img {
+    border-radius: 24px;
+  }
+
+  .section-title {
+    display: block;
+    max-width: 100%;
+    font-size: clamp(1.45rem, 7.2vw, 1.85rem);
+    line-height: 1.18;
+    margin: 0 auto 22px;
+    padding: 0 6px;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .hub-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    width: 100%;
+  }
+
+  .hub-card {
+    min-height: 222px;
+    padding: 18px 18px 16px;
+    border-radius: 22px;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .card-top-content {
+    width: 100%;
+    max-width: 100%;
+    padding-right: 0;
+    flex-direction: row;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .card-icon-box {
+    width: 50px;
+    flex: 0 0 50px;
+    height: 50px;
+    border-radius: 13px;
+    font-size: 25px;
+  }
+
+  .card-text-col {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .card-text-col h3 {
+    font-size: 1.2rem;
+    line-height: 1.22;
+    margin-bottom: 6px;
+  }
+
+  .card-text-col p {
+    max-width: 100%;
+    font-size: 0.88rem;
+    line-height: 1.48;
+  }
+
+  .card-illustration,
+  .games-illustration,
+  .paint-illustration,
+  .draw-illustration {
+    width: min(36%, 126px);
+    max-height: 118px;
+    right: 12px;
+    bottom: 14px;
+    object-fit: contain;
+  }
+
+  .paint-illustration {
+    width: min(42%, 142px);
+  }
+
+  .btn-card-action {
+    align-self: flex-start;
+    margin-top: auto;
+    max-width: calc(100% - 8px);
+    min-height: 44px;
+    padding: 8px 17px;
+    white-space: nowrap;
+  }
+
+  .kids-bottom-bar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    width: 100%;
+    max-width: 100vw;
+    padding: 7px 6px calc(8px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    z-index: 250;
+  }
+
+  .bottom-item {
+    min-width: 0;
+    padding: 4px 2px;
+    gap: 3px;
+    font-size: 0.66rem;
+    line-height: 1.1;
+    overflow: hidden;
+  }
+
+  .bottom-item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bottom-ico {
+    font-size: 1.24rem;
+  }
+}
 </style>
+

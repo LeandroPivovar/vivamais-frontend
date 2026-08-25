@@ -474,6 +474,29 @@ const filteredReferrals = computed(() => {
 
 const totalPages = computed(() => Math.ceil(filteredReferrals.value.length / itemsPerPage.value) || 1)
 
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+  if (total <= 3) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  let start = current - 1
+  let end = current + 1
+  if (start < 1) {
+    start = 1
+    end = 3
+  }
+  if (end > total) {
+    end = total
+    start = total - 2
+  }
+  const pages = []
+  for (let i = start; i <= end; i++) {
+    pages.push(i)
+  }
+  return pages
+})
+
 const paginatedReferrals = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage.value
   return filteredReferrals.value.slice(start, start + itemsPerPage.value)
@@ -1690,12 +1713,12 @@ onMounted(async () => {
 
       <!-- SUB-ABA 2: MEUS INDICADOS -->
       <div v-if="activeRefTab === 'indicados'" class="ref-sub-content">
-        <header class="tab-header animated-item" style="animation-delay: 0.05s; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+        <header class="tab-header animated-item" style="animation-delay: 0.05s; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
           <div>
-            <h2>Meus Indicados</h2>
-            <p>Lista completa de todas as pessoas da sua rede.</p>
+            <h2 style="margin: 0 0 6px; font-size: 24px; color: var(--secondary);">Meus Indicados</h2>
+            <p style="margin: 0; color: var(--text-gray); font-size: 14px;">Lista completa de todas as pessoas da sua rede.</p>
           </div>
-          <button class="btn btn-secondary" @click="openReferralTree">
+          <button class="btn btn-secondary" @click="openReferralTree" style="display:inline-flex; align-items:center; gap:8px;">
             <i class="ph ph-tree-structure"></i> Ver hierarquia
           </button>
         </header>
@@ -1828,12 +1851,12 @@ onMounted(async () => {
                 @click="setPage(currentPage - 1)" 
                 title="Página Anterior"
               >
-                <i class="ph ph-caret-left"></i> Anterior
+                <i class="ph ph-caret-left"></i>
               </button>
 
               <div class="pagination-pages">
                 <button 
-                  v-for="page in totalPages" 
+                  v-for="page in visiblePages" 
                   :key="page" 
                   :class="['btn-page-number', { active: page === currentPage }]" 
                   @click="setPage(page)"
@@ -1848,7 +1871,7 @@ onMounted(async () => {
                 @click="setPage(currentPage + 1)" 
                 title="Próxima Página"
               >
-                Próxima <i class="ph ph-caret-right"></i>
+                <i class="ph ph-caret-right"></i>
               </button>
 
               <button 
