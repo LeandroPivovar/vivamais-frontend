@@ -2717,6 +2717,30 @@ onMounted(async () => {
       </div>
     </div>
 
+    <nav v-if="currentTab === 'perfil'" class="context-bottom-nav account-bottom-nav">
+      <button
+        :class="['context-bottom-tab', { active: profileTab === 'basicas' }]"
+        @click="profileTab = 'basicas'"
+      >
+        <i class="ph ph-user"></i>
+        <span>Dados</span>
+      </button>
+      <button
+        :class="['context-bottom-tab', { active: profileTab === 'seguranca' }]"
+        @click="profileTab = 'seguranca'"
+      >
+        <i class="ph ph-lock-key"></i>
+        <span>Segurança</span>
+      </button>
+      <button
+        :class="['context-bottom-tab', { active: profileTab === 'endereco' }]"
+        @click="profileTab = 'endereco'"
+      >
+        <i class="ph ph-map-pin"></i>
+        <span>Endereço</span>
+      </button>
+    </nav>
+
   </div>
 </template>
 
@@ -2840,6 +2864,9 @@ onMounted(async () => {
   font-size: 32px;
   color: white;
   margin-top: 4px;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+  text-wrap: balance;
 }
 
 .slide-content p {
@@ -2995,6 +3022,86 @@ onMounted(async () => {
   gap: 30px;
 }
 
+@media (min-width: 768px) and (max-width: 1366px) {
+  .dashboard-wrapper {
+    gap: 20px;
+    overflow-x: hidden;
+  }
+
+  .dashboard-wrapper.desktop .welcome-section {
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .dashboard-wrapper.desktop .welcome-text h1 {
+    font-size: clamp(26px, 3vw, 32px);
+    letter-spacing: 0;
+  }
+
+  .plan-pill {
+    max-width: 100%;
+  }
+
+  .banner-slider {
+    height: clamp(260px, 29vw, 340px);
+    border-radius: 14px;
+  }
+
+  .slide-item {
+    padding: clamp(28px, 4vw, 40px);
+    background-position: 62% center;
+  }
+
+  .slide-content {
+    max-width: min(55%, 430px);
+  }
+
+  .slide-content h2 {
+    font-size: clamp(24px, 3vw, 32px);
+    line-height: 1.18;
+  }
+
+  .slide-content p {
+    font-size: 14px;
+    max-width: 38ch;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-tabs,
+  .referral-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .account-tabs::-webkit-scrollbar,
+  .referral-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .shortcut-card,
+  .digital-card-preview,
+  .financial-main-card,
+  .financial-history-card,
+  .activities-card {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .billing-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1180px) {
+  .dashboard-grid,
+  .financial-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 992px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -3061,6 +3168,25 @@ onMounted(async () => {
   font-weight: 700;
   border-bottom: 2px solid var(--primary) !important;
   margin-bottom: -2px;
+}
+
+.dashboard-wrapper.pwa .referral-tabs {
+  display: none;
+}
+
+.dashboard-wrapper.pwa .account-tabs {
+  display: none;
+}
+
+.context-bottom-nav {
+  display: none;
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .dashboard-wrapper.desktop .referral-tabs,
+  .dashboard-wrapper.desktop .account-tabs {
+    display: none;
+  }
 }
 
 /* Abas de "Minha Conta" */
@@ -3160,12 +3286,14 @@ onMounted(async () => {
 
 .shortcut-details {
   flex-grow: 1;
+  min-width: 0;
 }
 
 .shortcut-details h3 {
   font-size: 15px;
   color: var(--text-dark);
   margin-bottom: 2px;
+  overflow-wrap: break-word;
 }
 
 .dashboard-wrapper.desktop .shortcut-details h3 {
@@ -3178,6 +3306,7 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--text-gray);
   margin-bottom: 0;
+  overflow-wrap: break-word;
 }
 
 .dashboard-wrapper.desktop .shortcut-details p {
@@ -3688,8 +3817,11 @@ onMounted(async () => {
 }
 
 .pwa .banner-slider {
-  height: 232px;
-  background: var(--primary);
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 292px;
+  background: #0d4694;
 }
 
 .pwa .slider-track {
@@ -3697,9 +3829,40 @@ onMounted(async () => {
 }
 
 .pwa .slide-item {
-  padding: 24px;
-  background-image: none !important;
-  background-color: var(--primary) !important;
+  position: relative;
+  overflow: hidden;
+  padding: 30px 28px;
+  background-image:
+    linear-gradient(146deg, #1256a8 0%, #0d4694 48%, #073272 100%) !important;
+  background-color: #0b3f8a !important;
+  min-width: 100%;
+  min-height: 292px;
+  height: auto;
+  align-items: stretch;
+}
+
+.pwa .slide-item::before {
+  content: '';
+  position: absolute;
+  left: -18%;
+  right: -16%;
+  bottom: -42%;
+  height: 64%;
+  background: linear-gradient(90deg, rgba(58, 178, 190, 0.32), rgba(255, 255, 255, 0.12));
+  border-radius: 50% 50% 0 0 / 62% 62% 0 0;
+  pointer-events: none;
+}
+
+.pwa .slide-item::after {
+  content: '';
+  position: absolute;
+  left: 38%;
+  right: -28%;
+  top: -34%;
+  height: 58%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(58, 178, 190, 0.08));
+  border-radius: 0 0 50% 50% / 0 0 70% 70%;
+  pointer-events: none;
 }
 
 .pwa .slide-item:nth-child(n + 2) {
@@ -3707,25 +3870,43 @@ onMounted(async () => {
 }
 
 .pwa .slide-content {
-  max-width: 100%;
+  position: relative;
+  z-index: 1;
+  width: min(100%, 24ch);
+  min-width: 0;
+  max-width: calc(100% - 4px);
   gap: 10px;
+  justify-content: center;
+  overflow: visible;
 }
 
 .pwa .slide-content h2 {
-  max-width: 310px;
-  font-size: 23px;
-  line-height: 1.25;
+  width: 100%;
+  max-width: 100%;
+  font-size: clamp(20px, 5.6vw, 24px);
+  line-height: 1.2;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+  white-space: normal !important;
+  text-wrap: wrap;
 }
 
 .pwa .slide-content p {
-  max-width: 310px;
+  width: 100%;
+  max-width: 27ch;
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: break-word;
+  white-space: normal !important;
 }
 
 .pwa .slide-content .btn {
-  min-width: 166px;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
   padding: 11px 18px;
+  white-space: normal;
 }
 
 .pwa .slide-indicator-container {
@@ -3735,6 +3916,45 @@ onMounted(async () => {
 .pwa .dashboard-grid {
   grid-template-columns: 1fr;
   gap: 20px;
+}
+
+.pwa .welcome-section,
+.pwa .plan-pill,
+.pwa .metric-card,
+.pwa .shortcut-card,
+.pwa .digital-card-preview,
+.pwa .financial-main-card,
+.pwa .financial-history-card,
+.pwa .activities-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pwa .welcome-text {
+  min-width: 0;
+}
+
+.pwa .welcome-text h1,
+.pwa .metric-card h3,
+.pwa .metric-card p,
+.pwa .shortcut-details h3,
+.pwa .shortcut-details p,
+.pwa .dcard-body h3 {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+.pwa .metric-header {
+  min-width: 0;
+}
+
+.pwa .metric-header span {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.pwa .action-arrow {
+  flex-shrink: 0;
 }
 
 .pwa .financial-grid {
@@ -4154,5 +4374,94 @@ onMounted(async () => {
   color: #94a3b8;
   justify-content: center;
   text-align: center;
+}
+
+@media (min-width: 768px) and (max-width: 1180px) {
+  .dashboard-grid,
+  .financial-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .financial-grid,
+  .financial-main-card,
+  .financial-history-card,
+  .referral-tree-container {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .invoice-item-v2,
+  .detail-row,
+  .inv-info {
+    min-width: 0;
+  }
+}
+
+.dashboard-wrapper.pwa .context-bottom-nav {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 1200;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  background: #ffffff;
+  border-top: 1px solid var(--border-color);
+  padding: 8px 8px max(10px, env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 14px rgba(15, 58, 74, 0.08);
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .dashboard-wrapper.desktop .context-bottom-nav {
+    position: fixed;
+    left: 50%;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    z-index: 1200;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: min(520px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 22px;
+    padding: 8px;
+    box-shadow: 0 18px 44px rgba(15, 58, 74, 0.18);
+  }
+}
+
+.context-bottom-tab {
+  min-width: 0;
+  min-height: 58px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text-gray);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.context-bottom-tab i {
+  font-size: 1.25rem;
+}
+
+.context-bottom-tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-bottom-tab.active {
+  background: var(--primary-light);
+  color: var(--secondary);
 }
 </style>

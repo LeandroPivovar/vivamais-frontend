@@ -428,20 +428,20 @@ function handleTeenLogout() {
     <!-- ================================================================= -->
     <div v-if="showAuthScreen" class="teen-auth-shell">
       <header class="teen-auth-topbar">
-        <button class="teen-auth-brand" type="button" @click="emit('goHome')">
+        <div class="teen-auth-brand">
           <img src="/logo.png" alt="Viva Mais Club" class="teen-auth-logo" />
           <span class="badge-teen-tag">TEEN</span>
-        </button>
+        </div>
       </header>
 
       <main class="teen-auth-screen">
         <section class="teen-auth-visual" aria-label="Estudo de idiomas">
-          <img src="/teen/auth-language-student.png" alt="Aluna assistindo aula de idiomas no notebook" class="teen-auth-illustration-img" />
+          <img src="/teen/auth-language-student.png" alt="Estudante em aula de idiomas" class="teen-auth-illustration-img" />
         </section>
 
         <div class="teen-auth-card">
 
-        <h2>Aulas de Idiomas Ao Vivo</h2>
+        <h2>Entre na sua conta</h2>
         <p>Digite o CPF do dependente Teen com assinatura ativa para assistir às aulas ao vivo e consultar o cronograma.</p>
 
         <div v-if="loginError" class="alert-error-box">
@@ -461,10 +461,6 @@ function handleTeenLogout() {
             <span>{{ loginLoading ? 'Autenticando...' : 'Entrar na Plataforma' }}</span>
           </button>
         </form>
-
-        <button class="btn-back-club-link" @click="emit('goHome')">
-          <i class="ph ph-arrow-left"></i> Voltar ao Viva Mais Club Principal
-        </button>
         </div>
       </main>
     </div>
@@ -522,13 +518,12 @@ function handleTeenLogout() {
 
               <div v-if="showProfileMenu" class="teen-dropdown-card">
                 <div class="dropdown-head">
-                  <strong>{{ activeProfile.name }}</strong>
-                  <small>{{ activeProfile.level }}</small>
+                  <strong>Trocar dependente</strong>
+                  <small>{{ activeProfile.name }}</small>
                 </div>
 
                 <div v-if="availableProfiles.length > 1">
                   <div class="dropdown-divider"></div>
-                  <div class="dropdown-section-title">Trocar Aluno</div>
                   <button 
                     v-for="prof in availableProfiles" 
                     :key="prof.id"
@@ -539,17 +534,7 @@ function handleTeenLogout() {
                     <span class="avatar-initials-mini">{{ prof.initials }}</span> {{ prof.name }}
                   </button>
                 </div>
-
-                <div class="dropdown-divider"></div>
-                <button class="dropdown-option-btn text-purple" @click="showAdminPanel = true; showProfileMenu = false">
-                  <i class="ph ph-gear"></i> Painel Admin (Aulas e Cursos)
-                </button>
-                <button class="dropdown-option-btn text-primary" @click="emit('goHome')">
-                  <i class="ph ph-house"></i> Voltar ao Viva Mais Club
-                </button>
-                <button class="dropdown-option-btn text-danger" @click="handleTeenLogout">
-                  <i class="ph ph-sign-out"></i> Sair da Conta
-                </button>
+                <p v-else class="dropdown-empty-note">Nenhum outro dependente disponível.</p>
               </div>
             </div>
 
@@ -1358,7 +1343,6 @@ function handleTeenLogout() {
   border: 0;
   background: transparent;
   padding: 0;
-  cursor: pointer;
   font-family: inherit;
 }
 
@@ -1783,8 +1767,6 @@ function handleTeenLogout() {
 .btn-full-teen { width: 100%; padding: 12px; background: #00b9b5; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: none; }
 .btn-full-teen:hover:not(:disabled) { background: #009c9a; }
 .btn-full-teen:disabled { opacity: 0.72; cursor: not-allowed; }
-.btn-back-club-link { width: 100%; background: transparent; border: none; margin-top: 16px; font-size: 13px; color: #64748B; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
-
 @media (max-width: 960px) {
   .teen-auth-topbar {
     height: 70px;
@@ -1869,6 +1851,93 @@ function handleTeenLogout() {
     padding: 28px 24px;
     margin-left: 0;
     justify-self: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .teen-auth-shell {
+    height: 100vh;
+    min-height: 100vh;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  .teen-auth-topbar {
+    display: none;
+  }
+
+  .teen-auth-screen {
+    height: 100vh;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 58vh 42vh;
+    gap: 0;
+    padding: 0;
+    background: #ffffff;
+    overflow: visible;
+  }
+
+  .teen-auth-visual {
+    order: 1;
+    min-height: 58vh;
+    width: 100%;
+    background: linear-gradient(180deg, #ffffff 0%, #eef7ff 100%);
+    overflow: hidden;
+  }
+
+  .teen-auth-illustration-img {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: cover;
+    object-position: center 22%;
+  }
+
+  .teen-auth-card {
+    order: 2;
+    width: 100%;
+    max-width: none;
+    min-height: calc(42vh + 34px);
+    margin: -34px 0 0;
+    justify-self: stretch;
+    border-radius: 32px 32px 0 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    padding: 52px 22px 28px;
+    box-shadow: 0 -14px 34px rgba(15, 23, 42, 0.10);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .teen-auth-card h2 {
+    font-size: 1.55rem;
+    text-align: center;
+    margin-bottom: 0;
+  }
+
+  .teen-auth-card p {
+    display: none;
+  }
+
+  .teen-auth-form {
+    margin-top: 20px;
+  }
+
+  .teen-auth-form .form-group {
+    margin-bottom: 14px;
+  }
+
+  .teen-auth-card .input-icon-box {
+    min-height: 52px;
+    border-radius: 14px;
+  }
+
+  .teen-auth-card .btn-full-teen {
+    min-height: 52px;
+    border-radius: 14px;
   }
 }
 
@@ -1993,6 +2062,7 @@ function handleTeenLogout() {
 .dropdown-head small { font-size: 11px; color: #64748B; }
 .dropdown-divider { height: 1px; background: #E2E8F0; margin: 6px 0; }
 .dropdown-section-title { font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase; padding: 4px 8px; }
+.dropdown-empty-note { margin: 8px 0 0; font-size: 12px; color: #64748B; }
 
 .dropdown-option-btn {
   width: 100%;
@@ -2020,6 +2090,34 @@ function handleTeenLogout() {
 @media (max-width: 860px) {
   .desktop-only-nav { display: none; }
   .btn-mobile-hamburger { display: block; }
+  .teen-topbar-container {
+    padding: 12px 16px;
+  }
+  .teen-user-avatar-btn {
+    max-width: 160px;
+  }
+  .user-first-name {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .teen-dropdown-card {
+    position: fixed;
+    top: 68px;
+    right: 12px;
+    width: min(300px, calc(100vw - 24px));
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1180px) {
+  .desktop-only-nav {
+    display: none;
+  }
+
+  .btn-mobile-hamburger {
+    display: block;
+  }
 }
 
 /* CONTAINER PRINCIPAL */
@@ -2500,6 +2598,92 @@ function handleTeenLogout() {
 @media (max-width: 768px) {
   .lesson-item-card { grid-template-columns: 1fr; }
   .lesson-thumb-col { height: 90px; min-height: auto; }
+}
+
+@media (min-width: 769px) and (max-width: 1366px) {
+  .teen-main-portal {
+    overflow-x: hidden;
+  }
+
+  .teen-topbar-container {
+    max-width: none;
+    padding: 12px clamp(18px, 3vw, 32px);
+    gap: 14px;
+  }
+
+  .teen-content-container,
+  .live-classroom-container {
+    max-width: none;
+    padding-inline: clamp(18px, 3vw, 32px);
+  }
+
+  .courses-white-grid,
+  .recorded-lessons-grid,
+  .materials-list-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: 18px;
+  }
+
+  .course-hero-banner {
+    gap: 18px;
+  }
+
+  .lesson-item-card {
+    grid-template-columns: minmax(132px, 160px) minmax(0, 1fr);
+  }
+
+  .lesson-timing-row,
+  .lesson-footer-actions,
+  .next-lesson-card-head,
+  .next-lesson-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .calendar-page-header {
+    align-items: flex-start;
+  }
+
+  .calendar-grid-card-large,
+  .calendar-bottom-detail-section {
+    padding: 18px;
+  }
+
+  .calendar-days-grid-large {
+    gap: 8px;
+  }
+
+  .calendar-day-cell-large {
+    height: clamp(76px, 8vw, 92px);
+    min-height: clamp(76px, 8vw, 92px);
+    padding: 8px;
+  }
+
+  .day-lesson-pill-lg {
+    padding-inline: 5px;
+  }
+
+  .bottom-day-lessons-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  }
+
+  .bottom-card-top,
+  .bottom-card-footer {
+    align-items: flex-start;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  .course-hero-banner,
+  .classroom-split-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .next-lesson-highlight-card,
+  .classroom-right-col {
+    max-width: none;
+    width: 100%;
+  }
 }
 
 /* ===============================================================
@@ -3138,7 +3322,8 @@ function handleTeenLogout() {
 
 .mobile-drawer-card {
   width: min(380px, 92vw);
-  height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -3147,6 +3332,19 @@ function handleTeenLogout() {
   padding: 22px;
   overflow-y: auto;
   box-sizing: border-box;
+}
+
+@media (max-width: 860px) {
+  .mobile-drawer-card {
+    width: min(360px, 86vw);
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .mobile-drawer-card {
+    width: min(340px, 86vw);
+  }
 }
 
 @keyframes slideDrawerFromRight {
@@ -3253,5 +3451,58 @@ function handleTeenLogout() {
   height: 1px;
   background: #E2E8F0;
   margin: 12px 0;
+}
+
+@media (min-width: 769px) and (max-width: 1366px) {
+  .teen-main-portal {
+    overflow-x: hidden;
+  }
+
+  .teen-topbar-container,
+  .teen-content-container,
+  .live-classroom-container {
+    max-width: none;
+  }
+
+  .teen-topbar-container {
+    padding-inline: clamp(18px, 3vw, 32px);
+  }
+
+  .teen-content-container,
+  .live-classroom-container {
+    padding-inline: clamp(18px, 3vw, 32px);
+  }
+
+  .courses-white-grid,
+  .recorded-lessons-grid,
+  .materials-list-grid,
+  .bottom-day-lessons-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  }
+
+  .calendar-grid-card-large,
+  .calendar-bottom-detail-section,
+  .module-group-card,
+  .course-card-interactive,
+  .next-lesson-highlight-card {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .calendar-days-grid-large {
+    gap: 8px;
+  }
+
+  .calendar-day-cell-large {
+    height: clamp(76px, 8vw, 92px);
+    min-height: clamp(76px, 8vw, 92px);
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  .course-hero-banner,
+  .classroom-split-layout {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

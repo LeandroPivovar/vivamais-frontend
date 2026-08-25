@@ -1067,6 +1067,7 @@ const activeTool = ref('brush') // 'brush' | 'eraser' | 'stamp'
 const activeStamp = ref('⭐')
 const history = ref([])
 const historyIndex = ref(-1)
+let freehandDraftCleared = false
 
 const SWATCH_COLORS = [
   '#00b9b5', '#052453', '#ffb800', '#ff5a79',
@@ -1083,12 +1084,41 @@ function getCreativeDraftKey(type, suffix = 'main') {
   return `viva_kids_${type}_draft_${activeProfileId.value || 'titular'}_${suffix}`
 }
 
+function getCanvasPixelRatio() {
+  return Math.min(2.5, Math.max(2, window.devicePixelRatio || 1))
+}
+
+function setCanvasDisplaySize(canvas, displayWidth, displayHeight) {
+  const ratio = getCanvasPixelRatio()
+  const width = Math.round(displayWidth * ratio)
+  const height = Math.round(displayHeight * ratio)
+  canvas.width = width
+  canvas.height = height
+  canvas.style.width = `${displayWidth}px`
+  canvas.style.height = `${displayHeight}px`
+  return { width, height, ratio }
+}
+
+function getCanvasRenderScale(canvas) {
+  const rect = canvas.getBoundingClientRect()
+  return canvas.width / Math.max(rect.width, 1)
+}
+
+function clearKidsCreativeDraftCache() {
+  const prefixes = ['viva_kids_draw_draft_', 'viva_kids_paint_draft_']
+  Object.keys(localStorage)
+    .filter(key => prefixes.some(prefix => key.startsWith(prefix)))
+    .forEach(key => localStorage.removeItem(key))
+}
+
 function drawDataUrlOnCanvas(ctx, canvas, dataUrl, afterLoad) {
   const img = new Image()
   img.onload = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
     if (afterLoad) afterLoad()
   }
@@ -1097,10 +1127,11 @@ function drawDataUrlOnCanvas(ctx, canvas, dataUrl, afterLoad) {
 
 function saveFreehandDraft() {
   if (!freehandCanvasRef.value) return
+  if (freehandDraftCleared) return
   localStorage.setItem(getCreativeDraftKey('draw'), freehandCanvasRef.value.toDataURL('image/png'))
 }
 
-function initFreehandCanvas() {
+function initFreehandCanvas({ restoreDraft = true } = {}) {
   const canvas = freehandCanvasRef.value
   if (!canvas) return
   freehandCtx = canvas.getContext('2d')
@@ -1111,15 +1142,14 @@ function initFreehandCanvas() {
     ? Math.max(Math.min(window.innerHeight * 0.46, 430), 320)
     : Math.max(Math.min(window.innerHeight * 0.6, 520), 380)
 
-  canvas.width = width
-  canvas.height = height
+  const canvasSize = setCanvasDisplaySize(canvas, width, height)
 
   freehandCtx.fillStyle = '#ffffff'
-  freehandCtx.fillRect(0, 0, width, height)
+  freehandCtx.fillRect(0, 0, canvasSize.width, canvasSize.height)
   history.value = []
   historyIndex.value = -1
 
-  const savedDraft = localStorage.getItem(getCreativeDraftKey('draw'))
+  const savedDraft = restoreDraft ? localStorage.getItem(getCreativeDraftKey('draw')) : null
   if (savedDraft) {
     drawDataUrlOnCanvas(freehandCtx, canvas, savedDraft, pushFreehandHistory)
   } else {
@@ -1167,10 +1197,11 @@ function redoFreehand() {
 
 function clearFreehand() {
   if (!freehandCanvasRef.value || !freehandCtx) return
+  localStorage.removeItem(getCreativeDraftKey('draw'))
+  freehandDraftCleared = true
   freehandCtx.fillStyle = '#ffffff'
   freehandCtx.fillRect(0, 0, freehandCanvasRef.value.width, freehandCanvasRef.value.height)
   pushFreehandHistory()
-  saveFreehandDraft()
   kidsAudio.playPop()
 }
 
@@ -1189,9 +1220,11 @@ function getCanvasCoords(e, canvas) {
 function startFreehandDraw(e) {
   if (!freehandCanvasRef.value || !freehandCtx) return
   const { x, y } = getCanvasCoords(e, freehandCanvasRef.value)
+  freehandDraftCleared = false
+  const renderScale = getCanvasRenderScale(freehandCanvasRef.value)
 
   if (activeTool.value === 'stamp') {
-    freehandCtx.font = `${brushSize.value * 3 + 20}px 'Fredoka', sans-serif`
+    freehandCtx.font = `${(brushSize.value * 3 + 20) * renderScale}px 'Fredoka', sans-serif`
     freehandCtx.textAlign = 'center'
     freehandCtx.textBaseline = 'middle'
     freehandCtx.fillText(activeStamp.value, x, y)
@@ -1212,13 +1245,14 @@ function startFreehandDraw(e) {
 function freehandDrawMove(e) {
   if (!isDrawing.value || !freehandCanvasRef.value || !freehandCtx) return
   const { x, y } = getCanvasCoords(e, freehandCanvasRef.value)
+  const renderScale = getCanvasRenderScale(freehandCanvasRef.value)
 
   if (activeTool.value === 'eraser') {
     freehandCtx.strokeStyle = '#ffffff'
-    freehandCtx.lineWidth = brushSize.value * 2.2
+    freehandCtx.lineWidth = brushSize.value * 2.2 * renderScale
   } else {
     freehandCtx.strokeStyle = currentColor.value
-    freehandCtx.lineWidth = brushSize.value
+    freehandCtx.lineWidth = brushSize.value * renderScale
   }
 
   freehandCtx.lineTo(x, y)
@@ -1279,6 +1313,7 @@ const paintPickerPage = ref(0)
 const paintPickerPageSize = ref(typeof window !== 'undefined' && window.innerWidth <= 768 ? 1 : 3)
 const freehandZoom = ref(1)
 const paintZoom = ref(1)
+let paintDraftCleared = false
 
 const activeColoringTemplate = computed(() => (
   COLORING_TEMPLATES.find(t => t.id === activeColoringId.value) || COLORING_TEMPLATES[0]
@@ -1311,11 +1346,20 @@ function changePaintPickerPage(direction) {
 
 function savePaintDraft() {
   if (!paintCanvasRef.value) return
+  if (paintDraftCleared) return
   localStorage.setItem(
     getCreativeDraftKey('paint', activeColoringId.value),
     paintCanvasRef.value.toDataURL('image/png')
   )
   localStorage.setItem(getCreativeDraftKey('paint_active'), activeColoringId.value)
+}
+
+function clearPaintDraftCache() {
+  const profileId = activeProfileId.value || 'titular'
+  const prefix = `viva_kids_paint_draft_${profileId}_`
+  Object.keys(localStorage)
+    .filter(key => key.startsWith(prefix))
+    .forEach(key => localStorage.removeItem(key))
 }
 
 function openPaintPicker() {
@@ -1334,6 +1378,8 @@ function selectColoringTemplate(id) {
 
 function resetPaintTemplate() {
   localStorage.removeItem(getCreativeDraftKey('paint', activeColoringId.value))
+  localStorage.removeItem(getCreativeDraftKey('paint_active'))
+  paintDraftCleared = true
   loadColoringTemplate(activeColoringId.value, { restoreDraft: false })
 }
 
@@ -1357,11 +1403,10 @@ function loadColoringTemplate(id, { restoreDraft = true } = {}) {
   paintCtx = canvas.getContext('2d')
 
   const container = canvas.parentElement
-  const width = Math.max(Math.floor(container?.clientWidth || 600) - 20, 300)
+  const width = Math.max(Math.floor(container?.clientWidth || 600) - 44, 300)
   const height = Math.max(Math.min(window.innerHeight * 0.6, 520), 380)
 
-  canvas.width = width
-  canvas.height = height
+  const canvasSize = setCanvasDisplaySize(canvas, width, height)
 
   const savedDraft = restoreDraft ? localStorage.getItem(getCreativeDraftKey('paint', id)) : null
   if (savedDraft) {
@@ -1373,24 +1418,26 @@ function loadColoringTemplate(id, { restoreDraft = true } = {}) {
   img.crossOrigin = 'anonymous'
   img.onload = () => {
     paintCtx.fillStyle = '#ffffff'
-    paintCtx.fillRect(0, 0, width, height)
+    paintCtx.fillRect(0, 0, canvasSize.width, canvasSize.height)
 
     // Ajusta proporção para caber perfeitamente no canvas
-    const drawingMargin = window.innerWidth <= 768 ? 54 : 40
-    const scale = Math.min((width - drawingMargin) / img.width, (height - drawingMargin) / img.height)
+    const drawingMargin = (window.innerWidth <= 768 ? 54 : 40) * canvasSize.ratio
+    const scale = Math.min((canvasSize.width - drawingMargin) / img.width, (canvasSize.height - drawingMargin) / img.height)
     const dw = img.width * scale
     const dh = img.height * scale
-    const dx = (width - dw) / 2
-    const dy = (height - dh) / 2
+    const dx = (canvasSize.width - dw) / 2
+    const dy = (canvasSize.height - dh) / 2
+    paintCtx.imageSmoothingEnabled = true
+    paintCtx.imageSmoothingQuality = 'high'
     paintCtx.drawImage(img, dx, dy, dw, dh)
   }
   img.onerror = () => {
     // Fallback se SVG não carregar
     paintCtx.fillStyle = '#ffffff'
-    paintCtx.fillRect(0, 0, width, height)
-    paintCtx.font = '70px sans-serif'
+    paintCtx.fillRect(0, 0, canvasSize.width, canvasSize.height)
+    paintCtx.font = `${70 * canvasSize.ratio}px sans-serif`
     paintCtx.textAlign = 'center'
-    paintCtx.fillText(tmpl.thumbnailIcon || '🎨', width / 2, height / 2)
+    paintCtx.fillText(tmpl.thumbnailIcon || '🎨', canvasSize.width / 2, canvasSize.height / 2)
   }
   img.src = tmpl.svgUrl
 }
@@ -1473,6 +1520,7 @@ function floodFill(startX, startY, fillColor) {
   }
 
   paintCtx.putImageData(imgData, 0, 0)
+  paintDraftCleared = false
   savePaintDraft()
   kidsAudio.playPop()
 }
@@ -1525,14 +1573,21 @@ function saveCreativeDrafts() {
 }
 
 function switchTab(tab) {
-  saveCreativeDrafts()
+  const previousTab = activeTab.value
+  if (previousTab === tab) return
+
+  if (previousTab === 'draw') saveFreehandDraft()
+  if (previousTab === 'paint' && !showPaintPicker.value) savePaintDraft()
+
   activeTab.value = tab
   showHeaderMenu.value = false
   kidsAudio.playClick()
 
   if (tab === 'draw') {
+    freehandDraftCleared = false
     nextTick(() => initFreehandCanvas())
   } else if (tab === 'paint' && !showPaintPicker.value) {
+    paintDraftCleared = false
     nextTick(() => loadColoringTemplate(activeColoringId.value))
   }
 }
@@ -1542,6 +1597,10 @@ function toggleAudio() {
 }
 
 function handleLogout() {
+  saveCreativeDrafts()
+  clearKidsCreativeDraftCache()
+  freehandDraftCleared = true
+  paintDraftCleared = true
   if (kidsTeenSession.value) {
     kidsTeenSession.value = null
     localStorage.removeItem(KIDS_TEEN_SESSION_KEY)
@@ -1593,7 +1652,7 @@ watch(() => props.user, () => {
       
       <!-- Topbar Header com fundo branco e logo Viva Mais -->
       <header class="kids-auth-topbar">
-        <div class="kids-auth-brand" @click="emit('goHome')" title="Voltar ao Portal Viva Mais Club">
+        <div class="kids-auth-brand">
           <img src="/logo-viva-mais.png" alt="Viva Mais Club" class="brand-logo-img" />
           <span class="badge-kids-pill">KIDS</span>
         </div>
@@ -1601,6 +1660,9 @@ watch(() => props.user, () => {
 
       <!-- Main Body: Card alinhado no lado direito -->
       <div class="kids-auth-main-container">
+        <div class="kids-auth-mobile-visual" aria-hidden="true">
+          <img src="/kids/banners/auth-kids-two-turminha-v1.png" alt="" class="kids-auth-mobile-img" />
+        </div>
         <div class="kids-auth-form-col">
           <div class="kids-auth-card">
             <div class="tab-content-area">
@@ -1630,15 +1692,10 @@ watch(() => props.user, () => {
                 </div>
 
                 <button type="submit" class="btn-auth-action" :disabled="loginLoading">
-                  <span>{{ loginLoading ? 'Entrando...' : 'Continuar' }}</span>
+                  <span>{{ loginLoading ? 'Entrando...' : 'Entrar' }}</span>
                   <i class="ph ph-arrow-right"></i>
                 </button>
               </form>
-
-              <button type="button" class="btn-kids-back-main" @click="emit('goHome')">
-                <i class="ph ph-arrow-left"></i>
-                <span>Voltar ao menu principal</span>
-              </button>
 
               <div class="kids-security-box">
                 <i class="ph-fill ph-shield-check"></i>
@@ -1691,23 +1748,8 @@ watch(() => props.user, () => {
           </button>
         </nav>
 
-        <!-- Lado Direito: Seletor de Criança e Estrelas (Ocultos na barra no mobile) -->
+        <!-- Lado Direito: Estrelas e menu de perfil -->
         <div class="kids-header-right">
-          <!-- Seletor de Perfil da Criança (Desktop) -->
-          <div class="kids-child-pill">
-            <i class="ph-fill ph-user-circle child-icon-ph"></i>
-            <select
-              :value="activeProfileId"
-              @change="switchProfile($event.target.value)"
-              class="kids-dep-select"
-              title="Trocar Perfil da Criança"
-            >
-              <option v-for="dep in kidProfileOptions" :key="dep.id" :value="dep.id">
-                {{ dep.name.split(' ')[0] }}
-              </option>
-            </select>
-          </div>
-
           <!-- Contador de Estrelas (Desktop) -->
           <div class="kids-stars-pill" @click="switchTab('profile')">
             <i class="ph-fill ph-star star-ico-gold"></i>
@@ -2231,17 +2273,10 @@ watch(() => props.user, () => {
                 </div>
                 <div class="profile-info-col">
                   <h1 class="profile-name-title">{{ kidUser.name }}</h1>
-                  <div class="profile-badges-line">
-                    <span class="profile-plan-pill"><i class="ph-fill ph-star"></i> Assinante Viva Mais <i class="ph-bold ph-check"></i></span>
-                    <span class="profile-turmo-pill"><i class="ph-fill ph-plant"></i> Desbravador em Turmo</span>
-                  </div>
+                  <p class="profile-subtitle-text">Assinante Viva Mais · Desbravador em Turma</p>
                 </div>
               </div>
 
-              <button type="button" class="btn-edit-kid-profile" @click="showHeaderMenu = true">
-                <i class="ph-bold ph-pencil-simple-line"></i>
-                <span>Editar meu Perfil</span>
-              </button>
             </div>
           </div>
 
@@ -2641,7 +2676,7 @@ watch(() => props.user, () => {
 
 .kids-app-container {
   font-family: 'Fredoka', 'Manrope', Arial, sans-serif;
-  background: linear-gradient(135deg, #f4fbfd 0%, #e6f8f8 40%, #fff8e5 100%);
+  background: #ffffff;
   min-height: 100vh;
   color: #052453;
   width: 100%;
@@ -2707,6 +2742,7 @@ watch(() => props.user, () => {
   isolation: isolate;
   overflow: hidden;
   flex: 1;
+  background: #ffffff;
 }
 
 .kids-page-decor {
@@ -2856,7 +2892,6 @@ watch(() => props.user, () => {
   display: flex;
   align-items: center;
   gap: 10px;
-  cursor: pointer;
   user-select: none;
 }
 
@@ -2913,6 +2948,10 @@ watch(() => props.user, () => {
   box-sizing: border-box;
   position: relative;
   z-index: 5;
+}
+
+.kids-auth-mobile-visual {
+  display: none;
 }
 
 .kids-auth-main-container::before {
@@ -2978,7 +3017,7 @@ watch(() => props.user, () => {
   z-index: 5;
 }
 
-@media (max-width: 992px) {
+@media (min-width: 769px) and (max-width: 992px) {
   .kids-login-view {
     background-image: url('/kids/banners/auth-kids-mobile-integrated-v1.png');
     background-size: cover;
@@ -3001,6 +3040,177 @@ watch(() => props.user, () => {
   }
   .kids-auth-topbar {
     padding: 16px 20px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1366px) {
+  .kids-login-view {
+    background-image: url('/kids/banners/auth-kids-tablet-no-children-v1.png');
+    background-size: cover;
+    background-position: center bottom;
+  }
+
+  .kids-auth-main-container {
+    justify-content: center;
+    align-items: center;
+    padding: 36px clamp(32px, 5vw, 72px);
+  }
+
+  .kids-auth-form-col {
+    max-width: min(560px, 72vw);
+  }
+
+  .kids-auth-card {
+    padding: clamp(40px, 4vw, 52px) clamp(38px, 4vw, 54px);
+    border-radius: 32px;
+  }
+
+  .kids-auth-card .card-title {
+    font-size: clamp(1.9rem, 3vw, 2.35rem);
+  }
+
+  .kids-auth-card .card-desc {
+    font-size: clamp(1rem, 1.5vw, 1.12rem);
+  }
+
+  .kids-auth-card .btn-auth-action {
+    min-height: 54px;
+    font-size: 1.05rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .kids-login-view {
+    height: 100vh;
+    min-height: 100vh;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  .kids-auth-topbar {
+    display: none;
+  }
+
+  .kids-auth-main-container {
+    height: 100vh;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 58vh 42vh;
+    gap: 0;
+    padding: 0;
+    width: 100vw;
+    max-width: none;
+    background: #ffffff;
+    overflow: visible;
+  }
+
+  .kids-auth-mobile-visual {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    min-height: 58vh;
+    background:
+      radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.62) 0 42px, transparent 43px),
+      radial-gradient(circle at 82% 22%, rgba(255, 255, 255, 0.5) 0 34px, transparent 35px),
+      linear-gradient(180deg, #7fc3ff 0%, #bfeaff 62%, #eef7ff 100%);
+    overflow: hidden;
+  }
+
+  .kids-auth-mobile-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    object-fit: cover;
+    object-position: center top;
+  }
+
+  .kids-auth-form-col {
+    width: 100%;
+    max-width: none;
+    min-height: calc(42vh + 34px);
+    margin: -34px 0 0;
+    justify-self: stretch;
+    border-radius: 32px 32px 0 0;
+    background: #ffffff;
+    box-shadow: 0 -14px 34px rgba(15, 23, 42, 0.10);
+    padding: 42px 22px 28px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    z-index: 10;
+  }
+
+  .kids-auth-card {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+
+  .kids-auth-card .card-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #052453;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  .kids-auth-card .card-desc {
+    display: block !important;
+    font-size: 0.88rem;
+    color: #64748b;
+    text-align: center;
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+  }
+
+  .kids-security-box {
+    display: none !important;
+  }
+
+  .kids-custom-form {
+    margin-top: 10px;
+    gap: 12px;
+  }
+
+  .kids-auth-card .form-group-custom label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 6px;
+  }
+
+  .kids-auth-card .input-icon-wrap {
+    min-height: 52px;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+  }
+
+  .kids-auth-card .input-icon-wrap input {
+    font-size: 14px;
+  }
+
+  .kids-auth-card .btn-auth-action {
+    min-height: 52px;
+    border-radius: 14px;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .kids-auth-card .btn-auth-action i {
+    display: none;
   }
 }
 
@@ -3146,32 +3356,6 @@ watch(() => props.user, () => {
   cursor: not-allowed;
 }
 
-.btn-kids-back-main {
-  width: 100%;
-  margin-top: 12px;
-  padding: 12px 16px;
-  border: 1.5px solid #d7edf0;
-  border-radius: 12px;
-  background: #fff;
-  color: #0b2d63;
-  font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-kids-back-main:hover {
-  border-color: #00b9b5;
-  color: #008779;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(0, 185, 181, 0.13);
-}
-
 .auth-divider-line {
   display: flex;
   align-items: center;
@@ -3247,7 +3431,7 @@ watch(() => props.user, () => {
   line-height: 1.35;
 }
 
-@media (max-width: 992px) {
+@media (min-width: 769px) and (max-width: 992px) {
   .kids-auth-main-container {
     gap: 32px;
     padding: 28px 20px 40px;
@@ -3797,7 +3981,7 @@ watch(() => props.user, () => {
 }
 
 @media (max-width: 768px) {
-  .kids-hero-banner-container {
+.kids-hero-banner-container {
     height: 210px !important;
     min-height: 210px !important;
     max-height: 210px !important;
@@ -3892,7 +4076,7 @@ watch(() => props.user, () => {
   padding: 28px 26px;
   cursor: pointer;
   border: 1px solid #f1f5f9;
-  box-shadow: 0 10px 28px rgba(5, 36, 83, 0.06);
+  box-shadow: 0 18px 44px rgba(5, 36, 83, 0.13), 0 6px 16px rgba(5, 36, 83, 0.06);
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   flex-direction: column;
@@ -3904,15 +4088,15 @@ watch(() => props.user, () => {
 
 .hub-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 14px 28px rgba(5, 36, 83, 0.08);
+  box-shadow: 0 24px 54px rgba(5, 36, 83, 0.18), 0 10px 22px rgba(5, 36, 83, 0.08);
 }
 
 .card-games {
-  border-color: #bfdbfe;
-  background: linear-gradient(135deg, #e0f2fe 0%, #eef2ff 58%, #fff7ed 100%);
+  border-color: #fef8e7;
+  background: linear-gradient(135deg, #f8f4ff 0%, #fffafd 100%);
 }
 .card-games:hover {
-  border-color: #38bdf8;
+  border-color: #8b5cf6;
 }
 
 .card-paint {
@@ -4144,7 +4328,8 @@ watch(() => props.user, () => {
   max-height: 405px;
   border-radius: 34px;
   overflow: hidden;
-  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
+  background: #ffffff;
+  box-shadow: 0 26px 62px rgba(5, 36, 83, 0.17), 0 10px 26px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
@@ -4329,7 +4514,7 @@ watch(() => props.user, () => {
   border-radius: 22px;
   border: 1.5px solid #f1f5f9;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(5, 36, 83, 0.04);
+  box-shadow: 0 18px 42px rgba(5, 36, 83, 0.12), 0 6px 16px rgba(5, 36, 83, 0.06);
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -4338,7 +4523,7 @@ watch(() => props.user, () => {
 
 .kid-game-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 28px rgba(5, 36, 83, 0.1);
+  box-shadow: 0 24px 54px rgba(5, 36, 83, 0.16), 0 10px 24px rgba(5, 36, 83, 0.08);
   border-color: #d1fae5;
 }
 
@@ -4544,6 +4729,7 @@ watch(() => props.user, () => {
 .paint-section-wrapper {
   position: relative;
   width: 100%;
+  background: #ffffff;
 }
 
 .paint-hero-banner-container {
@@ -4553,14 +4739,14 @@ watch(() => props.user, () => {
   max-height: 405px;
   border-radius: 34px;
   overflow: hidden;
-  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
+  box-shadow: 0 26px 62px rgba(5, 36, 83, 0.17), 0 10px 26px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
   align-items: center;
   z-index: 1;
   box-sizing: border-box;
-  background: #e9fbfb;
+  background: #ffffff;
 }
 
 .paint-hero-img {
@@ -4672,6 +4858,9 @@ watch(() => props.user, () => {
   gap: 24px;
   position: relative;
   z-index: 2;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .paint-workspace-active {
@@ -4682,7 +4871,7 @@ watch(() => props.user, () => {
   background: #ffffff;
   border-radius: 26px;
   border: 1.5px solid #eef2f6;
-  box-shadow: 0 8px 30px rgba(5, 36, 83, 0.04);
+  box-shadow: 0 20px 48px rgba(5, 36, 83, 0.12), 0 7px 18px rgba(5, 36, 83, 0.06);
   padding: 24px;
   position: relative;
   z-index: 2;
@@ -4739,6 +4928,7 @@ watch(() => props.user, () => {
 .paint-template-big-card {
   border: 2px solid #e2e8f0;
   background: #f8fafc;
+  box-shadow: 0 14px 32px rgba(5, 36, 83, 0.08);
   border-radius: 24px;
   padding: 16px;
   min-height: 280px;
@@ -4755,7 +4945,7 @@ watch(() => props.user, () => {
 .paint-template-big-card.active {
   transform: translateY(-3px);
   border-color: #00bba6;
-  box-shadow: 0 12px 26px rgba(5, 36, 83, 0.1);
+  box-shadow: 0 20px 42px rgba(5, 36, 83, 0.14);
 }
 
 .paint-template-preview {
@@ -4903,6 +5093,8 @@ watch(() => props.user, () => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .canvas-zoom-controls {
@@ -4915,7 +5107,7 @@ watch(() => props.user, () => {
   border: 1.5px solid #e2e8f0;
   border-radius: 999px;
   padding: 5px;
-  box-shadow: 0 6px 16px rgba(5, 36, 83, 0.06);
+  box-shadow: 0 14px 30px rgba(5, 36, 83, 0.1);
 }
 
 .canvas-zoom-controls button {
@@ -4943,13 +5135,17 @@ watch(() => props.user, () => {
 .paint-palette-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   flex-wrap: wrap;
   background: #f8fafc;
   border: 1px solid #f1f5f9;
   padding: 10px 18px;
   border-radius: 50px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .palette-title {
@@ -4964,6 +5160,9 @@ watch(() => props.user, () => {
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
+  flex: 1 1 420px;
+  min-width: min(100%, 240px);
+  max-width: 100%;
 }
 
 .swatch-btn {
@@ -5020,6 +5219,10 @@ watch(() => props.user, () => {
   min-height: 460px;
   overflow: auto;
   padding: 22px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .paint-studio-canvas {
@@ -5086,6 +5289,7 @@ watch(() => props.user, () => {
 .lousa-section-wrapper {
   position: relative;
   width: 100%;
+  background: #ffffff;
 }
 
 .lousa-hero-banner-container {
@@ -5095,7 +5299,8 @@ watch(() => props.user, () => {
   max-height: 405px;
   border-radius: 34px;
   overflow: hidden;
-  box-shadow: 0 18px 38px rgba(5, 36, 83, 0.08);
+  background: #ffffff;
+  box-shadow: 0 26px 62px rgba(5, 36, 83, 0.17), 0 10px 26px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
@@ -5708,6 +5913,7 @@ watch(() => props.user, () => {
 .profile-section-wrapper {
   position: relative;
   width: 100%;
+  background: #ffffff;
 }
 
 .profile-hero-banner-container {
@@ -5717,7 +5923,8 @@ watch(() => props.user, () => {
   max-height: 405px;
   border-radius: 34px;
   overflow: hidden;
-  box-shadow: 0 14px 36px rgba(5, 36, 83, 0.08);
+  background: #ffffff;
+  box-shadow: 0 26px 62px rgba(5, 36, 83, 0.17), 0 10px 26px rgba(5, 36, 83, 0.08);
   margin-bottom: 32px;
   line-height: 0;
   display: flex;
@@ -5787,41 +5994,12 @@ watch(() => props.user, () => {
   letter-spacing: -0.5px;
 }
 
-.profile-badges-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.profile-plan-pill {
-  background: #fffbeb;
-  color: #b45309;
-  border: 1px solid #fef3c7;
-  border-radius: 50px;
-  font-size: 0.78rem;
+.profile-subtitle-text {
+  margin: 4px 0 0;
+  color: #35506f;
+  font-size: 0.94rem;
   font-weight: 700;
-  padding: 3px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.profile-plan-pill i.ph-star {
-  color: #f59e0b;
-}
-
-.profile-turmo-pill {
-  background: #ecfdf5;
-  color: #047857;
-  border: 1px solid #d1fae5;
-  border-radius: 50px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 3px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  line-height: 1.25;
 }
 
 .profile-stats-line {
@@ -5843,7 +6021,7 @@ watch(() => props.user, () => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 10px 24px rgba(5, 36, 83, 0.08);
 }
 
 .profile-stat-badge i.ph-game-controller {
@@ -5852,28 +6030,6 @@ watch(() => props.user, () => {
 
 .profile-stat-badge i.ph-trophy {
   color: #f59e0b;
-}
-
-.btn-edit-kid-profile {
-  background: #00bba6;
-  color: #ffffff;
-  border: none;
-  border-radius: 50px;
-  padding: 10px 20px;
-  font-family: inherit;
-  font-size: 0.88rem;
-  font-weight: 800;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  box-shadow: 0 4px 14px rgba(0, 187, 166, 0.35);
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-
-.btn-edit-kid-profile:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(0, 187, 166, 0.45);
 }
 
 @media (max-width: 768px) {
@@ -5910,17 +6066,11 @@ watch(() => props.user, () => {
     line-height: 1.1 !important;
     margin: 0 !important;
   }
-  .profile-badges-line {
-    gap: 4px !important;
-  }
-  .profile-plan-pill, .profile-turmo-pill {
-    font-size: 0.64rem !important;
-    padding: 2px 6px !important;
+  .profile-subtitle-text {
+    font-size: 0.78rem !important;
+    margin-top: 2px !important;
   }
   .profile-stats-line {
-    display: none !important;
-  }
-  .btn-edit-kid-profile {
     display: none !important;
   }
 }
@@ -6183,7 +6333,7 @@ watch(() => props.user, () => {
   border-radius: 22px;
   border: 1.5px solid #f1f5f9;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(5, 36, 83, 0.04);
+  box-shadow: 0 18px 42px rgba(5, 36, 83, 0.12), 0 6px 16px rgba(5, 36, 83, 0.06);
   display: flex;
   flex-direction: column;
 }
@@ -6387,9 +6537,9 @@ watch(() => props.user, () => {
   position: relative;
   flex: 1;
   min-height: 0;
-  padding: clamp(16px, 3vw, 28px);
+  padding: clamp(14px, 2.2vw, 22px);
   background: #f8fafc;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .game-countdown-overlay {
@@ -6650,12 +6800,12 @@ watch(() => props.user, () => {
 
 .snake-board {
   position: relative;
-  width: min(420px, 88vw);
+  width: min(340px, 58vh, 88vw);
   margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: 4px;
-  padding: 12px;
+  padding: 10px;
   border-radius: 24px;
   background: #dcfce7;
   border: 2px solid #86efac;
@@ -6682,7 +6832,7 @@ watch(() => props.user, () => {
 .snake-controls {
   width: min(224px, 72vw);
   margin: 18px auto 0;
-  display: grid;
+  display: none;
   grid-template-columns: repeat(3, 64px);
   grid-template-rows: repeat(2, 58px);
   justify-content: center;
@@ -6725,6 +6875,21 @@ watch(() => props.user, () => {
 .snake-controls .right {
   grid-column: 3;
   grid-row: 2;
+}
+
+@media (max-width: 768px) {
+  .game-play-area {
+    overflow: auto;
+  }
+
+  .snake-board {
+    width: min(420px, 88vw);
+    padding: 12px;
+  }
+
+  .snake-controls {
+    display: grid;
+  }
 }
 
 .dino-stage {
@@ -6926,6 +7091,325 @@ watch(() => props.user, () => {
 @media (max-width: 960px) {
   .kids-desktop-nav {
     display: none;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+  .kids-top-header {
+    padding: 12px 28px;
+  }
+
+  .kids-main-body {
+    max-width: 100%;
+    padding: 24px 28px 96px;
+    background: #ffffff;
+  }
+
+  .kids-hero-banner-container,
+  .games-hero-banner-container,
+  .paint-hero-banner-container,
+  .lousa-hero-banner-container,
+  .profile-hero-banner-container {
+    height: clamp(220px, 31vw, 330px);
+    border-radius: 28px;
+    margin-bottom: 24px;
+  }
+
+  .kids-hero-img,
+  .games-hero-img,
+  .paint-hero-img,
+  .lousa-hero-img,
+  .profile-hero-img {
+    border-radius: 28px;
+  }
+
+  .kids-hero-banner-container .hero-content-overlay,
+  .games-hero-content,
+  .paint-hero-content,
+  .lousa-hero-content,
+  .profile-hero-content {
+    width: 56%;
+    padding: 24px 28px;
+  }
+
+  .hero-main-title,
+  .games-main-title,
+  .paint-main-title,
+  .lousa-main-title,
+  .profile-name-title {
+    font-size: clamp(1.6rem, 3vw, 2.7rem);
+  }
+
+  .hero-desc,
+  .games-subtitle,
+  .paint-subtitle,
+  .lousa-subtitle {
+    font-size: clamp(0.92rem, 1.7vw, 1.2rem);
+  }
+
+  .hub-grid {
+    gap: 18px;
+  }
+
+  .hub-card {
+    min-height: 190px;
+    padding: 22px 20px;
+    border-radius: 22px;
+  }
+
+  .card-top-content {
+    width: 66%;
+    gap: 12px;
+  }
+
+  .card-illustration {
+    width: min(34%, 190px);
+    right: 8px;
+  }
+
+  .kids-games-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .paint-template-picker-card,
+  .paint-workspace-card {
+    padding: 18px;
+  }
+
+  .paint-template-carousel {
+    --paint-template-cols: 2;
+  }
+
+  .paint-template-big-card {
+    min-height: 240px;
+  }
+
+  .paint-dashed-wrapper,
+  .lousa-canvas-dashed-frame {
+    min-height: min(430px, 54vh);
+  }
+
+  .paint-palette-bar,
+  .lousa-colors-bar {
+    border-radius: 22px;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .game-modal-box {
+    max-width: min(760px, calc(100vw - 28px));
+    max-height: calc(100vh - 28px);
+  }
+
+  .game-modal-top {
+    padding: 12px 16px;
+  }
+
+  .game-play-area {
+    padding: 14px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1366px) {
+  .kids-app-container,
+  .kids-dashboard-view {
+    overflow-x: hidden;
+  }
+
+  .kids-top-header {
+    padding: 12px clamp(20px, 3vw, 36px);
+    gap: 14px;
+  }
+
+  .kids-logo-img {
+    height: clamp(30px, 3vw, 36px);
+  }
+
+  .nav-tab-btn {
+    padding: 8px 12px;
+    font-size: 0.84rem;
+  }
+
+  .kids-profile-menu-btn span {
+    max-width: 12ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kids-main-body {
+    max-width: none;
+    padding: clamp(20px, 3vw, 34px) clamp(20px, 3vw, 36px) 92px;
+  }
+
+  .kids-hero-banner-container,
+  .games-hero-banner-container,
+  .paint-hero-banner-container,
+  .lousa-hero-banner-container,
+  .profile-hero-banner-container {
+    height: clamp(230px, 27vw, 360px);
+    border-radius: 28px;
+    margin-bottom: 24px;
+  }
+
+  .kids-hero-img,
+  .games-hero-img,
+  .paint-hero-img,
+  .lousa-hero-img,
+  .profile-hero-img {
+    border-radius: 28px;
+  }
+
+  .kids-hero-banner-container .hero-content-overlay,
+  .games-hero-content,
+  .paint-hero-content,
+  .lousa-hero-content,
+  .profile-hero-content {
+    width: min(62%, 640px);
+    padding: clamp(20px, 3vw, 34px);
+  }
+
+  .hero-main-title,
+  .games-main-title,
+  .paint-main-title,
+  .lousa-main-title,
+  .profile-name-title {
+    font-size: clamp(1.55rem, 3.1vw, 2.7rem);
+    letter-spacing: 0;
+  }
+
+  .hero-desc,
+  .games-subtitle,
+  .paint-subtitle,
+  .lousa-subtitle,
+  .profile-subtitle-text {
+    font-size: clamp(0.88rem, 1.45vw, 1.08rem);
+    max-width: 42ch;
+  }
+
+  .hub-grid {
+    gap: 18px;
+  }
+
+  .hub-card {
+    min-width: 0;
+    padding: 22px 20px;
+  }
+
+  .card-top-content {
+    width: min(68%, 320px);
+  }
+
+  .kids-games-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  }
+
+  .paint-template-picker-card,
+  .paint-workspace-card,
+  .lousa-workspace-card {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .paint-active-template-bar {
+    min-width: 0;
+  }
+
+  .paint-palette-bar {
+    border-radius: 22px;
+    padding: 14px 16px;
+  }
+
+  .palette-swatches-row {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .custom-color-picker-label {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .canvas-zoom-controls {
+    align-self: center;
+    max-width: 100%;
+  }
+
+  .paint-dashed-wrapper,
+  .lousa-canvas-dashed-frame {
+    min-height: min(430px, 54vh);
+    padding: 14px;
+  }
+
+  .paint-studio-canvas,
+  .lousa-studio-canvas {
+    max-width: 100%;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 900px) {
+  .hub-grid,
+  .kids-games-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-card {
+    min-height: 180px;
+  }
+
+  .card-top-content {
+    width: 64%;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1366px) {
+  .paint-workspace-card {
+    padding: 18px;
+    overflow: hidden;
+  }
+
+  .paint-canvas-area {
+    gap: 14px;
+  }
+
+  .paint-active-template-bar {
+    align-items: flex-start;
+  }
+
+  .paint-palette-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    border-radius: 22px;
+    padding: 14px 16px;
+  }
+
+  .palette-swatches-row {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .custom-color-picker-label {
+    align-self: flex-start;
+  }
+
+  .canvas-zoom-controls {
+    align-self: center;
+    justify-content: center;
+    margin: 0 auto;
+  }
+
+  .paint-dashed-wrapper {
+    min-height: min(430px, 54vh);
+    padding: 14px;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: auto;
+  }
+
+  .paint-studio-canvas {
+    max-width: 100%;
   }
 }
 

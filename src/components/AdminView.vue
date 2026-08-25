@@ -1235,6 +1235,15 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
     <!-- ABA 2: HISTÓRICO FINANCEIRO / RENOVAÇÕES -->
     <div v-else-if="activeAdminTab === 'financeiro'" class="tab-content-admin animated-item" style="animation-delay: 0s;">
+      <div class="admin-section-switcher">
+        <button class="active" @click="activeAdminTab = 'financeiro'">
+          <i class="ph ph-chart-line-up"></i> Histórico
+        </button>
+        <button @click="openWithdrawalsTab">
+          <i class="ph ph-hand-coins"></i> Saques
+        </button>
+      </div>
+
       <!-- Grid de métricas rápidas de faturamento -->
       <div class="finance-metrics-grid">
         <div class="rules-col-box finance-metric-card">
@@ -1424,6 +1433,15 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
     <!-- ABA 3: TICKETS DE SUPORTE -->
     <div v-if="activeAdminTab === 'tickets'" class="tab-content-admin">
+      <div class="admin-section-switcher">
+        <button class="active" @click="openTicketsTab">
+          <i class="ph ph-headset"></i> Tickets
+        </button>
+        <button @click="openChatTab">
+          <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
+        </button>
+      </div>
+
       <div class="tickets-admin-grid">
         <!-- Lista -->
         <div class="card" style="padding:0; overflow:hidden;">
@@ -1491,6 +1509,15 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
     <!-- ABA 4: CHAT AO VIVO -->
     <div v-if="activeAdminTab === 'chat'" class="tab-content-admin">
+      <div class="admin-section-switcher">
+        <button @click="openTicketsTab">
+          <i class="ph ph-headset"></i> Tickets
+        </button>
+        <button class="active" @click="openChatTab">
+          <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
+        </button>
+      </div>
+
       <div class="tickets-admin-grid">
         <!-- Conversas -->
         <div class="card" style="padding:0; overflow:hidden;">
@@ -1550,7 +1577,16 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
     <!-- ABA: SAQUES (PEDIDOS DE RETIRADA DE COMISSÃO) -->
     <div v-if="activeAdminTab === 'saques'" class="tab-content-admin">
-      <div class="admin-filters-bar" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
+      <div class="admin-section-switcher">
+        <button @click="activeAdminTab = 'financeiro'">
+          <i class="ph ph-chart-line-up"></i> Histórico
+        </button>
+        <button class="active" @click="openWithdrawalsTab">
+          <i class="ph ph-hand-coins"></i> Saques
+        </button>
+      </div>
+
+      <div class="admin-filters-bar withdrawals-filter-bar" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
         <div class="metric-card card" style="flex:1; min-width:200px; margin:0;">
           <div class="metric-header">
             <i class="ph ph-clock" style="color:#d97706; background:#fffbeb; border:1px solid #fde68a; padding:8px; border-radius:var(--radius-sm); font-size:20px;"></i>
@@ -1560,7 +1596,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           <p>{{ withdrawalsPendingCount }} pedido(s) aguardando baixa</p>
         </div>
 
-        <div style="display:flex; gap:8px; align-items:center;">
+        <div class="withdrawals-controls" style="display:flex; gap:8px; align-items:center;">
           <select v-model="withdrawalsStatusFilter" class="form-control" style="width:auto; min-width:140px;">
             <option value="">Todos</option>
             <option value="pendente">Pendentes</option>
@@ -1690,10 +1726,42 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
     <div v-if="activeAdminTab === 'teen'" class="tab-content-admin">
       <TeenAdminView 
         :layoutMode="layoutMode" 
-        :embedded="false" 
+        :embedded="true" 
         @triggerDevModal="(d) => emit('triggerDevModal', d)" 
+        @closeAdmin="activeAdminTab = 'usuarios'"
       />
     </div>
+
+    <nav v-if="activeAdminTab !== 'teen'" class="admin-context-bottom-nav">
+      <button
+        :class="['admin-bottom-tab', { active: activeAdminTab === 'usuarios' }]"
+        @click="activeAdminTab = 'usuarios'"
+      >
+        <i class="ph ph-shield-check"></i>
+        <span>Admin</span>
+      </button>
+      <button
+        :class="['admin-bottom-tab', { active: activeAdminTab === 'financeiro' || activeAdminTab === 'saques' }]"
+        @click="activeAdminTab = 'financeiro'"
+      >
+        <i class="ph ph-chart-line-up"></i>
+        <span>Finanças</span>
+      </button>
+      <button
+        :class="['admin-bottom-tab', { active: activeAdminTab === 'tickets' || activeAdminTab === 'chat' }]"
+        @click="openTicketsTab"
+      >
+        <i class="ph ph-headset"></i>
+        <span>Atendimento</span>
+      </button>
+      <button
+        :class="['admin-bottom-tab', { active: activeAdminTab === 'teen' }]"
+        @click="activeAdminTab = 'teen'"
+      >
+        <i class="ph ph-headphones"></i>
+        <span>Teen</span>
+      </button>
+    </nav>
 
     <!-- MODAL 1: CADASTRAR USUÁRIO -->
     <div v-if="showTrialLinkModal" class="custom-modal-overlay" @click.self="showTrialLinkModal = false">
@@ -2654,6 +2722,132 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
 .admin-tab-btn:hover {
   color: var(--secondary);
+}
+
+.admin-context-bottom-nav {
+  display: none;
+}
+
+.admin-section-switcher {
+  display: none;
+}
+
+.admin-bottom-tab {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: var(--transition);
+}
+
+.admin-bottom-tab i {
+  font-size: 21px;
+}
+
+.admin-bottom-tab.active {
+  background: #eff6ff;
+  color: var(--secondary);
+}
+
+@media (max-width: 1366px) {
+  .admin-panel.desktop,
+  .admin-panel.pwa {
+    padding-bottom: 92px;
+  }
+
+  .admin-panel.desktop .admin-tabs-nav,
+  .admin-panel.pwa .admin-tabs-nav {
+    display: none;
+  }
+
+  .admin-panel.desktop .admin-context-bottom-nav,
+  .admin-panel.pwa .admin-context-bottom-nav {
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 1002;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    overflow: hidden;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.97);
+    border: 1px solid var(--border-color);
+    border-radius: 22px;
+    box-shadow: 0 16px 42px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(14px);
+  }
+
+  .admin-panel.desktop .admin-context-bottom-nav {
+    left: 50%;
+    right: auto;
+    width: min(520px, calc(100vw - 32px));
+    transform: translateX(-50%);
+  }
+
+  .admin-panel.desktop .admin-section-switcher,
+  .admin-panel.pwa .admin-section-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 0 16px;
+    padding: 6px;
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+  }
+
+  .admin-section-switcher button {
+    flex: 1;
+    min-height: 42px;
+    border: 0;
+    border-radius: 13px;
+    background: transparent;
+    color: #64748b;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+  }
+
+  .admin-section-switcher button.active {
+    background: #ffffff;
+    color: var(--secondary);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  }
+
+  .withdrawals-filter-bar {
+    align-items: stretch !important;
+  }
+
+  .withdrawals-filter-bar,
+  .withdrawals-controls {
+    width: 100%;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .withdrawals-controls .form-control,
+  .withdrawals-controls .btn {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
 }
 
 /* Tabela de Usuários */
