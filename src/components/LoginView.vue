@@ -7,6 +7,7 @@ const emit = defineEmits(['login'])
 const username = ref('')
 const password = ref('')
 const rememberMe = ref(false)
+const showPassword = ref(false)
 const error = ref('')
 const loading = ref(false)
 
@@ -88,323 +89,581 @@ const confirmReset = async () => {
 </script>
 
 <template>
-  <div class="login-wrapper">
-    <div class="login-card">
-      <div class="login-header">
-        <div class="logo-container">
-          <img src="/logo.png" alt="Viva Mais" class="login-logo" />
+  <div class="login-page">
+    <div class="login-container">
+      <!-- COLUNA DA ESQUERDA: BENEFÍCIOS -->
+      <section class="benefits-section" aria-label="Benefícios Viva Mais Club">
+        <div class="benefits-top-row">
+          <img src="/logo.png" alt="Viva Mais Club" class="benefits-brand-logo" />
         </div>
-        <p>Acesse seus benefícios e acompanhe sua assinatura</p>
+
+        <div class="kicker-bar"></div>
+
+        <h1 class="benefits-headline">
+          Benefícios que<br />acompanham<br />você, <span class="teal-highlight">todos os dias.</span>
+        </h1>
+
+        <p class="benefits-subheadline">
+          Acesse sua conta e aproveite descontos<br />exclusivos, serviços e muito mais.
+        </p>
+
+        <div class="benefits-feature-list">
+          <div class="feature-item">
+            <div class="feature-icon icon-teal-solid">
+              <i class="ph-fill ph-tag"></i>
+            </div>
+            <div class="feature-info">
+              <h3>Descontos exclusivos</h3>
+              <p>Economize em parceiros selecionados.</p>
+            </div>
+          </div>
+
+          <div class="feature-item">
+            <div class="feature-icon icon-teal-soft">
+              <i class="ph ph-heartbeat"></i>
+            </div>
+            <div class="feature-info">
+              <h3>Serviços para você</h3>
+              <p>Cuide da sua saúde, bem-estar e família.</p>
+            </div>
+          </div>
+
+          <div class="feature-item">
+            <div class="feature-icon icon-teal-soft">
+              <i class="ph ph-credit-card"></i>
+            </div>
+            <div class="feature-info">
+              <h3>Tudo em um só lugar</h3>
+              <p>Sua assinatura, benefícios e muito mais.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- COLUNA DA DIREITA: CARD DE LOGIN -->
+      <div class="login-card-container">
+        <div class="auth-card">
+          <div class="card-header-block">
+            <h2 class="card-heading">Bem-vindo de volta! 👋</h2>
+            <p class="card-subheading">
+              Faça login para acessar sua conta<br />e aproveitar todos os benefícios.
+            </p>
+          </div>
+
+          <!-- FORMULÁRIO PRINCIPAL DE LOGIN -->
+          <form v-if="mode === 'login'" @submit.prevent="handleLogin" class="auth-form">
+            <div class="input-group">
+              <label class="field-label" for="username">CPF ou e-mail</label>
+              <div class="field-control-wrapper">
+                <i class="ph ph-user field-icon-left"></i>
+                <input
+                  v-model="username"
+                  type="text"
+                  id="username"
+                  placeholder="Digite seu CPF ou e-mail"
+                  class="field-input with-left-icon"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label class="field-label" for="password">Senha</label>
+              <div class="field-control-wrapper">
+                <i class="ph ph-lock field-icon-left"></i>
+                <input
+                  v-model="password"
+                  :type="showPassword ? 'text' : 'password'"
+                  id="password"
+                  placeholder="Digite sua senha"
+                  class="field-input with-left-icon with-right-icon"
+                  required
+                />
+                <button
+                  type="button"
+                  class="field-eye-btn"
+                  @click="showPassword = !showPassword"
+                  tabindex="-1"
+                  aria-label="Alternar exibição da senha"
+                >
+                  <i :class="showPassword ? 'ph ph-eye-slash' : 'ph ph-eye'"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-row-options">
+              <label class="checkbox-container">
+                <input v-model="rememberMe" type="checkbox" />
+                <span>Lembrar-me</span>
+              </label>
+              <a href="#" class="forgot-link-btn" @click.prevent="goToForgot">Esqueci a senha</a>
+            </div>
+
+            <p v-if="info" class="msg-status-info">{{ info }}</p>
+            <p v-if="error" class="msg-status-error">{{ error }}</p>
+
+            <button type="submit" class="submit-btn-primary" :disabled="loading">
+              <span>{{ loading ? 'Entrando...' : 'Entrar' }}</span>
+              <i class="ph ph-arrow-right submit-arrow-icon"></i>
+            </button>
+          </form>
+
+          <!-- ESQUECI A SENHA: PEDIR CÓDIGO -->
+          <form v-else-if="mode === 'forgot'" @submit.prevent="requestResetCode" class="auth-form">
+            <p class="reset-instruction-text">
+              Informe seu e-mail cadastrado. Enviaremos um código de 6 dígitos para redefinir sua senha.
+            </p>
+            <div class="input-group">
+              <label class="field-label" for="resetEmail">E-mail</label>
+              <div class="field-control-wrapper">
+                <i class="ph ph-envelope field-icon-left"></i>
+                <input
+                  v-model="resetEmail"
+                  type="email"
+                  id="resetEmail"
+                  placeholder="Digite seu e-mail"
+                  class="field-input with-left-icon"
+                  required
+                />
+              </div>
+            </div>
+
+            <p v-if="error" class="msg-status-error">{{ error }}</p>
+
+            <button type="submit" class="submit-btn-primary" :disabled="loading">
+              <span>{{ loading ? 'Enviando...' : 'Enviar código' }}</span>
+              <i class="ph ph-paper-plane-tilt submit-arrow-icon"></i>
+            </button>
+            <a href="#" class="return-login-link" @click.prevent="backToLogin">Voltar ao login</a>
+          </form>
+
+          <!-- ESQUECI A SENHA: CÓDIGO + NOVA SENHA -->
+          <form v-else @submit.prevent="confirmReset" class="auth-form">
+            <p v-if="info" class="msg-status-info">{{ info }}</p>
+            <div class="input-group">
+              <label class="field-label" for="resetCode">Código recebido</label>
+              <div class="field-control-wrapper">
+                <i class="ph ph-key field-icon-left"></i>
+                <input
+                  v-model="resetCode"
+                  type="text"
+                  id="resetCode"
+                  inputmode="numeric"
+                  maxlength="6"
+                  placeholder="000000"
+                  class="field-input with-left-icon"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label class="field-label" for="newPassword">Nova senha</label>
+              <div class="field-control-wrapper">
+                <i class="ph ph-lock field-icon-left"></i>
+                <input
+                  v-model="newPassword"
+                  type="password"
+                  id="newPassword"
+                  placeholder="Mínimo 6 caracteres"
+                  class="field-input with-left-icon"
+                  minlength="6"
+                  required
+                />
+              </div>
+            </div>
+
+            <p v-if="error" class="msg-status-error">{{ error }}</p>
+
+            <button type="submit" class="submit-btn-primary" :disabled="loading">
+              <span>{{ loading ? 'Redefinindo...' : 'Redefinir senha' }}</span>
+              <i class="ph ph-check submit-arrow-icon"></i>
+            </button>
+            <a href="#" class="return-login-link" @click.prevent="backToLogin">Voltar ao login</a>
+          </form>
+        </div>
       </div>
-
-      <!-- LOGIN -->
-      <form v-if="mode === 'login'" @submit.prevent="handleLogin" class="login-form">
-        <div class="form-group">
-          <label class="form-label" for="username">CPF ou E-mail</label>
-          <div class="input-icon-wrapper">
-            <i class="ph ph-user"></i>
-            <input
-              v-model="username"
-              type="text"
-              id="username"
-              placeholder="Digite seu CPF ou e-mail"
-              class="form-control with-icon"
-              required
-            />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="password">Senha</label>
-          <div class="input-icon-wrapper">
-            <i class="ph ph-lock"></i>
-            <input
-              v-model="password"
-              type="password"
-              id="password"
-              placeholder="Digite sua senha"
-              class="form-control with-icon"
-              required
-            />
-          </div>
-        </div>
-
-        <div class="login-options">
-          <label class="checkbox-label">
-            <input v-model="rememberMe" type="checkbox" />
-            Lembrar-me
-          </label>
-          <a href="#" class="forgot-link" @click.prevent="goToForgot">Esqueci a senha</a>
-        </div>
-
-        <p v-if="info" class="login-info">{{ info }}</p>
-        <p v-if="error" class="login-error">{{ error }}</p>
-
-        <button type="submit" class="btn btn-primary btn-full" :disabled="loading">
-          <span>{{ loading ? 'Entrando...' : 'Entrar' }}</span>
-          <i class="ph ph-sign-in"></i>
-        </button>
-      </form>
-
-      <!-- ESQUECI A SENHA: pedir código -->
-      <form v-else-if="mode === 'forgot'" @submit.prevent="requestResetCode" class="login-form">
-        <p class="reset-intro">Informe seu e-mail cadastrado. Enviaremos um código de 6 dígitos para redefinir sua senha.</p>
-        <div class="form-group">
-          <label class="form-label" for="resetEmail">E-mail</label>
-          <div class="input-icon-wrapper">
-            <i class="ph ph-envelope"></i>
-            <input
-              v-model="resetEmail"
-              type="email"
-              id="resetEmail"
-              placeholder="Digite seu e-mail"
-              class="form-control with-icon"
-              required
-            />
-          </div>
-        </div>
-
-        <p v-if="error" class="login-error">{{ error }}</p>
-
-        <button type="submit" class="btn btn-primary btn-full" :disabled="loading">
-          <span>{{ loading ? 'Enviando...' : 'Enviar código' }}</span>
-          <i class="ph ph-paper-plane-tilt"></i>
-        </button>
-        <a href="#" class="back-link" @click.prevent="backToLogin">Voltar ao login</a>
-      </form>
-
-      <!-- ESQUECI A SENHA: código + nova senha -->
-      <form v-else @submit.prevent="confirmReset" class="login-form">
-        <p v-if="info" class="login-info">{{ info }}</p>
-        <div class="form-group">
-          <label class="form-label" for="resetCode">Código recebido</label>
-          <div class="input-icon-wrapper">
-            <i class="ph ph-key"></i>
-            <input
-              v-model="resetCode"
-              type="text"
-              id="resetCode"
-              inputmode="numeric"
-              maxlength="6"
-              placeholder="000000"
-              class="form-control with-icon"
-              required
-            />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="newPassword">Nova senha</label>
-          <div class="input-icon-wrapper">
-            <i class="ph ph-lock"></i>
-            <input
-              v-model="newPassword"
-              type="password"
-              id="newPassword"
-              placeholder="Mínimo 6 caracteres"
-              class="form-control with-icon"
-              minlength="6"
-              required
-            />
-          </div>
-        </div>
-
-        <p v-if="error" class="login-error">{{ error }}</p>
-
-        <button type="submit" class="btn btn-primary btn-full" :disabled="loading">
-          <span>{{ loading ? 'Redefinindo...' : 'Redefinir senha' }}</span>
-          <i class="ph ph-check"></i>
-        </button>
-        <a href="#" class="back-link" @click.prevent="backToLogin">Voltar ao login</a>
-      </form>
     </div>
   </div>
 </template>
 
 <style scoped>
-.login-wrapper {
+/* ==========================================================================
+   ESTRUTURA GERAL & BACKGROUND
+   ========================================================================== */
+.login-page {
   min-height: 100vh;
+  width: 100%;
+  position: relative;
+  background-color: #F8FAFD;
+  background-image: url('/login-bg.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at 7% 42%, rgba(0, 185, 181, 0.10) 0 13%, transparent 27%),
-    radial-gradient(circle at 84% 48%, rgba(7, 89, 133, 0.07) 0 18%, transparent 34%),
-    linear-gradient(135deg, #f8fbff 0%, #eef6ff 48%, #ffffff 100%);
-  padding: 16px;
-  width: 100%;
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
+  overflow-x: hidden;
+  font-family: var(--font-main, 'Poppins', sans-serif);
 }
 
-.login-wrapper::before,
-.login-wrapper::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.login-wrapper::before {
-  width: min(520px, 52vw);
-  aspect-ratio: 1;
-  left: -180px;
-  bottom: -210px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 185, 181, 0.35);
-  box-shadow:
-    180px -44px 0 56px rgba(0, 88, 166, 0.05),
-    360px 92px 0 88px rgba(7, 89, 133, 0.04);
-}
-
-.login-wrapper::after {
-  inset: 0;
-  background:
-    radial-gradient(circle, rgba(0, 185, 181, 0.55) 1.5px, transparent 2px) 18% 25% / 18px 18px no-repeat,
-    radial-gradient(circle, rgba(1, 117, 194, 0.36) 1.5px, transparent 2px) 82% 63% / 18px 18px no-repeat;
-  opacity: 0.72;
-}
-
-.login-card {
-  background: white;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  max-width: 440px;
-  width: 100%;
-  border: 1px solid var(--border-color);
-  overflow: hidden;
+/* Container de 2 Colunas */
+.login-container {
   position: relative;
   z-index: 1;
-}
-
-.login-header {
-  text-align: center;
-  padding: 32px 32px 16px;
-}
-
-.logo-container {
-  background: var(--bg-sidebar); /* Fundo verde escuro para dar contraste com a logo branca */
-  padding: 16px;
-  border-radius: var(--radius-md);
-  margin-bottom: 24px;
-  display: inline-flex;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 32px;
+  display: grid;
+  grid-template-columns: minmax(360px, 480px) minmax(380px, 460px);
   justify-content: center;
   align-items: center;
-  width: 100%;
+  gap: clamp(40px, 7vw, 120px);
 }
 
-.login-logo {
-  max-height: 48px;
+/* ==========================================================================
+   COLUNA ESQUERDA: BRANDING E BENEFÍCIOS
+   ========================================================================== */
+.benefits-section {
+  width: 100%;
+  max-width: 460px;
+}
+
+.benefits-top-row {
+  margin-bottom: 40px;
+}
+
+.benefits-brand-logo {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
   display: block;
 }
 
-.login-header p {
-  font-size: 14px;
-  color: var(--text-gray);
+.kicker-bar {
+  width: 36px;
+  height: 3px;
+  background-color: #00B5B0;
+  border-radius: 99px;
+  margin-bottom: 22px;
 }
 
-.login-form {
+.benefits-headline {
+  margin: 0;
+  color: #06285C;
+  font-size: clamp(2rem, 2.5vw, 2.55rem);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.benefits-headline .teal-highlight {
+  color: #00B5B0;
+}
+
+.benefits-subheadline {
+  margin: 18px 0 32px;
+  color: #60728C;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.benefits-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.feature-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.icon-teal-solid {
+  background-color: #00B5B0;
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(0, 181, 176, 0.28);
+}
+
+.icon-teal-soft {
+  background-color: #E6F8F7;
+  color: #00B5B0;
+  border: 1px solid rgba(0, 181, 176, 0.16);
+}
+
+.feature-info h3 {
+  margin: 0 0 2px;
+  color: #06285C;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.feature-info p {
+  margin: 0;
+  color: #60728C;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   COLUNA DIREITA: CARD DE LOGIN
+   ========================================================================== */
+.login-card-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.auth-card {
+  background: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 12px 38px rgba(8, 40, 92, 0.06);
+  border: 1px solid #E8EEF5;
+  width: 100%;
+  max-width: 440px;
+  overflow: hidden;
+}
+
+.card-header-block {
+  text-align: center;
+  padding: 36px 32px 18px;
+}
+
+.card-heading {
+  margin: 0 0 8px;
+  color: #06285C;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card-subheading {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #60728C;
+  line-height: 1.45;
+}
+
+.auth-form {
   padding: 0 32px 32px;
 }
 
-.input-icon-wrapper {
-  position: relative;
+.input-group {
+  margin-bottom: 18px;
 }
 
-.input-icon-wrapper i {
+.field-label {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #06285C;
+  margin-bottom: 6px;
+}
+
+.field-control-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.field-icon-left {
   position: absolute;
   left: 14px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--text-light-gray);
+  color: #9CA3AF;
   font-size: 18px;
+  pointer-events: none;
 }
 
-.form-control.with-icon {
-  padding-left: 44px;
+.field-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid #DCE7F0;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  color: #06285C;
+  background-color: #FFFFFF;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
 }
 
-.login-options {
+.field-input:focus {
+  border-color: #00B5B0;
+  box-shadow: 0 0 0 3px rgba(0, 181, 176, 0.12);
+}
+
+.field-input.with-left-icon {
+  padding-left: 42px;
+}
+
+.field-input.with-right-icon {
+  padding-right: 42px;
+}
+
+.field-eye-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9CA3AF;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.field-eye-btn:hover {
+  color: #06285C;
+}
+
+.form-row-options {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  font-size: 13px;
+  margin: 14px 0 22px;
+  font-size: 0.85rem;
 }
 
-.checkbox-label {
+.checkbox-container {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: var(--text-gray);
+  color: #60728C;
+  font-size: 0.85rem;
+  user-select: none;
 }
 
-.login-error {
-  color: #ef4444;
-  font-size: 13px;
-  margin: -8px 0 16px;
-  text-align: center;
+.checkbox-container input[type="checkbox"] {
+  accent-color: #06285C;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
 }
 
-.login-info {
-  color: #059669;
-  font-size: 13px;
-  margin: -8px 0 16px;
-  text-align: center;
-}
-
-.forgot-link {
-  color: var(--primary);
-  font-size: 13px;
+.forgot-link-btn {
+  color: #0070F3;
   text-decoration: none;
   font-weight: 500;
+  font-size: 0.85rem;
 }
 
-.forgot-link:hover {
+.forgot-link-btn:hover {
   text-decoration: underline;
 }
 
-.reset-intro {
-  font-size: 13px;
-  color: var(--text-gray);
-  margin-bottom: 20px;
+.msg-status-error {
+  color: #EF4444;
+  font-size: 0.85rem;
+  margin: -8px 0 14px;
+  text-align: center;
+}
+
+.msg-status-info {
+  color: #059669;
+  font-size: 0.85rem;
+  margin: -8px 0 14px;
+  text-align: center;
+}
+
+.submit-btn-primary {
+  width: 100%;
+  height: 48px;
+  background-color: #052453;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.submit-btn-primary:hover:not(:disabled) {
+  background-color: #031838;
+}
+
+.submit-btn-primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.submit-arrow-icon {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.reset-instruction-text {
+  font-size: 0.88rem;
+  color: #60728C;
+  margin-bottom: 18px;
   line-height: 1.5;
 }
 
-.back-link {
+.return-login-link {
   display: block;
   text-align: center;
   margin-top: 16px;
-  color: var(--text-gray);
-  font-size: 13px;
+  color: #60728C;
+  font-size: 0.85rem;
   text-decoration: none;
 }
 
-.back-link:hover {
-  color: var(--primary);
+.return-login-link:hover {
+  color: #06285C;
   text-decoration: underline;
 }
 
-@media (max-width: 640px) {
-  .login-wrapper {
-    padding: 14px;
-    background:
-      radial-gradient(circle at 0% 24%, rgba(0, 185, 181, 0.09) 0 18%, transparent 38%),
-      linear-gradient(135deg, #f8fbff 0%, #eef6ff 52%, #ffffff 100%);
+/* ==========================================================================
+   RESPONSIVIDADE (Mobile & Tablets - Esconde texto e centraliza/sobe o card)
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .login-page {
+    align-items: flex-start;
+    padding-top: clamp(24px, 6vh, 60px);
   }
 
-  .login-wrapper::before {
-    width: 360px;
-    left: -180px;
-    bottom: -180px;
+  .login-container {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 0;
+    justify-items: center;
   }
 
-  .login-wrapper::after {
-    background:
-      radial-gradient(circle, rgba(0, 185, 181, 0.45) 1.5px, transparent 2px) 16% 18% / 18px 18px no-repeat,
-      radial-gradient(circle, rgba(1, 117, 194, 0.28) 1.5px, transparent 2px) 86% 76% / 18px 18px no-repeat;
+  .benefits-section {
+    display: none;
+  }
+
+  .auth-card {
+    box-shadow: 0 8px 30px rgba(8, 40, 92, 0.08);
   }
 }
 </style>
+
+
