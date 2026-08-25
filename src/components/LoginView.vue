@@ -650,20 +650,20 @@ const confirmReset = async () => {
 }
 
 .mobile-hero-logo-box {
-  background: #FFFFFF;
-  padding: 12px 28px;
-  border-radius: 20px;
-  box-shadow: 0 10px 28px rgba(5, 36, 83, 0.16);
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .mobile-hero-logo {
-  height: 38px;
+  height: 44px;
   width: auto;
   object-fit: contain;
   display: block;
+  filter: brightness(0) invert(1);
 }
 
 /* ==========================================================================
