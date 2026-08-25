@@ -667,13 +667,13 @@ const confirmReset = async () => {
 }
 
 /* ==========================================================================
-   RESPONSIVIDADE (Mobile & Tablets - Layout Estilo Kids com Logo no Topo)
+   RESPONSIVIDADE (Mobile & Tablets - Layout Estilo Kids Colado no Bottom)
    ========================================================================== */
 @media (max-width: 860px) {
   .login-page {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     justify-content: flex-start;
     min-height: 100vh;
     background-color: #F8FAFD;
@@ -687,25 +687,27 @@ const confirmReset = async () => {
     align-items: center;
     justify-content: center;
     width: 100%;
-    min-height: 24vh;
-    padding: 34px 20px 48px;
+    min-height: 22vh;
+    padding: 28px 20px 44px;
     background:
       radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.15) 0 40px, transparent 41px),
       radial-gradient(circle at 85% 80%, rgba(0, 181, 176, 0.3) 0 60px, transparent 61px),
       linear-gradient(145deg, #052453 0%, #0B3C82 55%, #00B5B0 100%);
     position: relative;
     box-sizing: border-box;
+    flex-shrink: 0;
   }
 
   .login-container {
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: 460px;
-    padding: 0 16px 32px;
-    margin-top: -24px;
+    max-width: 100%;
+    padding: 0;
+    margin: -24px 0 0 0;
     z-index: 10;
     gap: 0;
+    flex: 1;
   }
 
   .benefits-section {
@@ -714,20 +716,31 @@ const confirmReset = async () => {
 
   .login-card-container {
     width: 100%;
+    flex: 1;
+    display: flex;
   }
 
   .auth-card {
     background: #FFFFFF;
-    border-radius: 28px;
-    box-shadow: 0 -8px 32px rgba(5, 36, 83, 0.09), 0 10px 30px rgba(5, 36, 83, 0.05);
-    border: 1px solid #EAEFF6;
+    border-radius: 32px 32px 0 0;
+    box-shadow: 0 -12px 36px rgba(5, 36, 83, 0.12);
+    border: none;
     width: 100%;
     max-width: 100%;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    margin-bottom: 0;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
 
   .card-header-block {
-    padding: 28px 22px 14px;
+    padding: 28px 24px 14px;
     text-align: center;
+    max-width: 440px;
+    margin: 0 auto;
+    width: 100%;
   }
 
   .card-heading {
@@ -744,7 +757,10 @@ const confirmReset = async () => {
   }
 
   .auth-form {
-    padding: 0 22px 28px;
+    padding: 0 24px 28px;
+    max-width: 440px;
+    margin: 0 auto;
+    width: 100%;
   }
 
   .field-input {
