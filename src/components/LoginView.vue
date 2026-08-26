@@ -12,7 +12,12 @@ const error = ref('')
 const loading = ref(false)
 
 // Fluxo de recuperação de senha: 'login' | 'forgot' (pede e-mail) | 'reset' (código + nova senha)
-const mode = ref('login')
+// O botão "Redefinir senha" do e-mail aponta para ?redefinir=1 e cai direto no passo
+// do código — o fluxo vive só em estado interno, sem rota, então sem isso o usuário
+// voltava ao login e precisava pedir um código novo, invalidando o que ele recebeu.
+const wantsReset =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('redefinir')
+const mode = ref(wantsReset ? 'reset' : 'login')
 const resetEmail = ref('')
 const resetCode = ref('')
 const newPassword = ref('')
@@ -41,6 +46,13 @@ const goToForgot = () => {
   info.value = ''
   resetEmail.value = ''
   mode.value = 'forgot'
+}
+
+/** Vai direto ao passo do código, sem pedir um novo (que invalidaria o atual). */
+const goToReset = () => {
+  error.value = ''
+  info.value = ''
+  mode.value = 'reset'
 }
 
 const backToLogin = () => {
@@ -241,12 +253,31 @@ const confirmReset = async () => {
               <span>{{ loading ? 'Enviando...' : 'Enviar código' }}</span>
               <i class="ph ph-paper-plane-tilt submit-arrow-icon"></i>
             </button>
+            <a href="#" class="return-login-link" @click.prevent="goToReset">Já recebi o código</a>
             <a href="#" class="return-login-link" @click.prevent="backToLogin">Voltar ao login</a>
           </form>
 
           <!-- ESQUECI A SENHA: CÓDIGO + NOVA SENHA -->
           <form v-else @submit.prevent="confirmReset" class="auth-form">
             <p v-if="info" class="msg-status-info">{{ info }}</p>
+
+            <!-- E-mail editável: quem chega pelo link do e-mail não passou pelo passo
+                 anterior, então não há estado guardado para reaproveitar. -->
+            <div class="input-group">
+              <label class="field-label" for="resetEmailConfirm">E-mail</label>
+              <div class="field-control-wrapper">
+                <i class="ph ph-envelope field-icon-left"></i>
+                <input
+                  v-model="resetEmail"
+                  type="email"
+                  id="resetEmailConfirm"
+                  placeholder="Digite seu e-mail"
+                  class="field-input with-left-icon"
+                  required
+                />
+              </div>
+            </div>
+
             <div class="input-group">
               <label class="field-label" for="resetCode">Código recebido</label>
               <div class="field-control-wrapper">
