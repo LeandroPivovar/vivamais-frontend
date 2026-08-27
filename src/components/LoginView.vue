@@ -707,13 +707,15 @@ const confirmReset = async () => {
     justify-content: space-between;
     align-items: stretch;
     height: 100dvh;
-    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
     background-color: #F8FAFD;
     background-image: none;
     padding: 0;
     margin: 0;
-    overflow-y: auto;
+    overflow: hidden;
     overflow-x: hidden;
+    overscroll-behavior: none;
   }
 
   .mobile-hero-header {
@@ -721,9 +723,9 @@ const confirmReset = async () => {
     align-items: center;
     justify-content: center;
     width: 100%;
-    flex: 1;
-    min-height: 140px;
-    padding: 24px 20px 52px;
+    flex: 1 1 auto;
+    min-height: 112px;
+    padding: 22px 20px clamp(40px, 7dvh, 52px);
     background:
       radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.15) 0 40px, transparent 41px),
       radial-gradient(circle at 85% 80%, rgba(0, 181, 176, 0.3) 0 60px, transparent 61px),
@@ -737,11 +739,23 @@ const confirmReset = async () => {
     flex-direction: column;
     width: 100%;
     max-width: 100%;
+    max-height: calc(100dvh - 96px);
     padding: 0;
     margin: -36px 0 0 0;
     z-index: 10;
     gap: 0;
     flex-shrink: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .login-container::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
   }
 
   .benefits-section {
@@ -765,7 +779,7 @@ const confirmReset = async () => {
     display: flex;
     flex-direction: column;
     margin: 0;
-    padding: 24px 22px 24px;
+    padding: clamp(18px, 3.6dvh, 24px) 22px max(18px, env(safe-area-inset-bottom));
     box-sizing: border-box;
   }
 
@@ -778,7 +792,7 @@ const confirmReset = async () => {
   }
 
   .card-heading {
-    font-size: 1.45rem;
+    font-size: 1.38rem;
     font-weight: 800;
     color: #06285C;
     margin-bottom: 4px;
@@ -799,12 +813,12 @@ const confirmReset = async () => {
   }
 
   .field-input {
-    height: 48px;
+    height: clamp(44px, 7dvh, 48px);
     border-radius: 12px;
   }
 
   .submit-btn-primary {
-    height: 50px;
+    height: clamp(46px, 7dvh, 50px);
     border-radius: 12px;
     font-size: 1rem;
     margin-top: 4px;
