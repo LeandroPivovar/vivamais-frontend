@@ -536,16 +536,15 @@ onBeforeUnmount(() => {
         <header
           class="pwa-header"
           :class="{ 'menu-open': showRefMenuDropdown }"
-          style="position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 16px 24px; background: white; border-bottom: 1px solid var(--border-color);"
         >
-          <div @click="navigateTo('home')" style="cursor: pointer; display: flex; align-items: center;">
-            <img src="/logo.png" alt="Viva Mais" class="pwa-logo" style="max-height: 32px;" />
+          <div class="pwa-logo-area" @click="navigateTo('home')">
+            <img src="/logo.png" alt="Viva Mais" class="pwa-logo" />
           </div>
           
           <!-- Menu mobile principal -->
-          <div ref="mobileMenuRef" style="position: relative; display: flex; align-items: center;">
-            <button @click.stop="toggleMainMobileMenu" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center;">
-              <i class="ph ph-list" style="font-size: 26px; color: var(--secondary);"></i>
+          <div ref="mobileMenuRef" class="pwa-menu-wrap">
+            <button class="pwa-menu-toggle" @click.stop="toggleMainMobileMenu" aria-label="Abrir menu">
+              <i class="ph ph-list"></i>
             </button>
             
             <div
@@ -1009,21 +1008,64 @@ onBeforeUnmount(() => {
 }
 
 .pwa-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
   background: var(--bg-white);
-  padding: 16px;
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 65px;
+  padding: 16px 24px;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--border-color);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 .pwa-header.menu-open {
   z-index: 100000 !important;
 }
 
+.pwa-logo-area {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .pwa-logo {
-  max-height: 36px;
+  max-height: 32px;
+  width: auto;
+  display: block;
   /* Removido o filtro invertido para manter as cores originais no fundo branco */
+}
+
+.pwa-menu-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.pwa-menu-toggle {
+  width: 34px;
+  height: 34px;
+  padding: 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pwa-menu-toggle i {
+  font-size: 26px;
 }
 
 .mobile-main-menu-overlay {

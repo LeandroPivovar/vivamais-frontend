@@ -57,6 +57,7 @@ body {
   background-color: var(--bg-gray);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  min-height: 100%;
 }
 
 /* Títulos usam Aristotelica Display (identidade Viva Mais); corpo segue em Inter. */
@@ -226,8 +227,12 @@ button, input, select, textarea {
 
 .pwa-simulator .main-content {
   overflow-y: auto;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   padding-bottom: 90px; /* Margem para navegação inferior */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* Botões do Seletor de Modo no Topo */
@@ -896,9 +901,22 @@ input:checked + .slider:before {
 
 @media (max-width: 767px) {
   html, body, #app {
+    height: 100%;
+    min-height: 100%;
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+  }
+
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none;
   }
 
   img, video, svg {
@@ -909,17 +927,22 @@ input:checked + .slider:before {
   .pwa-layout {
     background: var(--bg-gray) !important;
     padding: 0 !important;
+    height: 100dvh !important;
     min-height: 100dvh !important;
     align-items: stretch !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
   }
   
   .pwa-simulator {
     max-width: 100% !important;
     height: 100dvh !important;
+    max-height: 100dvh !important;
     margin: 0 !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+    overflow: hidden !important;
   }
   
   .pwa-status-bar {
@@ -936,6 +959,10 @@ input:checked + .slider:before {
   }
 
   .pwa-simulator .main-content {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow-y: auto !important;
     padding: 16px 16px calc(112px + env(safe-area-inset-bottom)) !important;
   }
 
