@@ -66,6 +66,25 @@ const form = ref({
 
 const planPrice = computed(() => prices.value[planType.value] ?? '')
 
+/**
+ * Purchase no Meta Pixel. O eventID é o mesmo que a Conversions API usa no
+ * backend — sem ele a Meta contaria a mesma venda duas vezes.
+ */
+const trackPurchase = (transactionId) => {
+  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return
+  const value = Number(String(planPrice.value).replace(/[^\d,]/g, '').replace(',', '.')) || 0
+  try {
+    window.fbq(
+      'track',
+      'Purchase',
+      { value, currency: 'BRL', content_name: `Plano ${planType.value}`, content_type: 'product' },
+      { eventID: `vm-purchase-${transactionId}` },
+    )
+  } catch {
+    // pixel nunca pode derrubar a tela de sucesso da compra
+  }
+}
+
 const toBrDate = (iso) => {
   if (!iso) return ''
   const [y, m, d] = iso.split('-')
@@ -158,6 +177,12 @@ const submit = async () => {
       cardToken,
     })
     status.value = res?.status || 'pending'
+    // Purchase no pixel só quando o pagamento realmente fechou. PIX sai daqui como
+    // 'pending' e só confirma no webhook — nesse caso quem reporta é a Conversions
+    // API no backend, que usa o mesmo eventID e a Meta deduplica.
+    if (res?.status === 'paid' && res?.transactionId) {
+      trackPurchase(res.transactionId)
+    }
     pixCode.value = res?.pixCode || ''
     // QR sempre gerado do código (não depende da imagem da Veenca).
     pixImage.value = pixCode.value ? await genQr(pixCode.value) : (res?.pixImage || '')
