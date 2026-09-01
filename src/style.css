@@ -219,7 +219,7 @@ button, input, select, textarea {
   border-radius: 40px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   overflow: hidden;
-  background: var(--bg-gray);
+  background: #FFFFFF !important;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -233,6 +233,12 @@ button, input, select, textarea {
   padding-bottom: 90px; /* Margem para navegação inferior */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  background: #FFFFFF !important;
+}
+
+.pwa-simulator .main-content.no-padding {
+  padding: 0 0 90px 0 !important;
+  background: #FFFFFF !important;
 }
 
 /* Botões do Seletor de Modo no Topo */
@@ -964,6 +970,11 @@ input:checked + .slider:before {
     height: auto !important;
     overflow-y: auto !important;
     padding: 16px 16px calc(112px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .pwa-simulator .main-content.no-padding {
+    padding: 0 0 calc(90px + env(safe-area-inset-bottom)) !important;
+    background: #FFFFFF !important;
   }
 
   .pwa-layout .dashboard-wrapper,

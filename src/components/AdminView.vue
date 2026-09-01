@@ -13,8 +13,9 @@ const props = defineProps({
 
 const emit = defineEmits(['triggerDevModal'])
 
-// Aba ativa do Admin: 'usuarios', 'financeiro', 'tickets' ou 'chat'
+// Aba ativa do Admin: 'usuarios', 'financeiro', 'suporte', 'saques' ou 'teen'
 const activeAdminTab = ref('usuarios')
+const activeSupportSubTab = ref('tickets') // 'tickets' ou 'chat'
 
 // Dados vêm da API — banco é a única fonte de verdade
 const users = ref([])
@@ -125,13 +126,6 @@ const loadTickets = async () => {
     adminTickets.value = [] 
   }
 }
-const openTicketsTab = async () => {
-  activeAdminTab.value = 'tickets'
-  await loadTickets()
-  if (!currentTicket.value && adminTickets.value.length > 0) {
-    currentTicket.value = adminTickets.value[0]
-  }
-}
 const openAdminTicket = async (id) => {
   try { 
     const res = await api.get(`/admin/tickets/${id}`)
@@ -216,12 +210,50 @@ const loadChatConvs = async () => {
   }
 }
 
-const openChatTab = async () => {
-  activeAdminTab.value = 'chat'
-  await loadChatConvs()
-  if (!chatCurrent.value && chatConvs.value.length > 0) {
-    chatCurrent.value = normalizeChatCurrent(chatConvs.value[0])
+const adminSupportUnreadCount = computed(() => {
+  return chatConvs.value.reduce((acc, c) => acc + (c.unreadForAdmin || 0), 0)
+})
+
+const openSuporteTab = async (subTab = null) => {
+  activeAdminTab.value = 'suporte'
+  if (subTab) {
+    activeSupportSubTab.value = subTab
   }
+  await Promise.all([
+    loadTickets(),
+    loadChatConvs()
+  ])
+  if (activeSupportSubTab.value === 'tickets') {
+    if (!currentTicket.value && adminTickets.value.length > 0) {
+      currentTicket.value = adminTickets.value[0]
+    }
+  } else if (activeSupportSubTab.value === 'chat') {
+    if (!chatCurrent.value && chatConvs.value.length > 0) {
+      chatCurrent.value = normalizeChatCurrent(chatConvs.value[0])
+    }
+    initAdminChatSocket()
+  }
+}
+
+const switchSupportSubTab = async (subTab) => {
+  activeSupportSubTab.value = subTab
+  if (subTab === 'tickets') {
+    await loadTickets()
+    if (!currentTicket.value && adminTickets.value.length > 0) {
+      currentTicket.value = adminTickets.value[0]
+    }
+  } else if (subTab === 'chat') {
+    await loadChatConvs()
+    if (!chatCurrent.value && chatConvs.value.length > 0) {
+      chatCurrent.value = normalizeChatCurrent(chatConvs.value[0])
+    }
+    initAdminChatSocket()
+  }
+}
+
+const openTicketsTab = () => openSuporteTab('tickets')
+
+const initAdminChatSocket = () => {
   try {
     chatSocket = getSocket()
     if (!chatWired && chatSocket) {
@@ -234,6 +266,8 @@ const openChatTab = async () => {
     console.warn('Socket connect skipped:', err)
   }
 }
+
+const openChatTab = () => openSuporteTab('chat')
 
 const openChatConv = async (id) => {
   try {
@@ -916,17 +950,11 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         <i class="ph ph-chart-line-up"></i> Histórico Financeiro (Renovações)
       </button>
       <button
-        :class="['admin-tab-btn', { active: activeAdminTab === 'tickets' }]"
-        @click="openTicketsTab"
+        :class="['admin-tab-btn', { active: activeAdminTab === 'suporte' }]"
+        @click="openSuporteTab()"
       >
-        <i class="ph ph-headset"></i> Tickets de Suporte
-      </button>
-      <button
-        :class="['admin-tab-btn', { active: activeAdminTab === 'chat' }]"
-        @click="openChatTab"
-      >
-        <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
-        <span v-if="chatConvs.some(c => c.unreadForAdmin > 0)" class="chat-nav-dot"></span>
+        <i class="ph ph-headset"></i> Suporte
+        <span v-if="adminSupportUnreadCount > 0" class="chat-nav-dot"></span>
       </button>
       <button
         :class="['admin-tab-btn', { active: activeAdminTab === 'saques' }]"
@@ -1235,7 +1263,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
     <!-- ABA 2: HISTÓRICO FINANCEIRO / RENOVAÇÕES -->
     <div v-else-if="activeAdminTab === 'financeiro'" class="tab-content-admin animated-item" style="animation-delay: 0s;">
-      <div class="admin-section-switcher">
+      <div class="admin-section-switcher finance-section-switcher">
         <button class="active" @click="activeAdminTab = 'financeiro'">
           <i class="ph ph-chart-line-up"></i> Histórico
         </button>
@@ -1431,25 +1459,41 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
       </div>
     </div>
 
-    <!-- ABA 3: TICKETS DE SUPORTE -->
-    <div v-if="activeAdminTab === 'tickets'" class="tab-content-admin">
-      <div class="admin-section-switcher">
-        <button class="active" @click="openTicketsTab">
-          <i class="ph ph-headset"></i> Tickets
+    <!-- ABA 3: SUPORTE & ATENDIMENTO (TICKETS & CHAT UNIFICADOS) -->
+    <div v-if="activeAdminTab === 'suporte'" class="tab-content-admin animated-item" style="animation-delay: 0s;">
+      <!-- Switcher interno de Suporte: Tickets(X) e Chat(Y) -->
+      <!-- Switcher de Sub-Abas: Tickets / Chat -->
+      <div class="admin-section-switcher" style="margin-bottom: 20px;">
+        <button 
+          :class="{ active: activeSupportSubTab === 'tickets' }" 
+          @click="switchSupportSubTab('tickets')"
+        >
+          <i class="ph ph-headset"></i> Tickets ({{ adminTickets.length }})
         </button>
-        <button @click="openChatTab">
-          <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
+        <button 
+          :class="{ active: activeSupportSubTab === 'chat' }" 
+          @click="switchSupportSubTab('chat')"
+        >
+          <i class="ph ph-chat-circle-dots"></i> Chat ({{ chatConvs.length }})
+          <span v-if="adminSupportUnreadCount > 0" class="chat-nav-dot"></span>
         </button>
       </div>
 
-      <div class="tickets-admin-grid">
-        <!-- Lista -->
-        <div class="card" style="padding:0; overflow:hidden;">
-          <div style="padding:14px 18px; border-bottom:1px solid var(--border-color); font-weight:700; color:var(--secondary);">
-            Tickets ({{ adminTickets.length }})
+      <!-- Conteúdo de Tickets -->
+      <div v-if="activeSupportSubTab === 'tickets'" class="tickets-admin-grid">
+        <!-- Lista de Tickets -->
+        <div class="card tickets-admin-card" style="padding:0; overflow:hidden; display:flex; flex-direction:column; height:100%;">
+          <div class="tickets-admin-card-header">
+            <span>Tickets de Suporte ({{ adminTickets.length }})</span>
+            <button class="btn btn-outline btn-sm" @click="loadTickets" title="Atualizar">
+              <i class="ph ph-arrows-clockwise"></i>
+            </button>
           </div>
-          <p v-if="!adminTickets.length" style="padding:24px; text-align:center; color:var(--text-gray);">Nenhum ticket.</p>
-          <ul v-else style="list-style:none; margin:0; padding:0; max-height:60vh; overflow-y:auto;">
+          <div v-if="!adminTickets.length" class="tickets-admin-empty">
+            <i class="ph ph-tray" style="font-size:32px; margin-bottom:8px; opacity:0.5;"></i>
+            <p style="margin:0;">Nenhum ticket encontrado.</p>
+          </div>
+          <ul v-else class="tickets-admin-list">
             <li v-for="t in adminTickets" :key="t.id"
               :class="['ticket-row', { active: currentTicket && currentTicket.id === t.id }]"
               @click="openAdminTicket(t.id)">
@@ -1462,17 +1506,18 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           </ul>
         </div>
 
-        <!-- Chat -->
-        <div class="card" style="display:flex; flex-direction:column;">
-          <div v-if="!currentTicket" style="margin:auto; color:var(--text-gray); text-align:center; padding:40px;">
-            Selecione um ticket para ver a conversa.
+        <!-- Conversa / Thread do Ticket -->
+        <div class="card tickets-admin-card" style="padding:0; overflow:hidden; display:flex; flex-direction:column; height:100%;">
+          <div v-if="!currentTicket" class="tickets-admin-empty">
+            <i class="ph ph-chat-text" style="font-size:36px; margin-bottom:8px; opacity:0.5;"></i>
+            <p style="margin:0;">Selecione um ticket para visualizar o histórico de mensagens.</p>
           </div>
           <template v-else>
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; border-bottom:1px solid var(--border-color); padding-bottom:12px; margin-bottom:12px; flex-wrap:wrap;">
+            <div class="tickets-admin-card-header" style="flex-wrap:wrap; gap:8px;">
               <div>
                 <strong>{{ currentTicket.title }}</strong>
                 <span :class="['badge', TICKET_STATUS_CLASS[currentTicket.status] || 'badge-muted']" style="margin-left:8px;">{{ currentTicket.statusLabel }}</span>
-                <div style="font-size:12px; color:var(--text-gray);">{{ currentTicket.user }}</div>
+                <div style="font-size:12px; color:var(--text-gray); font-weight:normal;">{{ currentTicket.user }}</div>
               </div>
               <button v-if="currentTicket.status !== 'fechado'" class="btn btn-outline btn-sm text-red" @click="setTicketStatus('fechado')">
                 <i class="ph ph-x-circle"></i> Fechar
@@ -1491,41 +1536,38 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
               </div>
             </div>
 
-            <div v-if="currentTicket.status !== 'fechado'" style="border-top:1px solid var(--border-color); padding-top:12px; margin-top:12px;">
-              <textarea v-model="ticketReply.body" class="form-control" rows="2" placeholder="Responder..."></textarea>
+            <div v-if="currentTicket.status !== 'fechado'" class="ticket-reply-box">
+              <textarea v-model="ticketReply.body" class="form-control" rows="2" placeholder="Digite uma resposta para o cliente..."></textarea>
               <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:8px;">
-                <label class="btn btn-outline btn-sm" style="cursor:pointer;">
+                <label class="btn btn-outline btn-sm" style="cursor:pointer;" title="Anexar arquivo">
                   <i class="ph ph-paperclip"></i><span v-if="ticketReply.image"> 1</span>
                   <input type="file" accept="image/*,application/pdf" hidden @change="e => ticketUpload(e.target.files[0])" />
                 </label>
-                <button class="btn btn-secondary btn-sm" :disabled="ticketLoading" @click="replyTicket">Enviar resposta</button>
+                <button class="btn btn-secondary btn-sm" :disabled="ticketLoading" @click="replyTicket">
+                  <i class="ph ph-paper-plane-right"></i> Enviar resposta
+                </button>
               </div>
             </div>
-            <p v-else style="text-align:center; color:var(--text-gray); font-size:13px; margin-top:12px;">Ticket fechado.</p>
+            <p v-else style="text-align:center; color:var(--text-gray); font-size:13px; margin:0; padding:12px; background:#f8fafc; border-top:1px solid var(--border-color);">Ticket fechado.</p>
           </template>
         </div>
       </div>
-    </div>
 
-    <!-- ABA 4: CHAT AO VIVO -->
-    <div v-if="activeAdminTab === 'chat'" class="tab-content-admin">
-      <div class="admin-section-switcher">
-        <button @click="openTicketsTab">
-          <i class="ph ph-headset"></i> Tickets
-        </button>
-        <button class="active" @click="openChatTab">
-          <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
-        </button>
-      </div>
-
-      <div class="tickets-admin-grid">
+      <!-- Conteúdo de Chat ao Vivo -->
+      <div v-else-if="activeSupportSubTab === 'chat'" class="tickets-admin-grid">
         <!-- Conversas -->
-        <div class="card" style="padding:0; overflow:hidden;">
-          <div style="padding:14px 18px; border-bottom:1px solid var(--border-color); font-weight:700; color:var(--secondary);">
-            Conversas ({{ chatConvs.length }})
+        <div class="card tickets-admin-card" style="padding:0; overflow:hidden; display:flex; flex-direction:column; height:100%;">
+          <div class="tickets-admin-card-header">
+            <span>Conversas em Andamento ({{ chatConvs.length }})</span>
+            <button class="btn btn-outline btn-sm" @click="loadChatConvs" title="Atualizar">
+              <i class="ph ph-arrows-clockwise"></i>
+            </button>
           </div>
-          <p v-if="!chatConvs.length" style="padding:24px; text-align:center; color:var(--text-gray);">Nenhuma conversa.</p>
-          <ul v-else style="list-style:none; margin:0; padding:0; max-height:60vh; overflow-y:auto;">
+          <div v-if="!chatConvs.length" class="tickets-admin-empty">
+            <i class="ph ph-chat-circle-dots" style="font-size:32px; margin-bottom:8px; opacity:0.5;"></i>
+            <p style="margin:0;">Nenhuma conversa ativa no momento.</p>
+          </div>
+          <ul v-else class="tickets-admin-list">
             <li v-for="c in chatConvs" :key="c.id"
               :class="['ticket-row', { active: chatCurrent && (chatCurrent.conversation?.id === c.id || chatCurrent.id === c.id) }]"
               @click="openChatConv(c.id)">
@@ -1541,16 +1583,23 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         </div>
 
         <!-- Conversa aberta -->
-        <div class="card" style="display:flex; flex-direction:column;">
-          <div v-if="!chatCurrent" style="margin:auto; color:var(--text-gray); text-align:center; padding:40px;">
-            Selecione uma conversa.
+        <div class="card tickets-admin-card" style="padding:0; overflow:hidden; display:flex; flex-direction:column; height:100%;">
+          <div v-if="!chatCurrent" class="tickets-admin-empty">
+            <i class="ph ph-chats-circle" style="font-size:36px; margin-bottom:8px; opacity:0.5;"></i>
+            <p style="margin:0;">Selecione uma conversa para atender em tempo real.</p>
           </div>
           <template v-else>
-            <div style="border-bottom:1px solid var(--border-color); padding-bottom:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div class="tickets-admin-card-header" style="flex-wrap:wrap; gap:8px;">
               <strong>{{ chatCurrent.conversation?.user || chatCurrent.conversation?.userName || chatCurrent.user || 'Usuário' }}
-                <span :class="['chat-status-pill', (chatCurrent.conversation?.status || chatCurrent.status) === 'fechado' ? 'fechado' : 'aberto']">{{ (chatCurrent.conversation?.status || chatCurrent.status) === 'fechado' ? 'Fechado' : 'Aberto' }}</span>
+                <span :class="['chat-status-pill', (chatCurrent.conversation?.status || chatCurrent.status) === 'fechado' ? 'fechado' : 'aberto']">
+                  {{ (chatCurrent.conversation?.status || chatCurrent.status) === 'fechado' ? 'Fechado' : 'Aberto' }}
+                </span>
               </strong>
-              <button v-if="(chatCurrent.conversation?.status || chatCurrent.status) !== 'fechado'" class="btn btn-outline" style="padding:6px 12px; font-size:13px;" @click="closeChat">
+              <button
+                v-if="(chatCurrent.conversation?.status || chatCurrent.status) !== 'fechado'"
+                class="btn btn-outline btn-sm text-red"
+                @click="closeChat"
+              >
                 <i class="ph ph-x-circle"></i> Encerrar conversa
               </button>
             </div>
@@ -1563,12 +1612,12 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                 </div>
               </div>
             </div>
-            <div v-if="(chatCurrent.conversation?.status || chatCurrent.status) !== 'fechado'" style="display:flex; gap:8px; border-top:1px solid var(--border-color); padding-top:12px; margin-top:12px;">
-              <input v-model="chatInput" type="text" class="form-control" placeholder="Responder..." @keyup.enter="sendChat" />
-              <button class="btn btn-secondary" @click="sendChat"><i class="ph ph-paper-plane-tilt"></i></button>
+            <div v-if="(chatCurrent.conversation?.status || chatCurrent.status) !== 'fechado'" class="ticket-reply-box" style="display:flex; gap:8px;">
+              <input v-model="chatInput" type="text" class="form-control" placeholder="Digite uma resposta e pressione Enter..." @keyup.enter="sendChat" />
+              <button class="btn btn-secondary" @click="sendChat" title="Enviar"><i class="ph ph-paper-plane-tilt"></i></button>
             </div>
-            <p v-else style="border-top:1px solid var(--border-color); padding-top:12px; margin-top:12px; text-align:center; color:var(--text-gray); font-size:13px;">
-              Conversa encerrada. Ela será removida em instantes; se o usuário escrever de novo, abre uma nova conversa.
+            <p v-else style="border-top:1px solid var(--border-color); padding:12px; margin:0; text-align:center; color:var(--text-gray); font-size:13px; background:#f8fafc;">
+              Conversa encerrada.
             </p>
           </template>
         </div>
@@ -1577,7 +1626,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
     <!-- ABA: SAQUES (PEDIDOS DE RETIRADA DE COMISSÃO) -->
     <div v-if="activeAdminTab === 'saques'" class="tab-content-admin">
-      <div class="admin-section-switcher">
+      <div class="admin-section-switcher finance-section-switcher">
         <button @click="activeAdminTab = 'financeiro'">
           <i class="ph ph-chart-line-up"></i> Histórico
         </button>
@@ -1586,28 +1635,36 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         </button>
       </div>
 
-      <div class="admin-filters-bar withdrawals-filter-bar" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
-        <div class="metric-card card" style="flex:1; min-width:200px; margin:0;">
-          <div class="metric-header">
-            <i class="ph ph-clock" style="color:#d97706; background:#fffbeb; border:1px solid #fde68a; padding:8px; border-radius:var(--radius-sm); font-size:20px;"></i>
-            <span style="font-weight:700; color:#92400e;">PENDENTE DE PAGAMENTO</span>
+      <!-- Card Único Unificado de Métrica e Filtros de Saques -->
+      <div class="card animated-item" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 20px; margin-bottom: 20px; animation-delay: 0.05s;">
+        <!-- Bloco de Métrica: Ícone + 3 Linhas -->
+        <div style="display: flex; align-items: center; gap: 14px; min-width: 260px;">
+          <div style="width: 44px; height: 44px; border-radius: 12px; background: #fef3c7; border: 1px solid #fde68a; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #d97706; flex-shrink: 0;">
+            <i class="ph ph-clock"></i>
           </div>
-          <h3 style="color:#d97706;">R$ {{ money(withdrawalsPendingTotal) }}</h3>
-          <p>{{ withdrawalsPendingCount }} pedido(s) aguardando baixa</p>
+          <div style="display: flex; flex-direction: column; gap: 1px;">
+            <span style="font-size: 11px; font-weight: 700; color: #92400e; letter-spacing: 0.03em; text-transform: uppercase;">Pendente de Pagamento</span>
+            <strong style="font-size: 20px; font-weight: 800; color: #b45309; line-height: 1.15;">R$ {{ money(withdrawalsPendingTotal) }}</strong>
+            <span style="font-size: 11.5px; color: #78350f; font-weight: 500;">{{ withdrawalsPendingCount }} pedido(s) aguardando baixa</span>
+          </div>
         </div>
 
-        <div class="withdrawals-controls" style="display:flex; gap:8px; align-items:center;">
-          <select v-model="withdrawalsStatusFilter" class="form-control" style="width:auto; min-width:140px;">
-            <option value="">Todos</option>
+        <!-- Controles de Filtros Integrados -->
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <select v-model="withdrawalsStatusFilter" class="form-control" style="width: auto; min-width: 140px;">
+            <option value="">Todos os status</option>
             <option value="pendente">Pendentes</option>
             <option value="pago">Pagos</option>
           </select>
-          <select v-model.number="withdrawalsLimit" class="form-control" style="width:auto; min-width:75px;">
-            <option :value="10">10</option>
-            <option :value="25">25</option>
-            <option :value="50">50</option>
-          </select>
-          <button class="btn btn-outline" @click="loadWithdrawals()" :disabled="withdrawalsLoading">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 12px; color: var(--text-gray);">Limite:</span>
+            <select v-model.number="withdrawalsLimit" class="form-control" style="width: auto; min-width: 70px;">
+              <option :value="10">10</option>
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+            </select>
+          </div>
+          <button class="btn btn-outline" @click="loadWithdrawals()" :disabled="withdrawalsLoading" title="Atualizar dados">
             <i class="ph ph-arrow-clockwise"></i> Atualizar
           </button>
         </div>
@@ -1748,11 +1805,11 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         <span>Finanças</span>
       </button>
       <button
-        :class="['admin-bottom-tab', { active: activeAdminTab === 'tickets' || activeAdminTab === 'chat' }]"
-        @click="openTicketsTab"
+        :class="['admin-bottom-tab', { active: activeAdminTab === 'suporte' }]"
+        @click="openSuporteTab()"
       >
         <i class="ph ph-headset"></i>
-        <span>Atendimento</span>
+        <span>Suporte</span>
       </button>
       <button
         :class="['admin-bottom-tab', { active: activeAdminTab === 'teen' }]"
@@ -2590,34 +2647,109 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 }
 
 /* Tickets de suporte (admin) */
-.tickets-admin-grid { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
-@media (max-width: 860px) { .tickets-admin-grid { grid-template-columns: 1fr; } }
+.tickets-admin-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+  align-items: stretch;
+  width: 100%;
+  min-height: 560px;
+  height: 580px;
+}
+
+@media (max-width: 960px) {
+  .tickets-admin-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+.tickets-admin-card {
+  height: 100%;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+.tickets-admin-card-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 700;
+  color: var(--secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.tickets-admin-list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tickets-admin-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-gray);
+  text-align: center;
+}
+
 .ticket-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border-color); cursor:pointer; transition: background .15s; }
 .ticket-row:hover { background: var(--bg-gray, #f4f6f8); }
 .ticket-row.active { background: var(--primary-light, #e6efff); }
 .badge-muted { background:#e5e7eb; color:#6b7280; }
+
+.ticket-thread {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 16px 18px;
+  min-height: 0;
+}
+
+.ticket-reply-box {
+  border-top: 1px solid var(--border-color);
+  padding: 14px 18px;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
 .finance-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
   margin-bottom: 24px;
 }
 .finance-metric-card {
   text-align: center;
-  padding: 14px 10px;
+  padding: 16px 12px;
   min-width: 0;
+  border-radius: var(--radius-md, 12px);
+  background: #ffffff;
+  border: 1px solid var(--border-color, #e2e8f0);
 }
 .finance-metric-card strong,
 .finance-metric-card small,
 .finance-metric-card span {
   overflow-wrap: anywhere;
 }
-@media (max-width: 1180px) {
+@media (max-width: 1100px) {
   .finance-metrics-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 700px) {
+@media (max-width: 600px) {
   .finance-metrics-grid {
     grid-template-columns: 1fr;
   }
@@ -2729,7 +2861,53 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 }
 
 .admin-section-switcher {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 320px;
+  max-width: 440px;
+  margin: 0 0 20px;
+  padding: 5px;
+  background: #f1f5f9;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+}
+
+.admin-section-switcher button {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.admin-section-switcher button.active {
+  background: #ffffff;
+  color: var(--secondary);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.finance-section-switcher {
+  display: none !important;
+}
+
+@media (max-width: 1366px) {
+  .admin-panel.desktop .finance-section-switcher,
+  .admin-panel.pwa .finance-section-switcher {
+    display: inline-flex !important;
+  }
 }
 
 .admin-bottom-tab {

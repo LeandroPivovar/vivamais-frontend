@@ -128,7 +128,7 @@ const confirmReset = async () => {
 
         <div class="benefits-feature-list">
           <div class="feature-item">
-            <div class="feature-icon icon-teal-solid">
+            <div class="feature-icon icon-teal-soft">
               <i class="ph-fill ph-tag"></i>
             </div>
             <div class="feature-info">
@@ -163,7 +163,7 @@ const confirmReset = async () => {
       <div class="login-card-container">
         <div class="auth-card">
           <div class="card-header-block">
-            <h2 class="card-heading">Seja bem-vindo(a)! 👋</h2>
+            <h2 class="card-heading">Seja bem-vindo(a)! <span class="wave-emoji">👋</span></h2>
             <p class="card-subheading">
               Faça login para acessar seus benefícios<br />e acompanhar sua assinatura.
             </p>
@@ -417,6 +417,11 @@ const confirmReset = async () => {
   display: flex;
   align-items: center;
   gap: 16px;
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 14px;
+  padding: 10px 14px 10px 10px;
 }
 
 .feature-icon {
@@ -486,6 +491,22 @@ const confirmReset = async () => {
   font-size: 1.45rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+@keyframes wave {
+  0%   { transform: rotate(0deg); }
+  15%  { transform: rotate(18deg); }
+  30%  { transform: rotate(-10deg); }
+  45%  { transform: rotate(16deg); }
+  60%  { transform: rotate(-8deg); }
+  75%  { transform: rotate(12deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.wave-emoji {
+  display: inline-block;
+  transform-origin: 70% 80%;
+  animation: wave 1.6s ease-in-out 0.4s 3;
 }
 
 .card-subheading {

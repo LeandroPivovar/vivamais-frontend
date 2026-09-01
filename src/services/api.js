@@ -1,4 +1,44 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+
+// ==========================================================================
+// TODO: REMOVER ANTES DE IR PARA PRODUÇÃO — usuários de teste hardcoded
+// Criado em 2026-08-31 para testar o fluxo completo sem backend rodando.
+// ==========================================================================
+const _MOCK_USERS = [
+  { id: 9001, name: 'Admin Teste',    email: 'admin@teste.com',  cpf: '00000000000', password: 'admin123',  role: 'admin', plan: 'Individual' },
+  { id: 9002, name: 'Usuário Normal', email: 'normal@teste.com', cpf: '11111111111', password: 'normal123', role: 'user',  plan: 'Família'    },
+]
+const _MOCK_DEPENDENTS = [
+  { id: 9003, name: 'Criança Teste',      cpf: '22222222222', module: 'kids', birthDate: '15/06/2018' },
+  { id: 9004, name: 'Adolescente Teste',  cpf: '33333333333', module: 'teen', birthDate: '10/03/2010' },
+]
+function _mockToken(payload) {
+  // JWT fake (não valida assinatura, só para o frontend funcionar)
+  const enc = (obj) => btoa(JSON.stringify(obj)).replace(/=/g, '')
+  return `${enc({ alg: 'HS256' })}.${enc({ ...payload, exp: Date.now() / 1000 + 86400 })}.mocksig`
+}
+function _mockAgeGroup(birthDate) {
+  const [dd, mm, yyyy] = birthDate.split('/')
+  const birth = new Date(Number(yyyy), Number(mm) - 1, Number(dd))
+  const age = Math.floor((Date.now() - birth) / 31557600000)
+  return age <= 10 ? 'kids' : age <= 17 ? 'teen' : 'adult'
+}
+function _mockIntercept(path, body) {
+  if (path === '/auth/login') {
+    const u = _MOCK_USERS.find((x) => (x.email === body?.username || x.cpf === body?.username) && x.password === body?.password)
+    if (!u) return { ok: false, data: { message: 'Credenciais inválidas.' }, status: 401 }
+    return { ok: true, data: { token: _mockToken({ sub: u.id, email: u.email, role: u.role }), user: { id: u.id, name: u.name, plan: u.plan, active: true, role: u.role, isDependent: false } } }
+  }
+  if (path === '/auth/login-kids') {
+    const d = _MOCK_DEPENDENTS.find((x) => x.cpf === (body?.cpf ?? '').replace(/\D/g, ''))
+    if (!d) return { ok: false, data: { message: 'CPF não encontrado.' }, status: 401 }
+    const group = _mockAgeGroup(d.birthDate)
+    if (group !== body?.module) return { ok: false, data: { message: 'Idade do dependente não é compatível com esta área.' }, status: 401 }
+    return { ok: true, data: { token: _mockToken({ sub: d.id, scope: 'kids-teen' }), user: { id: d.id, name: d.name, isDependent: true, ageGroup: group, module: group } } }
+  }
+  return null
+}
+// ==========================================================================
 const TOKEN_KEY = 'acesso_saude_token'
 
 export function getToken() {
@@ -21,6 +61,16 @@ export class ApiError extends Error {
 }
 
 async function request(path, { method = 'GET', body } = {}) {
+
+  // TODO: REMOVER — intercepta login com usuários de teste hardcoded
+  if (method === 'POST') {
+    const mocked = _mockIntercept(path, body)
+    if (mocked) {
+      if (!mocked.ok) throw new ApiError(mocked.data.message, mocked.status)
+      return mocked.data
+    }
+  }
+  // TODO: FIM do bloco de teste
 
   const headers = { 'Content-Type': 'application/json' }
   const token = getToken()

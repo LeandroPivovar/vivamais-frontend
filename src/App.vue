@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
     <div v-else class="pwa-layout">
       <div class="pwa-simulator">
         <!-- Status Bar -->
-        <div class="pwa-status-bar">
+        <div class="pwa-status-bar" :class="{ 'home-status-bar': currentTab === 'home' }">
           <span class="device-time">14:04</span>
           <div class="device-icons">
             <i class="ph ph-wifi-high"></i>
@@ -532,8 +532,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Cabeçalho PWA -->
+        <!-- Cabeçalho PWA (Aparece em abas secundárias) -->
         <header
+          v-if="currentTab !== 'home'"
           class="pwa-header"
           :class="{ 'menu-open': showRefMenuDropdown }"
         >
@@ -541,64 +542,64 @@ onBeforeUnmount(() => {
             <img src="/logo.png" alt="Viva Mais" class="pwa-logo" />
           </div>
           
-          <!-- Menu mobile principal -->
           <div ref="mobileMenuRef" class="pwa-menu-wrap">
             <button class="pwa-menu-toggle" @click.stop="toggleMainMobileMenu" aria-label="Abrir menu">
               <i class="ph ph-list"></i>
             </button>
-            
-            <div
-              v-if="showRefMenuDropdown || isMobileMenuClosing"
-              :class="['mobile-main-menu-overlay', { closing: isMobileMenuClosing }]"
-              @click.self="closeMainMobileMenu"
-            >
-              <div :class="['mobile-main-menu-drawer', { closing: isMobileMenuClosing }]">
-                <div class="mobile-main-menu-head">
-                  <img src="/logo.png" alt="Viva Mais" class="pwa-logo" />
-                  <button class="mobile-main-menu-close" @click="closeMainMobileMenu" aria-label="Fechar menu">
-                    <i class="ph ph-x"></i>
-                  </button>
-                </div>
-
-                <button class="dropdown-item" @click="mobileNavigateTo('home')">
-                  <i class="ph ph-squares-four"></i> Visão Geral
-                </button>
-                <button class="dropdown-item" @click="mobileNavigateTo('perfil')">
-                  <i class="ph ph-user"></i> Minha Conta
-                </button>
-                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('financeiro')">
-                  <i class="ph ph-credit-card"></i> Financeiro
-                </button>
-                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('dependentes')">
-                  <i class="ph ph-users"></i> Dependentes
-                </button>
-                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('herdeiro')">
-                  <i class="ph ph-identification-card"></i> Herdeiro
-                </button>
-                <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('indicacoes')">
-                  <i class="ph ph-users-three"></i> Indicações
-                </button>
-                <button class="dropdown-item" @click="mobileNavigateTo('suporte')">
-                  <i class="ph ph-headset"></i> Suporte
-                </button>
-                <button class="dropdown-item" @click="mobileNavigateTo('chat')">
-                  <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
-                </button>
-                <button v-if="currentUser?.role === 'admin'" class="dropdown-item" @click="mobileNavigateTo('admin')">
-                  <i class="ph ph-shield-check"></i> Painel Admin
-                </button>
-
-                <div class="dropdown-divider"></div>
-                <button class="dropdown-item text-red" @click="mobileLogout">
-                  <i class="ph ph-sign-out"></i> Sair da Conta
-                </button>
-              </div>
-            </div>
           </div>
         </header>
 
+        <!-- Menu Drawer Mobile Principal (Acessível em todas as abas) -->
+        <div
+          v-if="showRefMenuDropdown || isMobileMenuClosing"
+          :class="['mobile-main-menu-overlay', { closing: isMobileMenuClosing }]"
+          @click.self="closeMainMobileMenu"
+        >
+          <div :class="['mobile-main-menu-drawer', { closing: isMobileMenuClosing }]">
+            <div class="mobile-main-menu-head">
+              <img src="/logo.png" alt="Viva Mais" class="pwa-logo" />
+              <button class="mobile-main-menu-close" @click="closeMainMobileMenu" aria-label="Fechar menu">
+                <i class="ph ph-x"></i>
+              </button>
+            </div>
+
+            <button class="dropdown-item" @click="mobileNavigateTo('home')">
+              <i class="ph ph-squares-four"></i> Visão Geral
+            </button>
+            <button class="dropdown-item" @click="mobileNavigateTo('perfil')">
+              <i class="ph ph-user"></i> Minha Conta
+            </button>
+            <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('financeiro')">
+              <i class="ph ph-credit-card"></i> Financeiro
+            </button>
+            <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('dependentes')">
+              <i class="ph ph-users"></i> Dependentes
+            </button>
+            <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('herdeiro')">
+              <i class="ph ph-identification-card"></i> Herdeiro
+            </button>
+            <button v-if="!currentUser?.isDependent" class="dropdown-item" @click="mobileNavigateTo('indicacoes')">
+              <i class="ph ph-users-three"></i> Indicações
+            </button>
+            <button class="dropdown-item" @click="mobileNavigateTo('suporte')">
+              <i class="ph ph-headset"></i> Suporte
+            </button>
+            <button class="dropdown-item" @click="mobileNavigateTo('chat')">
+              <i class="ph ph-chat-circle-dots"></i> Chat ao vivo
+            </button>
+            <button v-if="currentUser?.role === 'admin'" class="dropdown-item" @click="mobileNavigateTo('admin')">
+              <i class="ph ph-shield-check"></i> Painel Admin
+            </button>
+
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item text-red" @click="mobileLogout">
+              <i class="ph ph-sign-out"></i> Sair da Conta
+            </button>
+          </div>
+        </div>
+
         <!-- Corpo do PWA -->
-        <main class="main-content">
+        <main class="main-content" :class="{ 'no-padding': layoutMode === 'pwa' && currentTab === 'home' }">
           <AdminView
             v-if="currentTab === 'admin'"
             :layoutMode="'pwa'"
@@ -626,6 +627,7 @@ onBeforeUnmount(() => {
             @triggerDevModal="openDevModal"
             @changeTab="navigateTo"
             @changeRefTab="(tab) => activeRefTab = tab"
+            @openMenu="toggleMainMobileMenu"
           />
         </main>
 
@@ -664,25 +666,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Botão flutuante de chat ao vivo (todas as páginas, exceto admin) -->
-    <template v-if="currentUser?.role !== 'admin'">
-      <div
-        v-if="showChatPanel"
-        ref="chatPanelRef"
-        :class="['chat-fab-panel', { 'avoid-context-nav': shouldLiftFloatingChat }]"
-      >
-        <ChatAoVivoView />
-      </div>
-      <button
-        ref="chatButtonRef"
-        :class="['chat-fab', { 'avoid-context-nav': shouldLiftFloatingChat }]"
-        @click="toggleChatPanel"
-        :aria-label="showChatPanel ? 'Fechar chat' : 'Abrir chat'"
-      >
-        <i :class="showChatPanel ? 'ph ph-x' : 'ph ph-chat-circle-dots'"></i>
-        <span v-if="chatHasUnread && !showChatPanel" class="chat-fab-dot"></span>
-      </button>
-    </template>
+
 
     <!-- MODAL CUSTOMIZADO: FUNCIONALIDADE EM DESENVOLVIMENTO -->
     <div v-if="showDevModal" class="custom-modal-overlay" @click.self="showDevModal = false">
@@ -999,6 +983,12 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   font-size: 12px;
   font-weight: 600;
+  transition: background 0.3s ease;
+}
+
+.pwa-status-bar.home-status-bar {
+  background: #052453;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .device-icons {

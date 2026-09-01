@@ -78,38 +78,58 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['updateUser', 'logout', 'triggerDevModal', 'changeTab', 'changeRefTab'])
+const emit = defineEmits(['updateUser', 'logout', 'triggerDevModal', 'changeTab', 'changeRefTab', 'openMenu'])
 
 // Carrossel Contínuo
 const activeSlide = ref(0)
 const DEFAULT_SLIDES = [
   {
-    tag: 'SAÚDE',
-    title: 'Consultas de Telemedicina 24h',
-    description: 'Fale com um médico a qualquer hora, sem sair de casa.',
-    image: '/telemedicina-banner.png',
-    benefit: 'Telemedicina'
+    id: 'telemedicina',
+    tag: 'SAÚDE 24H',
+    title: 'Consultas Médicas<br>Online, Sem Filas',
+    description: 'Atendimento com clínicos gerais e especialistas<br>24h por dia direto no seu celular.',
+    shortDescription: 'Atendimento médico 24h<br>direto no seu celular.',
+    image: '/banner-telemedicina-novo.png',
+    benefit: 'Telemedicina',
+    buttonText: 'Acessar',
+    buttonIcon: 'ph-first-aid',
+    align: 'left'
   },
   {
-    tag: 'PET',
-    title: 'Consultas Veterinárias 24h',
-    description: 'Fale com um veterinário a qualquer hora, sem sair de casa.',
-    image: '/pet-banner.png',
-    benefit: 'Veterinário 24h'
+    id: 'pet',
+    tag: 'CUIDADO PET',
+    title: 'Saúde e Cuidado<br>Para Seu Pet 24h',
+    description: 'Orientação e pronto-socorro veterinário online<br>para cães e gatos sempre que precisar.',
+    shortDescription: 'Orientação veterinária online<br>para seu pet.',
+    image: '/banner-pet-novo.png',
+    benefit: 'Veterinário 24h',
+    buttonText: 'Acessar',
+    buttonIcon: 'ph-paw-print',
+    align: 'right'
   },
   {
-    tag: 'ECONOMIA',
-    title: 'Clube de Descontos Exclusivo',
-    description: 'Economize até 50% em farmácias, compras, lazer e parceiros.',
-    image: '/clube_banner.png',
-    benefit: 'Clube de Descontos'
+    id: 'clube',
+    tag: 'ECONOMIA & VANTAGENS',
+    title: 'Economize Até 50%<br>em Lojas Parceiras',
+    description: 'Milhares de descontos exclusivos em farmácias,<br>cinemas, restaurantes e grandes marcas.',
+    shortDescription: 'Milhares de descontos<br>em lojas e farmácias.',
+    image: '/banner-clube-novo.png',
+    benefit: 'Clube de Descontos',
+    buttonText: 'Acessar',
+    buttonIcon: 'ph-tag',
+    align: 'right'
   },
   {
-    tag: 'CONSULTAS & EXAMES',
-    title: 'Consultas e Exames',
-    description: 'Agende consultas e exames pelo app Nipomed no seu celular.',
-    image: '/saude_banner.png',
-    benefit: 'Consultas e exames'
+    id: 'consultas',
+    tag: 'REDE CREDENCIADA',
+    title: 'Consultas e Exames<br>com Preços Reduzidos',
+    description: 'Agende atendimentos presenciais em clínicas e laboratórios<br>de confiança pelo app Nipomed.',
+    shortDescription: 'Consultas e exames<br>na rede Nipomed.',
+    image: '/banner-consultas-novo.png',
+    benefit: 'Consultas e exames',
+    buttonText: 'Acessar',
+    buttonIcon: 'ph-clipboard-text',
+    align: 'left'
   }
 ]
 const slides = ref([...DEFAULT_SLIDES])
@@ -137,6 +157,24 @@ onMounted(() => {
 // Modais de Redirecionamento
 const activeRedirect = ref(null)
 const showRedirectModal = ref(false)
+
+// Extrato & Saldo Mobile
+const showExtratoModal = ref(false)
+const showBalance = ref(true)
+const toggleShowBalance = () => {
+  showBalance.value = !showBalance.value
+}
+const openExtratoModal = async () => {
+  showExtratoModal.value = true
+  try {
+    const data = await api.get('/billing/invoices')
+    if (data && Array.isArray(data)) {
+      invoices.value = data
+    }
+  } catch (e) {
+    // Mantém fallback existente
+  }
+}
 
 // Consultas e exames (app Nipomed) — modal de seleção de plataforma + redirecionamento.
 const showConsultasModal = ref(false)
@@ -560,6 +598,23 @@ const referralStats = computed(() => {
     bonusTotal,
     bonusCount,
   }
+})
+
+// Saldo total da pessoa (calculado a partir do usuário, saque ou comissões)
+const userTotalBalance = computed(() => {
+  if (props.user?.balance !== undefined && props.user?.balance !== null) {
+    if (typeof props.user.balance === 'number') {
+      return formatCurrency(props.user.balance)
+    }
+    return String(props.user.balance).startsWith('R$') ? props.user.balance : `R$ ${props.user.balance}`
+  }
+  if (withdrawSummary.value?.availableLabel && withdrawSummary.value.availableLabel !== 'R$ 0,00') {
+    return withdrawSummary.value.availableLabel
+  }
+  if (referralStats.value.ganhosTotais > 0) {
+    return formatCurrency(referralStats.value.ganhosTotais)
+  }
+  return 'R$ 0,00'
 })
 
 // --- SAQUE DE COMISSÕES ---
@@ -1153,99 +1208,73 @@ onMounted(async () => {
   <div class="dashboard-wrapper" :class="[layoutMode]">
     
     <!-- ABA 1: VISÃO GERAL (HOME) -->
-    <div v-if="currentTab === 'home'" class="tab-content">
-      <header class="welcome-section animated-item" style="animation-delay: 0s;">
-        <div class="welcome-text">
-          <h1>Olá, {{ user.name }} <span class="wave-emoji" aria-label="Aceno" role="img">👋</span></h1>
-          <p>Confira o andamento da sua conta e acesse seus benefícios de saúde.</p>
-        </div>
-        <div class="plan-pill">
-          <span class="badge badge-success">Assinatura Ativa</span>
-          <span class="plan-name">{{ user.plan }}</span>
-        </div>
-      </header>
-
-      <!-- Assinatura própria (PIX): não-pago mostra sempre "Ativar plano"; pago só nos 3 dias antes do vencimento. Oculta p/ dependentes -->
-      <section v-if="!user?.isDependent && (!user?.active || canRenew)" class="renew-card animated-item" style="animation-delay: 0.05s;">
-        <div class="renew-info">
-          <i class="ph ph-wallet"></i>
-          <div>
-            <strong>Minha Assinatura — {{ user.plan }}</strong>
-            <span v-if="!user?.active">Ative seu plano com o pagamento para liberar os benefícios.<template v-if="billingSummary.monthlyValue"> {{ billingSummary.monthlyValue }}.</template></span>
-            <span v-else-if="billingSummary.monthlyValue">{{ billingSummary.monthlyValue }}<template v-if="billingSummary.nextBillingDate"> · próxima cobrança em {{ billingSummary.nextBillingDate }}</template></span>
-            <span v-else>Renove sua assinatura via PIX, sem preencher dados de novo.</span>
+    <div v-if="currentTab === 'home'" class="tab-content" :class="{ 'pwa-home-tab': layoutMode === 'pwa' }">
+      
+      <!-- ================= DESKTOP HEADER & SLIDER ================= -->
+      <template v-if="layoutMode === 'desktop'">
+        <header class="welcome-section animated-item" style="animation-delay: 0s;">
+          <div class="welcome-text">
+            <h1>Olá, {{ user.name }} <span class="wave-emoji" aria-label="Aceno" role="img">👋</span></h1>
+            <p>Confira o andamento da sua conta e acesse seus benefícios de saúde.</p>
           </div>
-        </div>
-        <button class="btn btn-secondary" @click="startPixPayment" :disabled="payLoading">
-          <i class="ph ph-qr-code"></i> {{ payLoading ? 'Gerando…' : (user?.active ? 'Renovar via PIX' : 'Ativar plano') }}
-        </button>
-      </section>
+          <div class="plan-pill">
+            <span class="badge badge-success">Assinatura Ativa</span>
+            <span class="plan-name">{{ user.plan }}</span>
+          </div>
+        </header>
 
-      <!-- Slider Ampliado Contínuo (Sem piscar em branco) -->
-      <section class="banner-slider animated-item" style="animation-delay: 0.1s;">
-        <div class="slider-track" :style="{ transform: `translateX(-${activeSlide * 100}%)` }">
-          <div 
-            v-for="(slide, idx) in slides" 
-            :key="idx" 
-            class="slide-item"
-            :style="{ backgroundImage: `url('${slide.image || slide.fallbackImage || '/telemedicina-banner.png'}')` }"
-          >
-            <div class="slide-content">
-              <span class="badge badge-warning">{{ slide.tag }}</span>
-              <h2>{{ slide.title }}</h2>
-              <p>{{ slide.description }}</p>
-              <button class="btn btn-primary" @click="handleSlideAction(slide)">Acessar Benefício</button>
+        <!-- Assinatura própria (PIX) Desktop -->
+        <section v-if="!user?.isDependent && (!user?.active || canRenew)" class="renew-card animated-item" style="animation-delay: 0.05s;">
+          <div class="renew-info">
+            <i class="ph ph-wallet"></i>
+            <div>
+              <strong>Minha Assinatura — {{ user.plan }}</strong>
+              <span v-if="!user?.active">Ative seu plano com o pagamento para liberar os benefícios.<template v-if="billingSummary.monthlyValue"> {{ billingSummary.monthlyValue }}.</template></span>
+              <span v-else-if="billingSummary.monthlyValue">{{ billingSummary.monthlyValue }}<template v-if="billingSummary.nextBillingDate"> · próxima cobrança em {{ billingSummary.nextBillingDate }}</template></span>
+              <span v-else>Renove sua assinatura via PIX, sem preencher dados de novo.</span>
             </div>
           </div>
-        </div>
-        <div class="slide-indicator-container">
-          <span 
-            v-for="(s, idx) in slides" 
-            :key="idx" 
-            :class="['indicator-dot', { active: activeSlide === idx }]"
-            @click="activeSlide = idx"
-          ></span>
-        </div>
-      </section>
+          <button class="btn btn-secondary" @click="startPixPayment" :disabled="payLoading">
+            <i class="ph ph-qr-code"></i> {{ payLoading ? 'Gerando…' : (user?.active ? 'Renovar via PIX' : 'Ativar plano') }}
+          </button>
+        </section>
 
-      <!-- Grade de Métricas -->
-      <section class="metrics-grid animated-item" style="animation-delay: 0.2s;">
-        <div class="metric-card card">
-          <div class="metric-header">
-            <i class="ph ph-piggy-bank"></i>
-            <span>Economia Acumulada</span>
+        <!-- Slider Ampliado Contínuo Desktop -->
+        <section class="banner-slider animated-item" style="animation-delay: 0.1s;">
+          <div class="slider-track" :style="{ transform: `translateX(-${activeSlide * 100}%)` }">
+            <div 
+              v-for="(slide, idx) in slides" 
+              :key="idx" 
+              :class="['slide-item', `slide-${slide.id}`, `slide-align-${slide.align || 'left'}`]"
+              :style="{ backgroundImage: `url('${slide.image || slide.fallbackImage || '/banner-telemedicina-novo.png'}')` }"
+            >
+              <div class="slide-content">
+                <div class="slide-badge-wrapper" v-if="slide.tag">
+                  <span class="slide-tag-pill">
+                    <i class="ph-fill ph-sparkle" style="font-size: 11px;"></i>
+                    {{ slide.tag }}
+                  </span>
+                </div>
+                <h2 class="slide-title" v-html="slide.title"></h2>
+                <p class="slide-desc" v-html="slide.description"></p>
+                <button class="banner-action-btn" @click="handleSlideAction(slide)">
+                  Acessar
+                </button>
+              </div>
+            </div>
           </div>
-          <h3>—</h3>
-          <p>Será exibido quando você tiver algum desconto.</p>
-        </div>
-        <div class="metric-card card">
-          <div class="metric-header">
-            <i class="ph ph-video-camera"></i>
-            <span>Telemedicina</span>
+          <div class="slide-indicator-container">
+            <span 
+              v-for="(s, idx) in slides" 
+              :key="idx" 
+              :class="['indicator-dot', { active: activeSlide === idx }]"
+              @click="activeSlide = idx"
+            ></span>
           </div>
-          <h3>Ilimitada</h3>
-          <p>Consultas virtuais 24h sem custo adicional</p>
-        </div>
-        <div
-          v-if="!user?.isDependent"
-          class="metric-card card"
-          :class="{ 'metric-clickable': depAvailable }"
-          @click="depAvailable ? emit('changeTab', 'dependentes') : null"
-        >
-          <div class="metric-header">
-            <i class="ph ph-users"></i>
-            <span>Dependentes</span>
-          </div>
-          <h3 v-if="depAvailable">{{ depInfo.used }} de {{ depInfo.limit }}</h3>
-          <h3 v-else>Indisponível</h3>
-          <p v-if="!depAvailable">Não incluído no seu plano atual</p>
-          <p v-else-if="depRemaining > 0">{{ depRemaining }} vaga(s) disponível(is) — toque para gerenciar</p>
-          <p v-else>Limite do plano atingido</p>
-        </div>
-      </section>
+        </section>
 
-      <!-- Painel Principal de Dois Lados -->
-      <div class="dashboard-grid">
+        <!-- Painel Principal de Dois Lados Desktop -->
+        <div class="dashboard-grid">
         <!-- Lado Esquerdo: Atalhos com entrada staggered -->
         <div class="left-side">
           <h2 class="section-title animated-item" style="animation-delay: 0.3s;">Atalhos Rápidos de Benefícios</h2>
@@ -1309,7 +1338,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-if="hasKidsDependents"
+              v-if="user?.role === 'admin' || hasKidsDependents"
               class="shortcut-card animated-item"
               style="animation-delay: 0.75s;"
               @click="emit('changeTab', 'kids-auth')"
@@ -1325,7 +1354,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-if="hasTeenDependents"
+              v-if="user?.role === 'admin' || hasTeenDependents"
               class="shortcut-card animated-item"
               style="animation-delay: 0.8s;"
               @click="emit('changeTab', 'teen-auth')"
@@ -1365,8 +1394,206 @@ onMounted(async () => {
               <i class="ph ph-qr-code"></i>
             </div>
           </div>
+
+          <!-- Atividades Recentes para Equilíbrio Visual no Desktop -->
+          <div class="activities-wrapper animated-item" style="animation-delay: 0.5s; margin-top: 24px;">
+            <h2 class="section-title">Atividades Recentes</h2>
+            <div class="activities-card card">
+              <div class="activity-item">
+                <span class="activity-dot health"></span>
+                <div class="activity-text">
+                  <p><strong>Consulta por Vídeo</strong> realizada com sucesso</p>
+                  <span>Ontem às 14:30 • Clínico Geral</span>
+                </div>
+              </div>
+              <div class="activity-item">
+                <span class="activity-dot clube"></span>
+                <div class="activity-text">
+                  <p><strong>Desconto Aplicado</strong> em Farmácia Drogasil</p>
+                  <span>15 de Agosto • Economia de R$ 34,20</span>
+                </div>
+              </div>
+              <div class="activity-item">
+                <span class="activity-dot pet"></span>
+                <div class="activity-text">
+                  <p><strong>Orientação Veterinária</strong> concluída</p>
+                  <span>10 de Agosto • Veterinário 24h</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+      </template>
+
+      <!-- ================= PWA MOBILE LAYOUT (VISÃO GERAL AZUL + CORPO BRANCO) ================= -->
+      <template v-else>
+        <!-- Header Mobile Azul Viva Mais -->
+        <header class="pwa-mobile-header-blue animated-item" style="animation-delay: 0s;">
+          <div class="pwa-header-top-row">
+            <div class="pwa-user-profile-click" @click="emit('changeTab', 'perfil')">
+              <div class="pwa-user-avatar">
+                <i class="ph-fill ph-user"></i>
+              </div>
+              <div class="pwa-user-info-text">
+                <h2>Olá, {{ user.name?.split(' ')[0] || user.name || 'Usuário' }}</h2>
+                <div class="pwa-user-badge">
+                  <i class="ph-fill ph-check-circle"></i>
+                  <span>{{ user.plan || 'Filiado' }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="pwa-header-actions">
+              <button class="pwa-header-btn" @click="emit('changeTab', 'suporte')" aria-label="Ajuda e Suporte">
+                <i class="ph-bold ph-question"></i>
+              </button>
+              <button class="pwa-header-btn" @click="emit('openMenu')" aria-label="Menu">
+                <i class="ph-bold ph-list"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Linha de Saldo e Meu Extrato -->
+          <div class="pwa-header-pills-row">
+            <div class="pwa-balance-pill" @click="toggleShowBalance">
+              <div class="pwa-balance-left">
+                <i class="ph-fill ph-hand-coins pwa-money-bag-icon"></i>
+                <span class="pwa-balance-value">{{ showBalance ? userTotalBalance : 'R$ ••••' }}</span>
+              </div>
+              <i :class="showBalance ? 'ph-bold ph-eye' : 'ph-bold ph-eye-slash'" class="pwa-balance-eye"></i>
+            </div>
+            <button class="pwa-extrato-pill" @click="openExtratoModal">
+              <i class="ph-bold ph-receipt"></i>
+              <span>Meu extrato</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Corpo Branco PWA -->
+        <div class="pwa-white-content-wrap">
+          <!-- Slider Banners Mobile -->
+          <section class="banner-slider animated-item" style="animation-delay: 0.1s;">
+            <div class="slider-track" :style="{ transform: `translateX(-${activeSlide * 100}%)` }">
+              <div 
+                v-for="(slide, idx) in slides" 
+                :key="idx" 
+                :class="['slide-item', `slide-${slide.id}`, `slide-align-${slide.align || 'left'}`]"
+                :style="{ backgroundImage: `url('${slide.image || slide.fallbackImage || '/banner-telemedicina-novo.png'}')` }"
+              >
+                <div class="slide-content">
+                  <div class="slide-badge-wrapper" v-if="slide.tag">
+                    <span class="slide-tag-pill">
+                      <i class="ph-fill ph-sparkle" style="font-size: 10px;"></i>
+                      {{ slide.tag }}
+                    </span>
+                  </div>
+                  <h2 class="slide-title" v-html="slide.title"></h2>
+                  <p class="slide-desc" v-html="slide.shortDescription || slide.description"></p>
+                  <button class="banner-action-btn" @click="handleSlideAction(slide)">
+                    Acessar
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="slide-indicator-container">
+              <span 
+                v-for="(s, idx) in slides" 
+                :key="idx" 
+                :class="['indicator-dot', { active: activeSlide === idx }]"
+                @click="activeSlide = idx"
+              ></span>
+            </div>
+          </section>
+
+          <!-- Grade de 6 Serviços 2x3 Mobile (Guias originais da plataforma) -->
+          <section class="pwa-services-section animated-item" style="animation-delay: 0.15s;">
+            <h3 class="pwa-services-title">Serviços e Benefícios</h3>
+            <div class="pwa-services-grid-2x3">
+              
+              <div class="pwa-srv-card" @click="showConsultasModal = true">
+                <div class="pwa-srv-icon icon-pink">
+                  <i class="ph-fill ph-clipboard-text"></i>
+                </div>
+                <span class="pwa-srv-label">Consultas e Exames</span>
+              </div>
+
+              <div class="pwa-srv-card" @click="triggerRedirect('Telemedicina')">
+                <div class="pwa-srv-icon icon-teal">
+                  <i class="ph-fill ph-first-aid"></i>
+                </div>
+                <span class="pwa-srv-label">Telemedicina</span>
+              </div>
+
+              <div class="pwa-srv-card" @click="triggerRedirect('Veterinário 24h')">
+                <div class="pwa-srv-icon icon-green">
+                  <i class="ph-fill ph-paw-print"></i>
+                </div>
+                <span class="pwa-srv-label">Veterinário 24h</span>
+              </div>
+
+              <div class="pwa-srv-card" @click="triggerRedirect('Clube de Descontos')">
+                <div class="pwa-srv-icon icon-orange">
+                  <i class="ph-fill ph-tag"></i>
+                </div>
+                <span class="pwa-srv-label">Clube de Desconto</span>
+              </div>
+
+              <div class="pwa-srv-card" @click="emit('changeTab', 'indicacoes')">
+                <div class="pwa-srv-icon icon-purple">
+                  <i class="ph-fill ph-users-three"></i>
+                </div>
+                <span class="pwa-srv-label">Indicações</span>
+              </div>
+
+              <div
+                v-if="user?.role === 'admin' || hasKidsDependents"
+                class="pwa-srv-card"
+                @click="emit('changeTab', 'kids-auth')"
+              >
+                <div class="pwa-srv-icon icon-blue">
+                  <i class="ph-fill ph-game-controller"></i>
+                </div>
+                <span class="pwa-srv-label">Viva Kids</span>
+              </div>
+
+              <div
+                v-if="user?.role === 'admin' || hasTeenDependents"
+                class="pwa-srv-card"
+                @click="emit('changeTab', 'teen-auth')"
+              >
+                <div class="pwa-srv-icon icon-purple">
+                  <i class="ph-fill ph-graduation-cap"></i>
+                </div>
+                <span class="pwa-srv-label">Viva Teens</span>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- Carteirinha Digital Preview Mobile -->
+          <section class="pwa-digital-card-section animated-item" style="animation-delay: 0.2s;">
+            <h3 class="pwa-services-title" style="margin-top: 20px;">Carteirinha Digital</h3>
+            <div class="digital-card-preview card" @click="showCardModal = true">
+              <div class="dcard-header">
+                <div class="dcard-logo-box">
+                  <img src="/logo.png" alt="Logo Viva Mais" class="dcard-logo" />
+                </div>
+                <span class="badge badge-success">Premium</span>
+              </div>
+              <div class="dcard-body">
+                <h3>{{ user.name }}</h3>
+                <p class="dcard-plan">Plano: {{ user.plan }}</p>
+                <p class="dcard-cpf">CPF: {{ maskCpf(cpf) }}</p>
+              </div>
+              <div class="dcard-footer">
+                <span>Clique para ver QR Code</span>
+                <i class="ph ph-qr-code"></i>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </template>
     </div>
 
     <!-- ABA 2: MINHA CONTA -->
@@ -1612,23 +1839,23 @@ onMounted(async () => {
         <section class="metrics-grid">
           <div class="metric-card card animated-item" style="animation-delay: 0.1s;">
             <div class="metric-header">
-              <i class="ph ph-coins" style="color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
-              <span style="font-weight: 700; color: #065f46;">GANHOS TOTAIS</span>
+              <i class="ph-fill ph-hand-coins" style="color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #065f46;">SALDO TOTAL</span>
             </div>
-            <h3 style="color: #059669;">{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
-            <p>Recorrente enquanto os indicados estiverem ativos</p>
+            <h3 style="color: #059669;">{{ userTotalBalance }}</h3>
+            <p>Saldo total disponível na conta</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.15s;">
             <div class="metric-header">
-              <i class="ph ph-users" style="color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
-              <span style="font-weight: 700; color: #1e40af;">TOTAL INDICADOS</span>
+              <i class="ph-fill ph-users" style="color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #1e40af;">INDICADOS TOTAIS</span>
             </div>
-            <h3 style="color: #1e3a8a;">{{ referralStats.totalIndicados }}</h3>
-            <p>Pessoas na sua rede</p>
+            <h3 style="color: #1e3a8a;">{{ formatCurrency(referralStats.ganhosTotais) }} / {{ referralStats.totalIndicados }} {{ referralStats.totalIndicados === 1 ? 'indicado' : 'indicados' }}</h3>
+            <p>Recorrente enquanto os indicados estiverem ativos</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.2s;">
             <div class="metric-header">
-              <i class="ph ph-trend-up" style="color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <i class="ph-bold ph-trend-up" style="color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
               <span style="font-weight: 700; color: #5b21b6;">TAXA DE ATIVAÇÃO</span>
             </div>
             <h3 style="color: #6d28d9;">{{ referralStats.taxaAtivacao }}%</h3>
@@ -1636,7 +1863,7 @@ onMounted(async () => {
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.25s;">
             <div class="metric-header">
-              <i class="ph ph-gift" style="color: #d97706; background: #fffbeb; border: 1px solid #fde68a; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <i class="ph-fill ph-gift" style="color: #d97706; background: #fffbeb; border: 1px solid #fde68a; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
               <span style="font-weight: 700; color: #92400e;">BÔNUS DE INDICAÇÕES NOVAS</span>
             </div>
             <h3 style="color: #d97706;">{{ formatCurrency(referralStats.bonusTotal) }}</h3>
@@ -1897,19 +2124,19 @@ onMounted(async () => {
         <section class="metrics-grid">
           <div class="metric-card card animated-item" style="animation-delay: 0.1s;">
             <div class="metric-header">
-              <i class="ph ph-hand-coins" style="color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
-              <span style="font-weight: 700; color: #065f46;">GANHOS ACUMULADOS</span>
+              <i class="ph-fill ph-hand-coins" style="color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #065f46;">SALDO TOTAL</span>
             </div>
-            <h3 style="color: #059669;">{{ formatCurrency(referralStats.ganhosTotais) }}</h3>
-            <p>Recorrente enquanto os indicados estiverem ativos</p>
+            <h3 style="color: #059669;">{{ userTotalBalance }}</h3>
+            <p>Saldo total disponível na conta</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.15s;">
             <div class="metric-header">
-              <i class="ph ph-users" style="color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
-              <span style="font-weight: 700; color: #1e40af;">INDICADOS ATIVOS</span>
+              <i class="ph-fill ph-users" style="color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px; border-radius: var(--radius-sm); font-size: 20px;"></i>
+              <span style="font-weight: 700; color: #1e40af;">INDICADOS TOTAIS</span>
             </div>
-            <h3 style="color: #1e3a8a;">{{ referralStats.ativos }}</h3>
-            <p>De {{ referralStats.totalIndicados }} indicados no total</p>
+            <h3 style="color: #1e3a8a;">{{ formatCurrency(referralStats.ganhosTotais) }} / {{ referralStats.totalIndicados }} {{ referralStats.totalIndicados === 1 ? 'indicado' : 'indicados' }}</h3>
+            <p>Recorrente enquanto os indicados estiverem ativos</p>
           </div>
           <div class="metric-card card animated-item" style="animation-delay: 0.2s;">
             <div class="metric-header">
@@ -2234,6 +2461,66 @@ onMounted(async () => {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- MODAL: MEU EXTRATO (PWA MOBILE) -->
+    <div v-if="showExtratoModal" class="sso-overlay-custom" @click.self="showExtratoModal = false">
+      <div class="extrato-modal-card">
+        <div class="extrato-modal-header">
+          <div class="extrato-modal-title">
+            <i class="ph-fill ph-receipt"></i>
+            <div>
+              <h3>Meu Extrato</h3>
+              <p>Histórico financeiro da sua assinatura</p>
+            </div>
+          </div>
+          <button class="extrato-close-btn" @click="showExtratoModal = false" aria-label="Fechar">
+            <i class="ph ph-x"></i>
+          </button>
+        </div>
+
+        <div class="extrato-summary-bar">
+          <div class="extrato-summary-item">
+            <span>Saldo Total</span>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+              <i class="ph-fill ph-hand-coins text-teal" style="font-size: 16px;"></i>
+              <strong>{{ showBalance ? userTotalBalance : 'R$ ••••' }}</strong>
+            </div>
+          </div>
+          <div class="extrato-summary-item" style="text-align: right;">
+            <span>Próximo Vencimento</span>
+            <strong>{{ billingSummary?.nextBillingDate || 'Em dia' }}</strong>
+          </div>
+        </div>
+
+        <div class="extrato-list-container">
+          <div v-if="invoices && invoices.length > 0" class="extrato-items">
+            <div v-for="(item, idx) in invoices" :key="idx" class="extrato-item-row">
+              <div class="extrato-item-icon">
+                <i class="ph-bold ph-receipt text-teal"></i>
+              </div>
+              <div class="extrato-item-info">
+                <strong>{{ item.description || item.plan || 'Mensalidade Viva Mais' }}</strong>
+                <span>{{ item.date || item.createdAt || 'Data recente' }}</span>
+              </div>
+              <div class="extrato-item-value">
+                <strong>R$ {{ item.amount || item.value || billingSummary.monthlyValue || '0,00' }}</strong>
+                <span :class="['extrato-status', item.status === 'paid' ? 'status-paid' : 'status-pending']">
+                  {{ item.status === 'paid' ? 'Pago' : (item.status || 'Concluído') }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="extrato-empty">
+            <i class="ph ph-receipt-x"></i>
+            <p>Nenhuma transação registrada no momento.</p>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-full extrato-btn-ok" @click="showExtratoModal = false">
+          Fechar
+        </button>
       </div>
     </div>
 
@@ -2856,13 +3143,15 @@ onMounted(async () => {
   color: var(--text-dark);
 }
 
-/* Slider Ampliado Contínuo */
+/* Slider Ampliado Contínuo Desktop */
 .banner-slider {
   position: relative;
-  border-radius: var(--radius-lg);
+  width: 100%;
+  height: 380px;
+  min-height: 380px;
+  border-radius: var(--radius-lg, 18px);
   overflow: hidden;
-  height: 385px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 10px 30px rgba(3, 29, 68, 0.14);
   background-color: #031d44;
 }
 
@@ -2874,94 +3163,154 @@ onMounted(async () => {
 }
 
 .slide-item {
+  position: relative;
   min-width: 100%;
+  width: 100%;
   height: 100%;
   background-size: cover;
-  background-position: right center;
   background-repeat: no-repeat;
   background-color: #031d44;
-  padding: 46px 44px;
-  display: flex;
-  align-items: center;
   color: white;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 44px 58px;
+  box-sizing: border-box;
 }
 
+.slide-item.slide-align-left {
+  background-position: right center;
+  justify-content: flex-start;
+}
+
+.slide-item.slide-align-right {
+  background-position: left center;
+  justify-content: flex-end;
+}
+
+.slide-item.slide-pet {
+  background-position: -30px center;
+  justify-content: flex-end;
+}
+
+.slide-item.slide-pet .slide-content {
+  margin-left: auto;
+  margin-right: 42px;
+  max-width: 410px;
+}
+
+/* Slide Content Container */
 .slide-content {
-  max-width: 44%;
+  max-width: 480px;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
   align-items: flex-start;
+  gap: 12px;
   z-index: 2;
 }
 
-.slide-content h2 {
-  font-size: 32px;
-  color: white;
-  margin-top: 4px;
-  line-height: 1.15;
-  overflow-wrap: break-word;
-  text-wrap: balance;
+.slide-item.slide-align-right .slide-content {
+  margin-right: 20px;
 }
 
-.slide-content p {
-  font-size: 15px;
-  opacity: 0.92;
-  line-height: 1.6;
+.slide-item.slide-align-left .slide-content {
+  margin-left: 10px;
 }
 
-.dashboard-wrapper.desktop .slide-item {
-  background-position: right center;
+.slide-badge-wrapper {
+  display: flex;
+  align-items: center;
 }
 
-.dashboard-wrapper.desktop .slide-content .badge {
-  background: var(--primary);
-  color: #fff;
-  font-size: 10px;
+.slide-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #00e5df;
+  background: rgba(0, 181, 176, 0.16);
+  border: 1px solid rgba(0, 181, 176, 0.38);
+  padding: 4px 12px;
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
 }
 
-.dashboard-wrapper.desktop .slide-content h2 {
-  max-width: 420px;
+.slide-title {
+  font-size: 27px;
+  font-weight: 800;
+  color: #FFFFFF;
   line-height: 1.18;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+  text-shadow: 0 2px 10px rgba(3, 29, 68, 0.5);
 }
 
-.dashboard-wrapper.desktop .slide-content h2::first-line {
-  color: #fff;
-}
-
-.dashboard-wrapper.desktop .slide-content p {
-  max-width: 390px;
+.slide-desc {
+  font-size: 14.5px;
   line-height: 1.5;
+  color: #E2E8F0;
+  margin: 0;
+  opacity: 0.95;
+  max-width: 420px;
+  text-shadow: 0 1px 4px rgba(3, 29, 68, 0.4);
 }
 
-.dashboard-wrapper.desktop .slide-content .btn {
-  padding: 11px 20px;
-  background: var(--primary);
-  border-radius: 11px;
+/* Modern Action CTA Button */
+.banner-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 20px;
+  background: linear-gradient(135deg, #00B5B0 0%, #009692 100%) !important;
+  color: #FFFFFF !important;
+  border: none;
+  border-radius: 50px !important;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 181, 176, 0.35);
+  transition: all 0.2s ease;
 }
 
+.banner-action-btn:hover {
+  background: linear-gradient(135deg, #00c9c4 0%, #00a8a3 100%) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 181, 176, 0.5);
+}
+
+.banner-action-btn:active {
+  transform: translateY(0);
+}
+
+/* Indicators */
 .slide-indicator-container {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
+  bottom: 16px;
+  right: 24px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   z-index: 10;
 }
 
 .indicator-dot {
   width: 8px;
   height: 8px;
-  background: rgba(255, 255, 255, 0.4);
   border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .indicator-dot.active {
-  background: white;
-  transform: scale(1.3);
+  background: #00B5B0;
+  width: 22px;
+  border-radius: 10px;
 }
 
 /* Grade de Métricas */
@@ -3056,6 +3405,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1.18fr 0.9fr;
   gap: 30px;
+  margin-top: 32px;
 }
 
 @media (min-width: 768px) and (max-width: 1366px) {
@@ -3849,104 +4199,583 @@ onMounted(async () => {
 
 /* PWA Overrides */
 .pwa {
-  padding: 16px;
+  padding: 0 !important;
 }
 
-.pwa .banner-slider {
+.pwa .tab-content:not(.pwa-home-tab) {
+  padding: 20px 16px;
+  background: #FFFFFF;
+  border-radius: 28px 28px 0 0;
+  margin-top: -18px;
+  position: relative;
+  z-index: 3;
+}
+
+.pwa .pwa-home-tab {
+  margin: 0;
+  padding: 0;
   width: 100%;
-  min-width: 0;
-  height: auto;
-  min-height: 292px;
-  background: #0d4694;
+}
+
+/* Header Mobile Azul */
+.pwa-mobile-header-blue {
+  background: linear-gradient(150deg, #052453 0%, #08346e 55%, #00B5B0 100%);
+  padding: 12px 16px 30px 16px;
+  color: #FFFFFF;
+  position: relative;
+  overflow: hidden;
+}
+
+.pwa-mobile-header-blue::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 181, 176, 0.25) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.pwa-header-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+.pwa-user-profile-click {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.pwa-user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #00B5B0;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #FFFFFF;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.pwa-user-info-text h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.pwa-user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 181, 176, 0.22);
+  border: 1px solid rgba(0, 181, 176, 0.45);
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #00e5df;
+  margin-top: 2px;
+}
+
+.pwa-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pwa-header-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pwa-header-btn:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Header Pills (Saldo & Meu Extrato) */
+.pwa-header-pills-row {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 2;
+}
+
+.pwa-balance-pill {
+  background: #FFFFFF;
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+}
+
+.pwa-balance-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pwa-money-bag-icon {
+  font-size: 19px;
+  color: #00B5B0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pwa-balance-value {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #06285C;
+}
+
+.pwa-balance-eye {
+  color: #64748B;
+  font-size: 17px;
+}
+
+.pwa-extrato-pill {
+  background: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #06285C;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.pwa-extrato-pill:active {
+  transform: scale(0.96);
+}
+
+.pwa-extrato-pill i {
+  font-size: 15px;
+  color: #00B5B0;
+}
+
+/* White Content Area */
+.pwa-white-content-wrap {
+  background: #FFFFFF;
+  border-radius: 28px 28px 0 0;
+  margin-top: -18px;
+  padding: 18px 14px 28px 14px;
+  position: relative;
+  z-index: 3;
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.06);
+}
+
+/* Banners Mobile */
+.pwa .banner-slider {
+  width: 100% !important;
+  height: 146px !important;
+  min-height: 146px !important;
+  background: #031d44;
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(3, 29, 68, 0.12);
 }
 
 .pwa .slider-track {
-  transform: translateX(0) !important;
+  display: flex;
+  height: 100%;
+  width: 100%;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .pwa .slide-item {
   position: relative;
-  overflow: hidden;
-  padding: 30px 28px;
-  background-image:
-    linear-gradient(146deg, #1256a8 0%, #0d4694 48%, #073272 100%) !important;
-  background-color: #0b3f8a !important;
-  min-width: 100%;
-  min-height: 292px;
-  height: auto;
-  align-items: stretch;
+  min-width: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: unset !important;
+  padding: 10px 14px !important;
+  background-size: cover !important;
+  background-repeat: no-repeat !important;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
 }
 
-.pwa .slide-item::before {
-  content: '';
-  position: absolute;
-  left: -18%;
-  right: -16%;
-  bottom: -42%;
-  height: 64%;
-  background: linear-gradient(90deg, rgba(58, 178, 190, 0.32), rgba(255, 255, 255, 0.12));
-  border-radius: 50% 50% 0 0 / 62% 62% 0 0;
-  pointer-events: none;
+.pwa .slide-item.slide-align-left {
+  background-position: 88% center !important;
+  justify-content: flex-start;
 }
 
-.pwa .slide-item::after {
-  content: '';
-  position: absolute;
-  left: 38%;
-  right: -28%;
-  top: -34%;
-  height: 58%;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(58, 178, 190, 0.08));
-  border-radius: 0 0 50% 50% / 0 0 70% 70%;
-  pointer-events: none;
+.pwa .slide-item.slide-align-right {
+  background-position: 12% center !important;
+  justify-content: flex-end;
 }
 
-.pwa .slide-item:nth-child(n + 2) {
-  display: none;
+.pwa .slide-item.slide-pet {
+  background-position: -24px center !important;
+  justify-content: flex-end !important;
+}
+
+.pwa .slide-item.slide-pet .slide-content {
+  margin-left: auto !important;
+  margin-right: 2px !important;
+  width: 49% !important;
+  max-width: 170px !important;
 }
 
 .pwa .slide-content {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 24ch);
-  min-width: 0;
-  max-width: calc(100% - 4px);
-  gap: 10px;
-  justify-content: center;
-  overflow: visible;
+  width: 58%;
+  max-width: 200px;
+  gap: 3px;
+  margin: 0 !important;
 }
 
-.pwa .slide-content h2 {
-  width: 100%;
-  max-width: 100%;
-  font-size: clamp(20px, 5.6vw, 24px);
-  line-height: 1.2;
-  overflow-wrap: break-word;
-  word-break: normal;
-  hyphens: none;
-  white-space: normal !important;
-  text-wrap: wrap;
+.pwa .slide-tag-pill {
+  font-size: 8px;
+  padding: 1.5px 6px;
+  letter-spacing: 0.03em;
 }
 
-.pwa .slide-content p {
-  width: 100%;
-  max-width: 27ch;
-  font-size: 13px;
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  white-space: normal !important;
+.pwa .slide-title {
+  font-size: 13.5px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
 }
 
-.pwa .slide-content .btn {
-  min-width: 0;
-  width: fit-content;
-  max-width: 100%;
-  padding: 11px 18px;
-  white-space: normal;
+.pwa .slide-desc {
+  font-size: 9.5px;
+  line-height: 1.22;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  opacity: 0.9;
+}
+
+.pwa .banner-action-btn {
+  margin-top: 3px;
+  padding: 4px 14px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 20px !important;
+  box-shadow: 0 2px 8px rgba(0, 181, 176, 0.3);
 }
 
 .pwa .slide-indicator-container {
-  display: none;
+  display: flex;
+  position: absolute;
+  bottom: 5px;
+  right: 10px;
+  left: auto;
+  transform: none;
+  gap: 4px;
+  z-index: 10;
+}
+
+.pwa .indicator-dot {
+  width: 4.5px;
+  height: 4.5px;
+}
+
+.pwa .indicator-dot.active {
+  width: 12px;
+}
+
+/* Services 2x3 Grid */
+.pwa-services-section {
+  margin-top: 22px;
+}
+
+.pwa-services-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #06285C;
+  margin: 0 0 14px 2px;
+  letter-spacing: -0.01em;
+}
+
+.pwa-services-grid-2x3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.pwa-srv-card {
+  background: #F8FAFD;
+  border: 1px solid #EAEFF5;
+  border-radius: 14px;
+  padding: 14px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.pwa-srv-card:active {
+  transform: scale(0.94);
+  background: #EEF4FB;
+}
+
+.pwa-srv-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.pwa-srv-icon.icon-teal {
+  background: rgba(0, 181, 176, 0.15);
+  color: #009692;
+}
+
+.pwa-srv-icon.icon-green {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.pwa-srv-icon.icon-orange {
+  background: rgba(249, 115, 22, 0.15);
+  color: #ea580c;
+}
+
+.pwa-srv-icon.icon-pink {
+  background: rgba(236, 72, 153, 0.15);
+  color: #db2777;
+}
+
+.pwa-srv-icon.icon-purple {
+  background: rgba(139, 92, 246, 0.15);
+  color: #7c3aed;
+}
+
+.pwa-srv-icon.icon-blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+
+.pwa-srv-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1E293B;
+  line-height: 1.25;
+}
+
+/* Modal Meu Extrato */
+.extrato-modal-card {
+  background: #FFFFFF;
+  width: 100%;
+  max-width: 460px;
+  border-radius: 20px;
+  padding: 24px 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: modal-scale-up 0.25s ease-out;
+}
+
+.extrato-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.extrato-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.extrato-modal-title i {
+  font-size: 26px;
+  color: #00B5B0;
+}
+
+.extrato-modal-title h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #06285C;
+  margin: 0;
+}
+
+.extrato-modal-title p {
+  font-size: 12px;
+  color: #64748B;
+  margin: 0;
+}
+
+.extrato-close-btn {
+  background: #F1F5F9;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #64748B;
+  cursor: pointer;
+}
+
+.extrato-summary-bar {
+  background: #F8FAFD;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.extrato-summary-item span {
+  display: block;
+  font-size: 11px;
+  color: #64748B;
+}
+
+.extrato-summary-item strong {
+  font-size: 15px;
+  color: #06285C;
+}
+
+.extrato-list-container {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.extrato-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.extrato-item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #FAFCFE;
+  border: 1px solid #EEF2F6;
+  border-radius: 12px;
+}
+
+.extrato-item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(0, 181, 176, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.extrato-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.extrato-item-info strong {
+  display: block;
+  font-size: 13px;
+  color: #1E293B;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extrato-item-info span {
+  font-size: 11px;
+  color: #94A3B8;
+}
+
+.extrato-item-value {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.extrato-item-value strong {
+  display: block;
+  font-size: 13.5px;
+  color: #06285C;
+}
+
+.extrato-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  display: inline-block;
+  margin-top: 2px;
+}
+
+.extrato-status.status-paid {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.extrato-status.status-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
+
+.extrato-empty {
+  text-align: center;
+  padding: 24px 12px;
+  color: #94A3B8;
+}
+
+.extrato-empty i {
+  font-size: 36px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.extrato-empty p {
+  font-size: 13px;
+  margin: 0;
+}
+
+.extrato-btn-ok {
+  margin-top: 4px;
 }
 
 .pwa .dashboard-grid {
