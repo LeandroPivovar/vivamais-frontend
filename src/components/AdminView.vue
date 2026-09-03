@@ -61,7 +61,13 @@ const config = ref({
   clubeCertoCnpj: '',
   clubeCertoPassword: '',
   clubeCertoPasswordSet: false,
-  clubeCertoCompanyId: ''
+  clubeCertoCompanyId: '',
+  metaCapiEnabled: false,
+  metaPixelId: '',
+  metaCapiToken: '',
+  metaCapiTokenSet: false,
+  metaCapiTokenLast4: null,
+  metaTestEventCode: ''
 })
 
 // Controles de Modais
@@ -86,7 +92,7 @@ watch([showRegisterModal, showConfigModal, showTreeModal, showTrialLinkModal, ed
 // o que o backend lê como "manter a chave gravada".
 const applyConfig = (data) => {
   if (data && Object.keys(data).length > 0) {
-    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '' }
+    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '', metaCapiToken: '' }
   }
 }
 
@@ -2318,6 +2324,54 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <strong>Webhook:</strong> a Pagar.me v5 não permite cadastrar webhook via API. No painel Pagar.me → Configurações → Webhooks, adicione a URL
             <code>https://conta.vivamaisclub.com/api/billing/webhook/pagarme</code> (eventos: charge.paid, charge.payment_failed, subscription.charged). A confirmação também funciona por polling.
           </p>
+        </div>
+
+        <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+          <h4 style="margin-bottom: 4px;">Meta — Conversions API (Purchase)</h4>
+          <p style="font-size: 13px; color: var(--text-gray); margin-bottom: 16px;">
+            O pixel do navegador só consegue registrar a venda no cartão. No PIX o pagamento confirma pelo webhook,
+            com o cliente já fora da tela — é a Conversions API que reporta essas vendas. Sem preencher aqui,
+            <strong>toda venda por PIX fica invisível para a Meta</strong>.
+          </p>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input v-model="config.metaCapiEnabled" type="checkbox" />
+              <span>Ativar envio de Purchase pela Conversions API</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>ID do Pixel</label>
+            <input v-model="config.metaPixelId" type="text" class="form-control" autocomplete="off" placeholder="Ex.: 1790372775452573" />
+            <small style="color: var(--text-gray);">
+              Precisa ser o mesmo pixel usado no site, senão a Meta conta a mesma venda duas vezes.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label>Token da Conversions API</label>
+            <input
+              v-model="config.metaCapiToken"
+              type="password"
+              class="form-control"
+              autocomplete="new-password"
+              :placeholder="config.metaCapiTokenSet ? 'Token gravado — deixe vazio para manter' : 'Cole o token de acesso da CAPI'"
+            />
+            <small style="color: var(--text-gray);">
+              <template v-if="config.metaCapiTokenSet">Token atual termina em <strong>{{ config.metaCapiTokenLast4 }}</strong>. Digite só para substituir.</template>
+              <template v-else>Nenhum token gravado ainda.</template>
+              Gere em Gerenciador de Eventos → seu pixel → Configurações → Conversions API → Gerar token de acesso.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label>Código do Test Events (opcional)</label>
+            <input v-model="config.metaTestEventCode" type="text" class="form-control" autocomplete="off" placeholder="TEST00000" />
+            <small style="color: var(--text-gray);">
+              Preenchido, os eventos aparecem só na aba "Testar eventos" e <strong>não contam</strong> na atribuição real. Deixe vazio em produção.
+            </small>
+          </div>
         </div>
 
         <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
