@@ -67,8 +67,34 @@ const config = ref({
   metaCapiToken: '',
   metaCapiTokenSet: false,
   metaCapiTokenLast4: null,
-  metaTestEventCode: ''
+  metaTestEventCode: '',
+  massflowWebhookUrl: '',
+  massflowWebhookUrlPreview: null,
+  massflowWebhookUrlSource: null,
+  massflowCartWebhookUrl: '',
+  massflowCartWebhookUrlPreview: null,
+  massflowCartWebhookUrlSource: null
 })
+
+// Teste do webhook do MassFlow (usa a URL já gravada).
+const massflowTest = ref({ target: 'eventos', name: '', phone: '', email: '' })
+const massflowTestLoading = ref(false)
+const massflowTestResult = ref(null)
+
+const massflowSourceLabel = (source) =>
+  source === 'painel' ? 'configurada aqui no painel' : source === 'env' ? 'vinda do .env do servidor' : 'não configurada'
+
+const sendMassflowTest = async () => {
+  massflowTestLoading.value = true
+  massflowTestResult.value = null
+  try {
+    massflowTestResult.value = await api.post('/admin/massflow/test', massflowTest.value)
+  } catch (err) {
+    massflowTestResult.value = { ok: false, status: null, error: err?.message || 'Não foi possível enviar o teste.' }
+  } finally {
+    massflowTestLoading.value = false
+  }
+}
 
 // Controles de Modais
 const showRegisterModal = ref(false)
@@ -92,7 +118,7 @@ watch([showRegisterModal, showConfigModal, showTreeModal, showTrialLinkModal, ed
 // o que o backend lê como "manter a chave gravada".
 const applyConfig = (data) => {
   if (data && Object.keys(data).length > 0) {
-    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '', metaCapiToken: '' }
+    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '', metaCapiToken: '', massflowWebhookUrl: '', massflowCartWebhookUrl: '' }
   }
 }
 
@@ -2371,6 +2397,90 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <small style="color: var(--text-gray);">
               Preenchido, os eventos aparecem só na aba "Testar eventos" e <strong>não contam</strong> na atribuição real. Deixe vazio em produção.
             </small>
+          </div>
+        </div>
+
+        <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+          <h4 style="margin-bottom: 4px;">MassFlow — Webhooks de WhatsApp</h4>
+          <p style="font-size: 13px; color: var(--text-gray); margin-bottom: 16px;">
+            O webhook de eventos recebe venda (<code>compra_concluida</code>), renovação (<code>renovacao_confirmada</code>)
+            e os mesmos avisos enviados no grupo de WhatsApp (<code>reembolso_cancelamento</code>, <code>saque_solicitado</code>,
+            <code>chamado_aberto</code>, <code>chamado_atualizado</code>, <code>erro_sistema</code>, <code>relatorio_diario</code>).
+            No MassFlow, separe as automações pelo campo <code>evento</code>.
+          </p>
+
+          <div class="form-group">
+            <label>URL do webhook de eventos (venda, renovação e avisos)</label>
+            <input
+              v-model="config.massflowWebhookUrl"
+              type="password"
+              class="form-control"
+              autocomplete="new-password"
+              :placeholder="config.massflowWebhookUrlPreview ? 'URL gravada — deixe vazio para manter' : 'https://app.massflow.tech/api/webhook/inbound/...'"
+            />
+            <small style="color: var(--text-gray);">
+              <template v-if="config.massflowWebhookUrlPreview">
+                Em uso: <strong>{{ config.massflowWebhookUrlPreview }}</strong> ({{ massflowSourceLabel(config.massflowWebhookUrlSource) }}).
+                Cole uma nova URL só para substituir.
+              </template>
+              <template v-else>Nenhuma URL configurada — os eventos não são enviados.</template>
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label>URL do webhook de carrinho abandonado</label>
+            <input
+              v-model="config.massflowCartWebhookUrl"
+              type="password"
+              class="form-control"
+              autocomplete="new-password"
+              :placeholder="config.massflowCartWebhookUrlPreview ? 'URL gravada — deixe vazio para manter' : 'https://app.massflow.tech/api/webhook/inbound/...'"
+            />
+            <small style="color: var(--text-gray);">
+              <template v-if="config.massflowCartWebhookUrlPreview">
+                Em uso: <strong>{{ config.massflowCartWebhookUrlPreview }}</strong> ({{ massflowSourceLabel(config.massflowCartWebhookUrlSource) }}).
+              </template>
+              <template v-else>Nenhuma URL configurada — carrinhos abandonados não são enviados.</template>
+              Disparado quando uma cobrança fica 5 minutos pendente.
+            </small>
+          </div>
+
+          <div style="background: var(--bg-light, rgba(0,0,0,0.03)); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-top: 8px;">
+            <strong style="display: block; margin-bottom: 4px;">Enviar evento de teste</strong>
+            <small style="color: var(--text-gray); display: block; margin-bottom: 12px;">
+              Usa a URL <strong>já gravada</strong> — clique em "Salvar Tudo" antes de testar uma URL nova.
+              O evento vai com <code>teste: true</code>. Com telefone preenchido, a automação do MassFlow pode mandar uma mensagem de verdade para ele.
+            </small>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Webhook</label>
+                <select v-model="massflowTest.target" class="form-control">
+                  <option value="eventos">Eventos (venda/renovação/avisos)</option>
+                  <option value="carrinho">Carrinho abandonado</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Nome (opcional)</label>
+                <input v-model="massflowTest.name" type="text" class="form-control" placeholder="Teste Viva Mais" />
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>WhatsApp (opcional)</label>
+                <input v-model="massflowTest.phone" type="tel" class="form-control" placeholder="(41) 99999-9999" />
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>E-mail (opcional)</label>
+                <input v-model="massflowTest.email" type="email" class="form-control" placeholder="teste@vivamaisclub.com" />
+              </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <button class="btn btn-outline" :disabled="massflowTestLoading" @click="sendMassflowTest">
+                {{ massflowTestLoading ? 'Enviando...' : 'Enviar teste' }}
+              </button>
+              <span v-if="massflowTestResult" :style="{ color: massflowTestResult.ok ? 'var(--success-color, #16a34a)' : 'var(--danger-color, #dc2626)', fontSize: '13px' }">
+                <template v-if="massflowTestResult.ok">✔ MassFlow recebeu (HTTP {{ massflowTestResult.status }}).</template>
+                <template v-else>✖ Falhou{{ massflowTestResult.status ? ` (HTTP ${massflowTestResult.status})` : '' }}: {{ massflowTestResult.error || massflowTestResult.response || 'sem resposta' }}</template>
+              </span>
+            </div>
           </div>
         </div>
 
