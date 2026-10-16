@@ -55,7 +55,7 @@ const handleChangePassword = () => {
             </div>
             <div class="form-group flex-1">
               <label class="form-label" for="profile-cpf">CPF (Inalterável)</label>
-              <input :value="cpf" type="text" id="profile-cpf" class="form-control disabled-input" disabled />
+              <input :value="formatCpf(cpf)" type="text" id="profile-cpf" class="form-control disabled-input" disabled />
             </div>
           </div>
 

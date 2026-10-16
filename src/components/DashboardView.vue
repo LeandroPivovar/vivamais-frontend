@@ -746,7 +746,20 @@ const payError = ref('')
 const showPayCardModal = ref(false)
 const showPayPixModal = ref(false)
 const showPaySuccessModal = ref(false)
+
+const recentActivities = ref([])
+const loadActivities = async () => {
+  try {
+    const list = await api.get("/activities")
+    recentActivities.value = Array.isArray(list) ? list : []
+  } catch {
+    recentActivities.value = []
+  }
+}
+
 const payPixCode = ref('')
+const payPixValue = ref('')
+const payPixPlan = ref('')
 const payPixImage = ref('')
 const payPixStatus = ref('')
 const payTxId = ref(null)
@@ -770,12 +783,17 @@ const refreshCurrentUser = async () => {
 }
 
 const startPixPayment = async () => {
+  if (payLoading.value) return
   payError.value = ''
   payLoading.value = true
+  payPixValue.value = ''
+  payPixPlan.value = ''
   payPixCode.value = ''
   payPixImage.value = ''
   try {
     const res = await api.post('/billing/pay', { paymentMethod: 'pix' })
+    payPixValue.value = res?.value || ''
+    payPixPlan.value = res?.plan || ''
     payPixCode.value = res?.pixCode || ''
     payPixImage.value = payPixCode.value ? await genQr(payPixCode.value) : (res?.pixImage || '')
     payPixStatus.value = res?.status || 'pending'
@@ -1194,6 +1212,7 @@ onMounted(async () => {
       depInfo.value = { limit: 0, used: 0, canAdd: false }
     }
     await loadWithdrawSummary()
+    await loadActivities()
   } catch (err) {
     rawReferrals.value = []
     userLinks.value = []
@@ -1399,26 +1418,17 @@ onMounted(async () => {
           <div class="activities-wrapper animated-item" style="animation-delay: 0.5s; margin-top: 24px;">
             <h2 class="section-title">Atividades Recentes</h2>
             <div class="activities-card card">
-              <div class="activity-item">
-                <span class="activity-dot health"></span>
-                <div class="activity-text">
-                  <p><strong>Consulta por Vídeo</strong> realizada com sucesso</p>
-                  <span>Ontem às 14:30 • Clínico Geral</span>
+              <template v-if="recentActivities.length > 0">
+                <div class="activity-item" v-for="(act, idx) in recentActivities" :key="idx">
+                  <span :class="['activity-dot', act.type || 'health']"></span>
+                  <div class="activity-text">
+                    <p><strong>{{ act.desc }}</strong></p>
+                    <span>{{ act.date }}</span>
+                  </div>
                 </div>
-              </div>
-              <div class="activity-item">
-                <span class="activity-dot clube"></span>
-                <div class="activity-text">
-                  <p><strong>Desconto Aplicado</strong> em Farmácia Drogasil</p>
-                  <span>15 de Agosto • Economia de R$ 34,20</span>
-                </div>
-              </div>
-              <div class="activity-item">
-                <span class="activity-dot pet"></span>
-                <div class="activity-text">
-                  <p><strong>Orientação Veterinária</strong> concluída</p>
-                  <span>10 de Agosto • Veterinário 24h</span>
-                </div>
+              </template>
+              <div v-else class="activity-empty" style="color: var(--text-gray); font-size: 14px; text-align: center; padding: 12px 0;">
+                Nenhuma atividade registrada
               </div>
             </div>
           </div>
@@ -1625,7 +1635,7 @@ onMounted(async () => {
             </div>
             <div class="form-group flex-1">
               <label class="form-label">CPF (Inalterável)</label>
-              <input type="text" class="form-control" :value="cpf" disabled style="background:#f1f5f9; cursor:not-allowed;" />
+              <input type="text" class="form-control" :value="maskCpf(cpf)" disabled style="background:#f1f5f9; cursor:not-allowed;" />
             </div>
           </div>
           <div class="form-row">
@@ -2592,6 +2602,9 @@ onMounted(async () => {
         <p style="font-size: 13px; color: var(--text-gray); margin-bottom: 16px;">
           A confirmação é automática assim que o pagamento cair.
         </p>
+        <p v-if="payPixValue" style="font-size: 16px; margin-bottom: 16px;">
+          <span v-if="payPixPlan">Plano {{ payPixPlan }} · </span><strong>{{ payPixValue }}</strong>
+        </p>
         <img v-if="payPixImage" :src="payPixImage" alt="QR Code PIX" style="width: 200px; height: 200px; margin: 0 auto 16px; display:block; border-radius: 8px;" />
         <div v-if="payPixCode" class="link-input-group" style="margin-bottom: 12px;">
           <input type="text" class="link-input" :value="payPixCode" readonly style="color: var(--text-dark);" />
@@ -2857,7 +2870,7 @@ onMounted(async () => {
           <div class="dcard-body">
             <h3>{{ user.name }}</h3>
             <p class="dcard-plan">Plano: {{ user.plan }}</p>
-            <p class="dcard-cpf">CPF: {{ cpf }}</p>
+            <p class="dcard-cpf">CPF: {{ maskCpf(cpf) }}</p>
           </div>
           <div class="qr-code-area">
             <i class="ph ph-qr-code large-qr"></i>

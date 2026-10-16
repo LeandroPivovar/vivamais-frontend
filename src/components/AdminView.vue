@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { api, lookupCep, uploadFile } from '../services/api'
+import { api, lookupCep, uploadFile, formatCpf } from '../services/api'
 import { getSocket } from '../services/socket'
 import TeenAdminView from './teen/TeenAdminView.vue'
 
@@ -62,12 +62,12 @@ const config = ref({
   clubeCertoPassword: '',
   clubeCertoPasswordSet: false,
   clubeCertoCompanyId: '',
-  metaCapiEnabled: false,
-  metaPixelId: '',
-  metaCapiToken: '',
-  metaCapiTokenSet: false,
-  metaCapiTokenLast4: null,
-  metaTestEventCode: '',
+  tiktokEventsEnabled: false,
+  tiktokPixelId: '',
+  tiktokEventsToken: '',
+  tiktokEventsTokenSet: false,
+  tiktokEventsTokenLast4: null,
+  tiktokTestEventCode: '',
   massflowWebhookUrl: '',
   massflowWebhookUrlPreview: null,
   massflowWebhookUrlSource: null,
@@ -104,6 +104,36 @@ const showTrialLinkModal = ref(false)
 const selectedTreeUser = ref(null)
 const editingUser = ref(null)
 const resettingPasswordIds = ref(new Set())
+
+const togglingSubscriptionIds = ref(new Set())
+const confirmToggleSubscription = async (user, activate) => {
+  const actionText = activate ? "ativar" : "desativar"
+  const detail = activate
+    ? `Deseja realmente reativar a assinatura de ${user.name}? O acesso aos benef?cios ser? liberado.`
+    : `Deseja realmente desativar a assinatura de ${user.name}? As pr?ximas cobran?as autom?ticas no banco ser?o canceladas e o acesso aos benef?cios ser? bloqueado.`
+  if (!confirm(detail)) return
+  togglingSubscriptionIds.value.add(user.id)
+  try {
+    const updated = await api.put(`/admin/users/${user.id}/subscription`, { active: activate })
+    const idx = users.value.findIndex(u => u.id === updated.id)
+    if (idx !== -1) users.value[idx] = updated
+    if (editingUser.value && editingUser.value.id === updated.id) {
+      editingUser.value = { ...editingUser.value, ...updated, cpf: formatCpf(updated.cpf) }
+    }
+    emit("triggerDevModal", {
+      title: activate ? "Assinatura Ativada" : "Assinatura Desativada",
+      message: `A assinatura de ${user.name} foi ${activate ? "ativada" : "desativada"} com sucesso.`
+    })
+  } catch (err) {
+    emit("triggerDevModal", {
+      title: "Erro",
+      message: err?.message || `N?o foi poss?vel ${actionText} a assinatura.`
+    })
+  } finally {
+    togglingSubscriptionIds.value.delete(user.id)
+  }
+}
+
 const trialLinkPlan = ref('Individual')
 const trialLinkLoading = ref(false)
 const generatedTrialLink = ref('')
@@ -118,7 +148,7 @@ watch([showRegisterModal, showConfigModal, showTreeModal, showTrialLinkModal, ed
 // o que o backend lê como "manter a chave gravada".
 const applyConfig = (data) => {
   if (data && Object.keys(data).length > 0) {
-    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '', metaCapiToken: '', massflowWebhookUrl: '', massflowCartWebhookUrl: '' }
+    config.value = { ...config.value, ...data, veencaSecretKey: '', clubeCertoPassword: '', wooviAppId: '', pagarmeSecretKey: '', tiktokEventsToken: '', massflowWebhookUrl: '', massflowCartWebhookUrl: '' }
   }
 }
 
@@ -853,6 +883,7 @@ function toIsoDate(brDate) {
 const openEditAccess = (user) => {
   editingUser.value = JSON.parse(JSON.stringify(user))
   editingUser.value.birthDate = toIsoDate(editingUser.value.birthDate)
+  editingUser.value.cpf = formatCpf(editingUser.value.cpf)
 }
 
 const saveEditAccess = async () => {
@@ -1210,7 +1241,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           <div class="mobile-card-details">
             <div class="detail-row">
               <span class="label">CPF:</span>
-              <span>{{ u.cpf }}</span>
+              <span>{{ formatCpf(u.cpf) }}</span>
             </div>
             <div class="detail-row">
               <span class="label">Plano:</span>
@@ -1252,6 +1283,26 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           </div>
 
           <div class="mobile-card-actions" style="display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <button
+              v-if="u.status === 'ativo'"
+              class="btn btn-outline btn-sm"
+              :disabled="togglingSubscriptionIds.has(u.id)"
+              @click="confirmToggleSubscription(u, false)"
+              style="flex: 1; min-width: 90px; color: #ef4444; border-color: #ef4444; display: flex; align-items: center; justify-content: center; gap: 4px;"
+            >
+              <i :class="togglingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-x-circle'"></i>
+              {{ togglingSubscriptionIds.has(u.id) ? '...' : 'Desativar' }}
+            </button>
+            <button
+              v-else
+              class="btn btn-outline btn-sm"
+              :disabled="togglingSubscriptionIds.has(u.id)"
+              @click="confirmToggleSubscription(u, true)"
+              style="flex: 1; min-width: 90px; color: #16a34a; border-color: #16a34a; display: flex; align-items: center; justify-content: center; gap: 4px;"
+            >
+              <i :class="togglingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-check-circle'"></i>
+              {{ togglingSubscriptionIds.has(u.id) ? '...' : 'Ativar' }}
+            </button>
             <button class="btn btn-outline btn-sm" @click="openEditAccess(u)" style="flex: 1; min-width: 70px; display: flex; align-items: center; justify-content: center; gap: 4px;">
               <i class="ph ph-pencil-simple"></i> Editar
             </button>
@@ -1910,7 +1961,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">CPF</label>
-                <input v-model="newUser.cpf" type="text" placeholder="Ex: 000.000.000-00" class="form-control" required />
+                <input :value="newUser.cpf" @input="newUser.cpf = formatCpf($event.target.value)" type="text" placeholder="Ex: 000.000.000-00" maxlength="14" class="form-control" required />
               </div>
               <div class="form-group">
                 <label class="form-label">Plano Comercial</label>
@@ -2353,47 +2404,47 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
         </div>
 
         <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
-          <h4 style="margin-bottom: 4px;">Meta — Conversions API (Purchase)</h4>
+          <h4 style="margin-bottom: 4px;">TikTok — Events API (Purchase)</h4>
           <p style="font-size: 13px; color: var(--text-gray); margin-bottom: 16px;">
             O pixel do navegador só consegue registrar a venda no cartão. No PIX o pagamento confirma pelo webhook,
-            com o cliente já fora da tela — é a Conversions API que reporta essas vendas. Sem preencher aqui,
-            <strong>toda venda por PIX fica invisível para a Meta</strong>.
+            com o cliente já fora da tela — é a Events API que reporta essas vendas. Sem preencher aqui,
+            <strong>toda venda por PIX fica invisível para o TikTok</strong>.
           </p>
 
           <div class="form-group" style="margin-bottom: 16px;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input v-model="config.metaCapiEnabled" type="checkbox" />
-              <span>Ativar envio de Purchase pela Conversions API</span>
+              <input v-model="config.tiktokEventsEnabled" type="checkbox" />
+              <span>Ativar envio de Purchase pela Events API</span>
             </label>
           </div>
 
           <div class="form-group">
             <label>ID do Pixel</label>
-            <input v-model="config.metaPixelId" type="text" class="form-control" autocomplete="off" placeholder="Ex.: 1790372775452573" />
+            <input v-model="config.tiktokPixelId" type="text" class="form-control" autocomplete="off" placeholder="Ex.: DB4JR6JC77UAOLDV4V9G" />
             <small style="color: var(--text-gray);">
-              Precisa ser o mesmo pixel usado no site, senão a Meta conta a mesma venda duas vezes.
+              Precisa ser o mesmo pixel usado no site, senão o TikTok conta a mesma venda duas vezes.
             </small>
           </div>
 
           <div class="form-group">
-            <label>Token da Conversions API</label>
+            <label>Token da Events API</label>
             <input
-              v-model="config.metaCapiToken"
+              v-model="config.tiktokEventsToken"
               type="password"
               class="form-control"
               autocomplete="new-password"
-              :placeholder="config.metaCapiTokenSet ? 'Token gravado — deixe vazio para manter' : 'Cole o token de acesso da CAPI'"
+              :placeholder="config.tiktokEventsTokenSet ? 'Token gravado — deixe vazio para manter' : 'Cole o token da Events API'"
             />
             <small style="color: var(--text-gray);">
-              <template v-if="config.metaCapiTokenSet">Token atual termina em <strong>{{ config.metaCapiTokenLast4 }}</strong>. Digite só para substituir.</template>
+              <template v-if="config.tiktokEventsTokenSet">Token atual termina em <strong>{{ config.tiktokEventsTokenLast4 }}</strong>. Digite só para substituir.</template>
               <template v-else>Nenhum token gravado ainda.</template>
-              Gere em Gerenciador de Eventos → seu pixel → Configurações → Conversions API → Gerar token de acesso.
+              Gere em Gerenciador de Eventos → seu pixel → Configurações → Events API → Gerar token de acesso.
             </small>
           </div>
 
           <div class="form-group">
             <label>Código do Test Events (opcional)</label>
-            <input v-model="config.metaTestEventCode" type="text" class="form-control" autocomplete="off" placeholder="TEST00000" />
+            <input v-model="config.tiktokTestEventCode" type="text" class="form-control" autocomplete="off" placeholder="TEST00000" />
             <small style="color: var(--text-gray);">
               Preenchido, os eventos aparecem só na aba "Testar eventos" e <strong>não contam</strong> na atribuição real. Deixe vazio em produção.
             </small>
@@ -2646,7 +2697,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">CPF</label>
-                <input v-model="editingUser.cpf" type="text" class="form-control" required />
+                <input :value="editingUser.cpf" @input="editingUser.cpf = formatCpf($event.target.value)" type="text" maxlength="14" class="form-control" required />
               </div>
               <div class="form-group">
                 <label class="form-label">Plano Comercial</label>
@@ -3702,4 +3753,34 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 .form-control {
   text-align: left !important;
 }
+
+.btn-action-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-action-sub.deactivate {
+  color: #ef4444;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.btn-action-sub.deactivate:hover {
+  background: #fee2e2;
+}
+.btn-action-sub.activate {
+  color: #16a34a;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.btn-action-sub.activate:hover {
+  background: #dcfce7;
+}
+
 </style>

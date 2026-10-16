@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { api, setToken } from '../services/api'
+import { api, setToken, formatCpf } from '../services/api'
 
 const emit = defineEmits(['login'])
 
@@ -10,6 +10,16 @@ const rememberMe = ref(false)
 const showPassword = ref(false)
 const error = ref('')
 const loading = ref(false)
+
+const onUsernameInput = (e) => {
+  const val = e.target.value;
+  if (/^[\d.\-]+$/.test(val) && val.replace(/\D/g, "").length <= 11) {
+    username.value = formatCpf(val);
+  } else {
+    username.value = val;
+  }
+};
+
 
 // Fluxo de recuperação de senha: 'login' | 'forgot' (pede e-mail) | 'reset' (código + nova senha)
 // O botão "Redefinir senha" do e-mail aponta para ?redefinir=1 e cai direto no passo
@@ -176,7 +186,8 @@ const confirmReset = async () => {
               <div class="field-control-wrapper">
                 <i class="ph ph-user field-icon-left"></i>
                 <input
-                  v-model="username"
+                  :value="username"
+                  @input="onUsernameInput"
                   type="text"
                   id="username"
                   placeholder="Digite seu CPF ou e-mail"

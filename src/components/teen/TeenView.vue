@@ -457,7 +457,7 @@ function handleTeenLogout() {
             <label>CPF</label>
             <div class="input-icon-box">
               <i class="ph ph-user"></i>
-              <input v-model="loginCpf" type="text" inputmode="numeric" placeholder="000.000.000-00" required />
+              <input :value="loginCpf" @input="loginCpf = formatCpf($event.target.value)" type="text" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" required />
             </div>
           </div>
 

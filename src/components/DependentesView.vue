@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { api } from '../services/api'
+import { api, formatCpf } from '../services/api'
 
 const emit = defineEmits(['triggerDevModal'])
 defineProps({ plan: { type: String, default: '' } })
@@ -117,7 +117,7 @@ onMounted(load)
           </div>
           <div class="form-group">
             <label>CPF</label>
-            <input v-model="form.cpf" type="text" class="form-control" placeholder="Somente números" :disabled="!info.canAdd" />
+            <input :value="form.cpf" @input="form.cpf = formatCpf($event.target.value)" type="text" inputmode="numeric" maxlength="14" class="form-control" placeholder="000.000.000-00" :disabled="!info.canAdd" />
           </div>
           <div class="form-group">
             <label>Telefone</label>
@@ -151,7 +151,7 @@ onMounted(load)
             <div class="dep-avatar"><i class="ph ph-user"></i></div>
             <div class="dep-meta">
               <strong>{{ dep.name }}</strong>
-              <span>{{ dep.email }}</span>
+              <span>{{ dep.email }}<template v-if="dep.cpf"> • CPF: {{ formatCpf(dep.cpf) }}</template></span>
             </div>
             <button class="btn-remove" :disabled="removingId === dep.id" @click="removeDependent(dep)">
               <i class="ph ph-trash"></i> {{ removingId === dep.id ? 'Removendo…' : 'Remover' }}

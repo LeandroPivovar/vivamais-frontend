@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import QRCode from 'qrcode'
-import { api, lookupCep, tokenizeCard } from '../services/api'
+import { initTikTok, trackTikTokCart } from '../services/tiktok'
+import { api, lookupCep, tokenizeCard, formatCpf } from '../services/api'
 
 // Cartão (Pagar.me)
 const cardEnabled = ref(false)
@@ -59,26 +60,26 @@ const status = ref('')
 
 const isTrialSignup = computed(() => !!trialToken.value)
 
+const showPassword = ref(false)
 const form = ref({
-  name: '', email: '', cpf: '', phone: '', birthDate: '', gender: '',
+  name: '', email: '', cpf: '', password: '', phone: '', birthDate: '', gender: '',
   zipCode: '', address: '', neighborhood: '', complement: '', city: '', state: '',
 })
 
 const planPrice = computed(() => prices.value[planType.value] ?? '')
 
 /**
- * Purchase no Meta Pixel. O eventID é o mesmo que a Conversions API usa no
- * backend — sem ele a Meta contaria a mesma venda duas vezes.
+ * Purchase no TikTok Pixel. O eventID é o mesmo que a Events API usa no
+ * backend — sem ele o TikTok contaria a mesma venda duas vezes.
  */
 const trackPurchase = (transactionId) => {
-  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return
+  if (typeof window === 'undefined' || typeof window.ttq?.track !== 'function') return
   const value = Number(String(planPrice.value).replace(/[^\d,]/g, '').replace(',', '.')) || 0
   try {
-    window.fbq(
-      'track',
+    window.ttq.track(
       'Purchase',
       { value, currency: 'BRL', content_name: `Plano ${planType.value}`, content_type: 'product' },
-      { eventID: `vm-purchase-${transactionId}` },
+      { event_id: `vm-purchase-${transactionId}` },
     )
   } catch {
     // pixel nunca pode derrubar a tela de sucesso da compra
@@ -92,6 +93,7 @@ const toBrDate = (iso) => {
 }
 
 onMounted(async () => {
+  initTikTok()
   const params = new URLSearchParams(window.location.search)
   refCode.value = params.get('ref') || ''
   // /plano-{slug}
@@ -125,12 +127,21 @@ onMounted(async () => {
   } catch { cardEnabled.value = false }
 })
 
+let tikTokCartTracked = false
 const submit = async () => {
   if (submitting.value) return
   error.value = ''
   const f = form.value
   for (const [k, label] of [['name','Nome'],['email','E-mail'],['cpf','CPF'],['phone','Telefone'],['birthDate','Nascimento'],['gender','Gênero'],['zipCode','CEP'],['address','Endereço'],['neighborhood','Bairro'],['city','Cidade'],['state','Estado']]) {
     if (!f[k]) { error.value = `Preencha: ${label}.`; return }
+  }
+  if (!isTrialSignup.value && (!f.password || f.password.trim().length < 6)) {
+    error.value = 'Crie uma senha com pelo menos 6 caracteres.';
+    return;
+  }
+  if (!isTrialSignup.value && !tikTokCartTracked) {
+    trackTikTokCart(planType.value, planPrice.value)
+    tikTokCartTracked = true
   }
   submitting.value = true
   try {
@@ -168,6 +179,7 @@ const submit = async () => {
     const res = await api.post('/billing/checkout', {
       refCode: refCode.value,
       planType: planType.value,
+      password: f.password || undefined,
       name: f.name, email: f.email, cpf: f.cpf, phone: f.phone,
       birthDate: toBrDate(f.birthDate), gender: f.gender,
       address: f.address, neighborhood: f.neighborhood,
@@ -179,7 +191,7 @@ const submit = async () => {
     status.value = res?.status || 'pending'
     // Purchase no pixel só quando o pagamento realmente fechou. PIX sai daqui como
     // 'pending' e só confirma no webhook — nesse caso quem reporta é a Conversions
-    // API no backend, que usa o mesmo eventID e a Meta deduplica.
+    // API no backend, que usa o mesmo eventID e o TikTok deduplica.
     if (res?.status === 'paid' && res?.transactionId) {
       trackPurchase(res.transactionId)
     }
@@ -253,6 +265,21 @@ const copyPix = async () => {
           <div v-if="loading" class="cp-note">Carregando…</div>
 
           <form v-else @submit.prevent="submit" class="cp-form">
+            <div v-if="!isTrialSignup" class="cp-plan-selector-container">
+              <span class="cp-plan-label">Escolha seu plano</span>
+              <div class="cp-plan-buttons">
+                <button type="button" :class="['cp-plan-pill', { active: planType === 'Individual' }]" @click="planType = 'Individual'">
+                  <span class="cp-pill-title">Plano Individual</span>
+                  <span class="cp-pill-sub">Titular</span>
+                  <strong v-if="prices['Individual']">{{ prices['Individual'] }}/mês</strong>
+                </button>
+                <button type="button" :class="['cp-plan-pill', { active: planType === 'Fam\u00edlia' }]" @click="planType = 'Fam\u00edlia'">
+                  <span class="cp-pill-title">Plano Família</span>
+                  <span class="cp-pill-sub">Titular + até 3 dependentes</span>
+                  <strong v-if="prices['Fam\u00edlia']">{{ prices['Fam\u00edlia'] }}/mês</strong>
+                </button>
+              </div>
+            </div>
             <div class="cp-section">Seus dados</div>
             <div class="form-group"><label>Nome completo</label><input v-model="form.name" type="text" class="form-control" /></div>
             <div class="cp-row">
@@ -260,7 +287,7 @@ const copyPix = async () => {
               <div class="form-group"><label>Telefone</label><input v-model="form.phone" type="text" class="form-control" placeholder="DDD + número" /></div>
             </div>
             <div class="cp-row">
-              <div class="form-group"><label>CPF</label><input v-model="form.cpf" type="text" class="form-control" placeholder="Somente números" /></div>
+              <div class="form-group"><label>CPF</label><input :value="form.cpf" @input="form.cpf = formatCpf($event.target.value)" type="text" inputmode="numeric" maxlength="14" class="form-control" placeholder="000.000.000-00" /></div>
               <div class="form-group"><label>Data de nascimento</label><input v-model="form.birthDate" type="date" class="form-control" /></div>
             </div>
             <div class="form-group">
@@ -270,6 +297,27 @@ const copyPix = async () => {
                 <option value="MASCULINO">Masculino</option>
                 <option value="FEMININO">Feminino</option>
               </select>
+            </div>
+            <div v-if="!isTrialSignup" class="form-group">
+              <label>Crie sua senha de acesso</label>
+              <div style="position: relative; display: flex; align-items: center;">
+                <input
+                  v-model="form.password"
+                  :type="showPassword ? 'text' : 'password'"
+                  minlength="6"
+                  class="form-control"
+                  placeholder="Mínimo de 6 caracteres"
+                  style="padding-right: 40px; width: 100%;"
+                />
+                <button
+                  type="button"
+                  @click="showPassword = !showPassword"
+                  tabindex="-1"
+                  style="position: absolute; right: 10px; background: none; border: none; cursor: pointer; color: #64748b; font-size: 18px; display: flex; align-items: center;"
+                >
+                  <i :class="showPassword ? 'ph ph-eye-slash' : 'ph ph-eye'"></i>
+                </button>
+              </div>
             </div>
 
             <div class="cp-section">Endereço</div>
@@ -392,4 +440,30 @@ const copyPix = async () => {
 .cp-pix label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
 .cp-qr { display: block; max-width: 180px; margin: 0 auto 12px; }
 .btn-full { width: 100%; }
+
+.cp-plan-selector-container { margin: 16px 0 20px; }
+.cp-plan-label { font-size: 13px; font-weight: 600; color: var(--secondary); margin-bottom: 8px; display: block; }
+.cp-plan-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cp-plan-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+.cp-plan-pill.active {
+  border-color: var(--secondary, #215cff);
+  background: #f0f4ff;
+  box-shadow: 0 0 0 1px var(--secondary, #215cff);
+}
+.cp-pill-title { font-size: 14px; font-weight: 700; color: #1e293b; }
+.cp-pill-sub { font-size: 11px; color: var(--text-gray); }
+.cp-plan-pill strong { font-size: 14px; color: var(--secondary, #215cff); margin-top: 4px; }
+
 </style>
