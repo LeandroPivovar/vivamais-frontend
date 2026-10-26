@@ -109,8 +109,8 @@ const togglingSubscriptionIds = ref(new Set())
 const confirmToggleSubscription = async (user, activate) => {
   const actionText = activate ? "ativar" : "desativar"
   const detail = activate
-    ? `Deseja realmente reativar a assinatura de ${user.name}? O acesso aos benef?cios ser? liberado.`
-    : `Deseja realmente desativar a assinatura de ${user.name}? As pr?ximas cobran?as autom?ticas no banco ser?o canceladas e o acesso aos benef?cios ser? bloqueado.`
+    ? `Deseja realmente reativar a assinatura de ${user.name}? O acesso aos benefícios será liberado.`
+    : `Deseja realmente desativar a assinatura de ${user.name}? As próximas cobranças automáticas no banco serão canceladas e o acesso aos benefícios será bloqueado.`
   if (!confirm(detail)) return
   togglingSubscriptionIds.value.add(user.id)
   try {
@@ -127,10 +127,72 @@ const confirmToggleSubscription = async (user, activate) => {
   } catch (err) {
     emit("triggerDevModal", {
       title: "Erro",
-      message: err?.message || `N?o foi poss?vel ${actionText} a assinatura.`
+      message: err?.message || `Não foi possível ${actionText} a assinatura.`
     })
   } finally {
     togglingSubscriptionIds.value.delete(user.id)
+  }
+}
+
+const renewingSubscriptionIds = ref(new Set())
+const confirmRenewSubscription = async (user) => {
+  const detail = `Deseja renovar a assinatura de ${user.name} por mais 30 dias (${user.plan})? Isso liberará o acesso e registrará uma mensalidade paga sem alterar os dados do cliente.`
+  if (!confirm(detail)) return
+  renewingSubscriptionIds.value.add(user.id)
+  try {
+    const updated = await api.post(`/admin/users/${user.id}/renew`, {})
+    const idx = users.value.findIndex(u => u.id === updated.id)
+    if (idx !== -1) users.value[idx] = updated
+    if (editingUser.value && editingUser.value.id === updated.id) {
+      editingUser.value = { ...editingUser.value, ...updated, cpf: formatCpf(updated.cpf) }
+    }
+    emit("triggerDevModal", {
+      title: "Assinatura Renovada",
+      message: `A assinatura de ${user.name} foi renovada com sucesso por mais 30 dias!`
+    })
+  } catch (err) {
+    emit("triggerDevModal", {
+      title: "Erro",
+      message: err?.message || "Não foi possível renovar a assinatura agora."
+    })
+  } finally {
+    renewingSubscriptionIds.value.delete(user.id)
+  }
+}
+
+// Dropdown de Ações na tabela
+const openActionsMenuId = ref(null)
+const actionsMenuPlacement = ref('down')
+
+const toggleActionsMenu = (userId, event) => {
+  if (openActionsMenuId.value === userId) {
+    openActionsMenuId.value = null
+    return
+  }
+  openActionsMenuId.value = userId
+  if (event && event.currentTarget) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (window.innerHeight - rect.bottom < 290) {
+      actionsMenuPlacement.value = 'up'
+    } else {
+      actionsMenuPlacement.value = 'down'
+    }
+  }
+}
+
+const closeActionsMenu = () => {
+  openActionsMenuId.value = null
+}
+
+const handleDocumentClick = (e) => {
+  if (openActionsMenuId.value !== null && !e.target.closest('.actions-dropdown-container')) {
+    openActionsMenuId.value = null
+  }
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape') {
+    openActionsMenuId.value = null
   }
 }
 
@@ -379,6 +441,8 @@ const onChatPurged = (payload) => {
 }
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
+  document.removeEventListener('keydown', handleKeyDown)
   if (chatSocket && chatWired) {
     chatSocket.off('chat:message', onChatMessage)
     chatSocket.off('chat:conversation', upsertConv)
@@ -412,6 +476,8 @@ const loadAdminData = async () => {
 
 onMounted(() => {
   loadAdminData()
+  document.addEventListener('click', handleDocumentClick)
+  document.addEventListener('keydown', handleKeyDown)
 })
 
 // Coerção numérica — campos v-model.number podem virar '' / NaN durante a edição,
@@ -1081,7 +1147,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 
       <!-- LISTA DE USUÁRIOS: DESKTOP -->
       <div v-if="layoutMode === 'desktop'" class="admin-content animated-item" style="animation-delay: 0.1s;">
-        <div class="card" style="padding: 0; overflow-x: auto;">
+        <div class="card users-table-card" style="padding: 0; overflow-x: auto; min-height: 380px;">
           <table class="admin-table">
             <thead>
               <tr>
@@ -1093,7 +1159,7 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                 <th>Mensalidade</th>
                 <th>Comissão Recebida</th>
                 <th>Status</th>
-                <th>Ações</th>
+                <th style="text-align: center; width: 70px;">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -1136,26 +1202,92 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                 <td>
                   <span :class="['status-pill', u.status]">{{ u.status }}</span>
                 </td>
-                <td>
-                  <div class="actions-buttons">
-                    <button class="btn-action-edit" title="Editar Usuário" @click="openEditAccess(u)">
-                      <i class="ph ph-pencil-simple"></i>
-                    </button>
-                    <button class="btn-action-tree" title="Visualizar Rede de Indicações" @click="openTreeModal(u)" style="color: #7c3aed; background: transparent; border: none; cursor: pointer; font-size: 16px; padding: 6px; border-radius: var(--radius-sm);">
-                      <i class="ph ph-tree-structure"></i>
-                    </button>
+                <td class="actions-td">
+                  <div class="actions-dropdown-container">
                     <button
-                      class="btn-action-reset"
-                      title="Resetar senha e enviar por e-mail"
-                      :disabled="resettingPasswordIds.has(u.id)"
-                      @click="regeneratePassword(u)"
+                      type="button"
+                      class="btn-actions-trigger"
+                      title="Ações do usuário"
+                      :class="{ active: openActionsMenuId === u.id }"
+                      @click="toggleActionsMenu(u.id, $event)"
                     >
-                      <i :class="resettingPasswordIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-key'"></i>
-                      <span>{{ resettingPasswordIds.has(u.id) ? 'Enviando...' : 'Resetar senha' }}</span>
+                      <i class="ph ph-dots-three-vertical"></i>
                     </button>
-                    <button class="btn-action-delete" title="Excluir Usuário" @click="deleteUser(u.id)">
-                      <i class="ph ph-trash"></i>
-                    </button>
+                    <div
+                      v-if="openActionsMenuId === u.id"
+                      class="actions-dropdown-menu"
+                      :class="actionsMenuPlacement"
+                    >
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        :disabled="renewingSubscriptionIds.has(u.id)"
+                        @click="confirmRenewSubscription(u); closeActionsMenu()"
+                      >
+                        <i :class="renewingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch animate-spin' : 'ph ph-arrows-clockwise'" style="color: #0284c7;"></i>
+                        <span>Renovar (+30 dias)</span>
+                      </button>
+
+                      <button
+                        v-if="u.status === 'ativo'"
+                        type="button"
+                        class="dropdown-item"
+                        :disabled="togglingSubscriptionIds.has(u.id)"
+                        @click="confirmToggleSubscription(u, false); closeActionsMenu()"
+                      >
+                        <i :class="togglingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch animate-spin' : 'ph ph-x-circle'" style="color: #ef4444;"></i>
+                        <span>Desativar assinatura</span>
+                      </button>
+                      <button
+                        v-else
+                        type="button"
+                        class="dropdown-item"
+                        :disabled="togglingSubscriptionIds.has(u.id)"
+                        @click="confirmToggleSubscription(u, true); closeActionsMenu()"
+                      >
+                        <i :class="togglingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch animate-spin' : 'ph ph-check-circle'" style="color: #16a34a;"></i>
+                        <span>Ativar assinatura</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        @click="openEditAccess(u); closeActionsMenu()"
+                      >
+                        <i class="ph ph-pencil-simple" style="color: #2563eb;"></i>
+                        <span>Editar dados</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        @click="openTreeModal(u); closeActionsMenu()"
+                      >
+                        <i class="ph ph-tree-structure" style="color: #7c3aed;"></i>
+                        <span>Rede de indicações</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        :disabled="resettingPasswordIds.has(u.id)"
+                        @click="regeneratePassword(u); closeActionsMenu()"
+                      >
+                        <i :class="resettingPasswordIds.has(u.id) ? 'ph ph-circle-notch animate-spin' : 'ph ph-key'" style="color: #f59e0b;"></i>
+                        <span>{{ resettingPasswordIds.has(u.id) ? 'Enviando...' : 'Resetar e enviar senha' }}</span>
+                      </button>
+
+                      <div class="dropdown-divider"></div>
+
+                      <button
+                        type="button"
+                        class="dropdown-item text-danger"
+                        @click="deleteUser(u.id); closeActionsMenu()"
+                      >
+                        <i class="ph ph-trash" style="color: #ef4444;"></i>
+                        <span>Excluir usuário</span>
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -1302,6 +1434,15 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             >
               <i :class="togglingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-check-circle'"></i>
               {{ togglingSubscriptionIds.has(u.id) ? '...' : 'Ativar' }}
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              :disabled="renewingSubscriptionIds.has(u.id)"
+              @click="confirmRenewSubscription(u)"
+              style="flex: 1; min-width: 90px; color: #0284c7; border-color: #0284c7; display: flex; align-items: center; justify-content: center; gap: 4px;"
+            >
+              <i :class="renewingSubscriptionIds.has(u.id) ? 'ph ph-circle-notch' : 'ph ph-arrows-clockwise'"></i>
+              {{ renewingSubscriptionIds.has(u.id) ? '...' : 'Renovar' }}
             </button>
             <button class="btn btn-outline btn-sm" @click="openEditAccess(u)" style="flex: 1; min-width: 70px; display: flex; align-items: center; justify-content: center; gap: 4px;">
               <i class="ph ph-pencil-simple"></i> Editar
@@ -3365,6 +3506,145 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
 .actions-buttons {
   display: flex;
   gap: 8px;
+}
+
+/* Dropdown de Ações na tabela */
+.actions-td {
+  position: relative;
+  text-align: center;
+  width: 70px;
+}
+
+.actions-dropdown-container {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.btn-actions-trigger {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  font-size: 18px;
+  transition: all 0.15s ease;
+}
+
+.btn-actions-trigger:hover,
+.btn-actions-trigger.active {
+  background: #f1f5f9;
+  color: var(--primary, #0B3C82);
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.actions-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 215px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  padding: 6px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: dropdownFadeIn 0.15s ease-out;
+  text-align: left;
+}
+
+.actions-dropdown-menu.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+  animation: dropdownFadeInUp 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dropdownFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.actions-dropdown-menu .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.actions-dropdown-menu .dropdown-item i {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.actions-dropdown-menu .dropdown-item:hover:not(:disabled) {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.actions-dropdown-menu .dropdown-item:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.actions-dropdown-menu .dropdown-item.text-danger {
+  color: #ef4444;
+}
+
+.actions-dropdown-menu .dropdown-item.text-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.actions-dropdown-menu .dropdown-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 4px 0;
+}
+
+.animate-spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .btn-action-edit, .btn-action-delete, .btn-action-reset {

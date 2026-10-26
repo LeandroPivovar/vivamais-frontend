@@ -20,8 +20,20 @@ const isLoggedIn = ref(false)
 const currentUser = ref(null)
 const restoringSession = ref(true)
 
-// Checkout público: visitante que chega por link de indicação (?ref=... ou /plano-*).
-const showPublicCheckout = ref(false)
+// Checkout público: visitante que chega por link de indicação (?ref=... ou /plano-* ou campanhas especiais de família).
+const isPublicCheckoutRoute = () => {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname || ''
+  const hash = window.location.hash || ''
+  const search = window.location.search || ''
+  const hasRef = new URLSearchParams(search).has('ref')
+  const isPlanPath = /\/plano-[a-z0-9-]+/i.test(path) || /\/plano-[a-z0-9-]+/i.test(hash)
+  const isTrialPath = /\/cadastro-30-dias\/[a-z0-9]+/i.test(path) || /\/cadastro-30-dias\/[a-z0-9]+/i.test(hash)
+  const isPromoFamilyPath = /\/(familia-promocional|checkout-familia|plano-familia)/i.test(path) || /\/(familia-promocional|checkout-familia|plano-familia)/i.test(hash)
+  return hasRef || isPlanPath || isTrialPath || isPromoFamilyPath
+}
+
+const showPublicCheckout = ref(isPublicCheckoutRoute())
 
 // Abas de navegação: 'home', 'perfil', 'financeiro'
 const currentTab = ref('home')
@@ -250,6 +262,10 @@ const closeFloatingPanels = (event) => {
 }
 
 const handleRouting = () => {
+  if (isPublicCheckoutRoute()) {
+    showPublicCheckout.value = true
+    return
+  }
   const path = window.location.pathname
   const hash = window.location.hash
 
@@ -331,17 +347,14 @@ onMounted(async () => {
     currentUser.value = null
     isLoggedIn.value = false
   }
+  if (isPublicCheckoutRoute()) {
+    showPublicCheckout.value = true
+  }
   restoringSession.value = false
 
   if (isLoggedIn.value) initFloatingChat()
 
-  // Link de indicação (?ref= ou /plano-*) ou link 30 dias e sem sessão → abre o checkout público.
-  const hasRef = new URLSearchParams(window.location.search).has('ref')
-  const isPlanPath = /\/plano-[a-z0-9-]+/i.test(window.location.pathname)
-  const isTrialPath = /\/cadastro-30-dias\/[a-z0-9]+/i.test(window.location.pathname)
-  if (!isLoggedIn.value && (hasRef || isPlanPath || isTrialPath)) {
-    showPublicCheckout.value = true
-  } else {
+  if (!showPublicCheckout.value) {
     handleRouting()
   }
   window.addEventListener('popstate', handleRouting)
@@ -386,8 +399,8 @@ onBeforeUnmount(() => {
     @triggerDevModal="openDevModal"
   />
 
-  <!-- Visitante via link de indicação: checkout público (cadastro + pagamento) -->
-  <CheckoutView v-else-if="!isLoggedIn && showPublicCheckout" @goLogin="showPublicCheckout = false" />
+  <!-- Visitante via link de checkout/indicação: checkout público (cadastro + pagamento) -->
+  <CheckoutView v-else-if="showPublicCheckout" @goLogin="showPublicCheckout = false; navigateTo('home')" />
 
   <!-- Estado Deslogado: Tela de Login -->
   <LoginView v-else-if="!isLoggedIn" @login="handleLogin" />
