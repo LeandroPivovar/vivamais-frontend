@@ -30,7 +30,9 @@ const isPublicCheckoutRoute = () => {
   const isPlanPath = /\/plano-[a-z0-9-]+/i.test(path) || /\/plano-[a-z0-9-]+/i.test(hash)
   const isTrialPath = /\/cadastro-30-dias\/[a-z0-9]+/i.test(path) || /\/cadastro-30-dias\/[a-z0-9]+/i.test(hash)
   const isPromoFamilyPath = /\/(familia-promocional|checkout-familia|plano-familia)/i.test(path) || /\/(familia-promocional|checkout-familia|plano-familia)/i.test(hash)
-  return hasRef || isPlanPath || isTrialPath || isPromoFamilyPath
+  // Link de oferta do admin: /oferta/<slug>
+  const isPromoLinkPath = /\/oferta\/[a-z0-9-]+/i.test(path) || /\/oferta\/[a-z0-9-]+/i.test(hash)
+  return hasRef || isPlanPath || isTrialPath || isPromoFamilyPath || isPromoLinkPath
 }
 
 const showPublicCheckout = ref(isPublicCheckoutRoute())

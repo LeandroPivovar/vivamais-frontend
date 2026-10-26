@@ -101,6 +101,7 @@ const showRegisterModal = ref(false)
 const showConfigModal = ref(false)
 const showTreeModal = ref(false)
 const showTrialLinkModal = ref(false)
+const showPromoLinksModal = ref(false)
 const selectedTreeUser = ref(null)
 const editingUser = ref(null)
 const resettingPasswordIds = ref(new Set())
@@ -201,7 +202,7 @@ const trialLinkLoading = ref(false)
 const generatedTrialLink = ref('')
 
 // Controla scroll do body quando modal está aberto no Admin
-watch([showRegisterModal, showConfigModal, showTreeModal, showTrialLinkModal, editingUser], (vals) => {
+watch([showRegisterModal, showConfigModal, showTreeModal, showTrialLinkModal, showPromoLinksModal, editingUser], (vals) => {
   const isOpen = vals.some(v => !!v)
   document.body.style.overflow = isOpen ? 'hidden' : ''
 })
@@ -938,6 +939,104 @@ const copyTrialLink = async () => {
   emit('triggerDevModal', { title: 'Link copiado!', message: 'O link único de cadastro 30 dias foi copiado.' })
 }
 
+// --- LINKS DE OFERTA (1º mês promocional, depois o preço cheio) ---
+const promoLinks = ref([])
+const promoLinksLoading = ref(false)
+const promoSaving = ref(false)
+const promoError = ref('')
+const blankPromoForm = () => ({ plan: 'Família', firstMonthPrice: '', slug: '', limit: 'ilimitado', maxUses: '', expiresAt: '' })
+const promoForm = ref(blankPromoForm())
+
+const promoRegularPrice = computed(() =>
+  promoForm.value.plan === 'Família' ? Number(config.value.planFamilyPrice) : Number(config.value.planIndividualPrice),
+)
+const promoUrlPreview = computed(() => `${window.location.origin}/oferta/${promoForm.value.slug || 'fim-da-url'}`)
+const promoStatusLabel = { ativo: 'Ativo', expirado: 'Expirado', esgotado: 'Esgotado', encerrado: 'Encerrado' }
+
+// Fim da URL: só minúsculas, números e hífen (o mesmo que o backend aceita).
+const normalizePromoSlug = () => {
+  promoForm.value.slug = (promoForm.value.slug || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-/, '')
+    .slice(0, 60)
+}
+
+const loadPromoLinks = async () => {
+  promoLinksLoading.value = true
+  try {
+    promoLinks.value = await api.get('/admin/promo-links')
+  } catch {
+    promoLinks.value = []
+  } finally {
+    promoLinksLoading.value = false
+  }
+}
+
+const openPromoLinksModal = () => {
+  promoForm.value = blankPromoForm()
+  promoError.value = ''
+  showPromoLinksModal.value = true
+  loadPromoLinks()
+}
+
+const createPromoLink = async () => {
+  promoError.value = ''
+  const f = promoForm.value
+  const price = Number(String(f.firstMonthPrice).replace(',', '.'))
+  const slug = (f.slug || '').replace(/-+$/, '')
+  if (!slug) { promoError.value = 'Escolha o fim da URL.'; return }
+  if (!price || price < 1) { promoError.value = 'Informe o valor do 1º mês (mínimo R$ 1,00).'; return }
+  if (price >= promoRegularPrice.value) {
+    promoError.value = `O 1º mês precisa ser menor que o preço normal (${formatBrl(promoRegularPrice.value)}).`
+    return
+  }
+  const useUses = f.limit === 'usos' || f.limit === 'ambos'
+  const useDate = f.limit === 'data' || f.limit === 'ambos'
+  if (useUses && !(Number(f.maxUses) >= 1)) { promoError.value = 'Informe o número máximo de vendas.'; return }
+  if (useDate && !f.expiresAt) { promoError.value = 'Informe a data e a hora de validade.'; return }
+  promoSaving.value = true
+  try {
+    await api.post('/admin/promo-links', {
+      slug,
+      plan: f.plan,
+      firstMonthPrice: Number(price.toFixed(2)),
+      maxUses: useUses ? Number(f.maxUses) : null,
+      // datetime-local vem no fuso do navegador; vira ISO (UTC) para o servidor.
+      expiresAt: useDate ? new Date(f.expiresAt).toISOString() : null,
+    })
+    promoForm.value = blankPromoForm()
+    await loadPromoLinks()
+  } catch (err) {
+    const msg = Array.isArray(err?.message) ? err.message.join(' ') : err?.message
+    promoError.value = msg || 'Não foi possível criar o link agora.'
+  } finally {
+    promoSaving.value = false
+  }
+}
+
+const togglePromoLink = async (link) => {
+  try {
+    const updated = await api.put(`/admin/promo-links/${link.id}/active`, { active: !link.active })
+    const idx = promoLinks.value.findIndex((l) => l.id === link.id)
+    if (idx !== -1) promoLinks.value[idx] = updated
+  } catch {
+    emit('triggerDevModal', { title: 'Erro', message: 'Não foi possível alterar o link agora.' })
+  }
+}
+
+const copyPromoLink = async (link) => {
+  try { await navigator.clipboard.writeText(link.url) } catch { /* ignora */ }
+  emit('triggerDevModal', { title: 'Link copiado!', message: link.url })
+}
+
+const formatBrl = (n) => (n == null ? '—' : `R$ ${Number(n).toFixed(2).replace('.', ',')}`)
+const formatPromoDate = (iso) =>
+  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Sem validade'
+
 /** DD/MM/AAAA (formato salvo/Vencca) -> YYYY-MM-DD (formato do input type="date"). */
 function toIsoDate(brDate) {
   if (!brDate) return ''
@@ -1052,6 +1151,9 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           </button>
           <button class="btn btn-outline" @click="openTrialLinkModal">
             <i class="ph ph-link-simple"></i> Link 30 dias
+          </button>
+          <button class="btn btn-outline" @click="openPromoLinksModal">
+            <i class="ph ph-tag"></i> Links de oferta
           </button>
           <button class="btn btn-outline" @click="showConfigModal = true">
             <i class="ph ph-sliders"></i> Regras & Comissões
@@ -2074,6 +2176,112 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <button class="btn btn-outline" @click="copyTrialLink">
               <i class="ph ph-copy"></i> Copiar link
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: LINKS DE OFERTA (1º mês promocional) -->
+    <div v-if="showPromoLinksModal" class="custom-modal-overlay" @click.self="showPromoLinksModal = false">
+      <div class="custom-modal-card modal-large" style="max-width: 860px;">
+        <div class="modal-header-container">
+          <h3><i class="ph ph-tag"></i> Links de oferta</h3>
+          <button class="btn-close-modal" @click="showPromoLinksModal = false">✕</button>
+        </div>
+
+        <div style="display: grid; gap: 14px;">
+          <p style="color: var(--text-gray); margin: 0;">
+            Crie uma página de compra com valor promocional no <strong>1º mês</strong>. Do 2º mês em diante a assinatura
+            cobra o preço normal do plano, no Pix Automático e no cartão.
+          </p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Plano</label>
+              <select v-model="promoForm.plan" class="form-control">
+                <option value="Individual">Individual ({{ formatBrl(config.planIndividualPrice) }}/mês)</option>
+                <option value="Família">Família ({{ formatBrl(config.planFamilyPrice) }}/mês)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Valor do 1º mês (R$)</label>
+              <input v-model="promoForm.firstMonthPrice" type="number" min="1" step="0.01" class="form-control" placeholder="Ex.: 29,90" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Fim da URL</label>
+            <input v-model="promoForm.slug" @input="normalizePromoSlug" type="text" maxlength="60" class="form-control" placeholder="ex.: black-friday" />
+            <small style="color: var(--text-gray);">Link: <strong>{{ promoUrlPreview }}</strong> — só letras minúsculas, números e hífen.</small>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Limitação</label>
+              <select v-model="promoForm.limit" class="form-control">
+                <option value="ilimitado">Ilimitado</option>
+                <option value="usos">Por quantidade de vendas</option>
+                <option value="data">Por data de validade</option>
+                <option value="ambos">Vendas e data (o que acabar primeiro)</option>
+              </select>
+            </div>
+            <div v-if="promoForm.limit === 'usos' || promoForm.limit === 'ambos'" class="form-group">
+              <label class="form-label">Máximo de vendas</label>
+              <input v-model="promoForm.maxUses" type="number" min="1" step="1" class="form-control" placeholder="Ex.: 100" />
+            </div>
+            <div v-if="promoForm.limit === 'data' || promoForm.limit === 'ambos'" class="form-group">
+              <label class="form-label">Válido até</label>
+              <input v-model="promoForm.expiresAt" type="datetime-local" class="form-control" />
+            </div>
+          </div>
+
+          <p v-if="promoForm.firstMonthPrice" style="margin: 0; color: var(--text-gray); font-size: 13px;">
+            O cliente paga <strong>{{ formatBrl(Number(String(promoForm.firstMonthPrice).replace(',', '.'))) }}</strong> agora e
+            <strong>{{ formatBrl(promoRegularPrice) }}/mês</strong> a partir do 2º mês.
+          </p>
+          <p v-if="promoError" style="margin: 0; color: #ef4444; font-size: 13px;">{{ promoError }}</p>
+          <button class="btn btn-secondary" :disabled="promoSaving" @click="createPromoLink">
+            <i :class="promoSaving ? 'ph ph-circle-notch' : 'ph ph-link-simple-horizontal'"></i>
+            {{ promoSaving ? 'Criando...' : 'Criar link' }}
+          </button>
+
+          <div style="border-top: 1px solid var(--border-color); padding-top: 14px;">
+            <h4 style="margin: 0 0 10px;">Links criados</h4>
+            <p v-if="promoLinksLoading" style="color: var(--text-gray);">Carregando...</p>
+            <p v-else-if="!promoLinks.length" style="color: var(--text-gray);">Nenhum link criado ainda.</p>
+            <div v-else style="overflow-x: auto;">
+              <table class="admin-table" style="width: 100%; font-size: 13px;">
+                <thead>
+                  <tr>
+                    <th>Link</th>
+                    <th>Plano</th>
+                    <th>1º mês → depois</th>
+                    <th>Vendas</th>
+                    <th>Validade</th>
+                    <th>Situação</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="link in promoLinks" :key="link.id">
+                    <td><code>/oferta/{{ link.slug }}</code></td>
+                    <td>{{ link.plan }}</td>
+                    <td>{{ formatBrl(link.firstMonthPrice) }} → {{ formatBrl(link.regularPrice) }}</td>
+                    <td>{{ link.usesCount }}{{ link.maxUses ? ` / ${link.maxUses}` : '' }}</td>
+                    <td>{{ formatPromoDate(link.expiresAt) }}</td>
+                    <td>{{ promoStatusLabel[link.status] || link.status }}</td>
+                    <td style="white-space: nowrap;">
+                      <button class="btn btn-outline" style="padding: 4px 10px;" @click="copyPromoLink(link)" title="Copiar link">
+                        <i class="ph ph-copy"></i>
+                      </button>
+                      <button class="btn btn-outline" style="padding: 4px 10px; margin-left: 6px;" @click="togglePromoLink(link)">
+                        {{ link.active ? 'Encerrar' : 'Reabrir' }}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

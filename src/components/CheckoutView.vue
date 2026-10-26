@@ -62,6 +62,18 @@ const status = ref('')
 const isTrialSignup = computed(() => !!trialToken.value)
 const isPromoOffer = computed(() => offerType.value === 'promocional')
 
+// Oferta de 1º mês: link do admin (/oferta/<slug>) ou a oferta fixa antiga (/plano-familia).
+// firstMonthPrice é cobrado agora; regularPrice nas mensalidades seguintes.
+const promoSlug = ref('')
+const promo = ref(null) // { firstMonthPrice: number, regularPrice: number|null }
+const promoUnavailable = ref('')
+const brl = (n) => (n == null ? '' : `R$ ${Number(n).toFixed(2).replace('.', ',')}`)
+const promoFirst = computed(() => brl(promo.value?.firstMonthPrice))
+const promoRegular = computed(() => {
+  if (promo.value?.regularPrice != null) return brl(promo.value.regularPrice)
+  return prices.value[planType.value] ?? ''
+})
+
 const showPassword = ref(false)
 const form = ref({
   name: '', email: '', cpf: '', password: '', phone: '', birthDate: '', gender: '',
@@ -69,7 +81,7 @@ const form = ref({
 })
 
 const planPrice = computed(() => {
-  if (isPromoOffer.value) return 'R$ 19,90'
+  if (isPromoOffer.value) return promoFirst.value
   return prices.value[planType.value] ?? ''
 })
 
@@ -106,6 +118,22 @@ onMounted(async () => {
   if (curPath.includes('familia-promocional') || curPath.includes('plano-familia') || curPath.includes('checkout-familia')) {
     planType.value = 'Família'
     offerType.value = 'promocional'
+    promo.value = { firstMonthPrice: 19.9, regularPrice: null }
+  }
+
+  // /oferta/{slug} — link de oferta criado no admin
+  const promoMatch = window.location.pathname.match(/\/oferta\/([a-z0-9-]+)/i)
+  if (promoMatch) {
+    promoSlug.value = promoMatch[1].toLowerCase()
+    try {
+      const info = await api.get(`/billing/promo/${promoSlug.value}`)
+      planType.value = info.plan
+      offerType.value = 'promocional'
+      promo.value = { firstMonthPrice: info.firstMonthPrice, regularPrice: info.regularPrice }
+      if (!info.available) promoUnavailable.value = info.reason || 'Esta oferta não está mais disponível.'
+    } catch (err) {
+      promoUnavailable.value = err?.message || 'Oferta não encontrada.'
+    }
   }
 
   // /plano-{slug}
@@ -145,6 +173,7 @@ let tikTokCartTracked = false
 const submit = async () => {
   if (submitting.value) return
   error.value = ''
+  if (promoUnavailable.value) { error.value = promoUnavailable.value; return }
   const f = form.value
   for (const [k, label] of [['name','Nome'],['email','E-mail'],['cpf','CPF'],['phone','Telefone'],['birthDate','Nascimento'],['gender','Gênero'],['zipCode','CEP'],['address','Endereço'],['neighborhood','Bairro'],['city','Cidade'],['state','Estado']]) {
     if (!f[k]) { error.value = `Preencha: ${label}.`; return }
@@ -199,7 +228,9 @@ const submit = async () => {
     const res = await api.post('/billing/checkout', {
       refCode: refCode.value,
       planType: planType.value,
-      offer: offerType.value || undefined,
+      // Link de oferta: o backend usa o slug (valores e limites ficam no servidor).
+      offer: promoSlug.value ? undefined : (offerType.value || undefined),
+      promoSlug: promoSlug.value || undefined,
       password: f.password || undefined,
       name: f.name, email: f.email, cpf: f.cpf, phone: f.phone,
       birthDate: toBrDate(f.birthDate), gender: f.gender,
@@ -296,7 +327,7 @@ const copyPix = async () => {
         <!-- PIX Automático: precisa autorizar no banco -->
         <template v-else>
           <p v-if="isPromoOffer">
-            Escaneie o QR Code abaixo no app do seu banco ou use o Copia e Cola para pagar <strong>{{ planPrice }}</strong> e ativar imediatamente seu <strong>Plano Família</strong>.
+            Escaneie o QR Code abaixo no app do seu banco ou use o Copia e Cola para pagar <strong>{{ planPrice }}</strong> e ativar imediatamente seu <strong>Plano {{ planType }}</strong>.
           </p>
           <p v-else>Falta só <strong>autorizar o débito automático</strong> no app do seu banco. Escaneie o QR abaixo (ou use o Copia e Cola) e confirme a recorrência para ativar o plano <strong>{{ planType }}</strong>.</p>
           <div v-if="pixCode" class="cp-pix">
@@ -305,7 +336,7 @@ const copyPix = async () => {
             <textarea readonly rows="3" class="form-control" :value="pixCode"></textarea>
             <button class="btn btn-secondary btn-full" @click="copyPix"><i class="ph ph-copy"></i> Copiar código</button>
           </div>
-          <p class="cp-note" v-if="isPromoOffer">A primeira mensalidade é de <strong>R$ 19,90</strong>. A partir do 2º mês, o plano renova no valor regular de R$ 129,90/mês. Cancele quando quiser sem multas.</p>
+          <p class="cp-note" v-if="isPromoOffer">A primeira mensalidade é de <strong>{{ promoFirst }}</strong>. A partir do 2º mês, o plano renova no valor regular de <strong>{{ promoRegular }}/mês</strong> — no banco, autorize um limite de pelo menos esse valor. Cancele quando quiser sem multas.</p>
           <p class="cp-note" v-else>Você autoriza <strong>uma única vez</strong> no app do banco; a mensalidade passa a ser debitada automaticamente todo mês. Assim que a autorização for confirmada, seu plano é ativado — acesse com seu CPF/e-mail e a senha escolhida.</p>
         </template>
 
@@ -315,14 +346,15 @@ const copyPix = async () => {
       <!-- Formulário -->
       <div v-else class="cp-grid">
         <div class="cp-card">
-          <!-- Oferta Promocional R$ 19,90 -->
+          <!-- Oferta de 1º mês (link do admin ou /plano-familia) -->
           <template v-if="isPromoOffer">
             <div class="cp-promo-badge">
               <i class="ph ph-sparkle"></i> CONDIÇÃO EXCLUSIVA • 1º MÊS
             </div>
-            <h1 class="cp-title-promo">Plano Família por R$ 19,90</h1>
+            <h1 class="cp-title-promo">Plano {{ planType }} por {{ promoFirst }}</h1>
             <p class="cp-sub">
-              Proteja toda a sua família por <strong>R$ 19,90</strong> no primeiro mês. Acesso imediato para você + até 4 dependentes.
+              <template v-if="planType === 'Família'">Proteja toda a sua família por <strong>{{ promoFirst }}</strong> no primeiro mês. Acesso imediato para você + até 4 dependentes.</template>
+              <template v-else>Sua proteção completa por <strong>{{ promoFirst }}</strong> no primeiro mês, com acesso imediato.</template>
             </p>
           </template>
 
@@ -335,29 +367,32 @@ const copyPix = async () => {
             </p>
           </template>
 
+          <!-- Link de oferta expirado/esgotado/encerrado/inexistente: explica e bloqueia a compra -->
+          <p v-if="promoUnavailable" class="cp-error" style="margin-top: 0;">{{ promoUnavailable }}</p>
+
           <div v-if="loading" class="cp-note">Carregando…</div>
 
           <form v-else @submit.prevent="submit" class="cp-form">
-            <!-- Card de Destaque da Oferta Família Promocional -->
+            <!-- Card de destaque da oferta de 1º mês -->
             <div v-if="isPromoOffer" class="cp-offer-card">
               <div class="cp-offer-header">
                 <div>
-                  <span class="cp-offer-name">Plano Família Completo</span>
-                  <span class="cp-offer-dep">Titular + até 4 dependentes</span>
+                  <span class="cp-offer-name">Plano {{ planType }} Completo</span>
+                  <span class="cp-offer-dep">{{ planType === 'Família' ? 'Titular + até 4 dependentes' : 'Titular' }}</span>
                 </div>
                 <div class="cp-offer-price">
-                  <span class="cp-strikethrough">De R$ 129,90</span>
-                  <strong>R$ 19,90 <small>/ 1º mês</small></strong>
+                  <span class="cp-strikethrough">De {{ promoRegular }}</span>
+                  <strong>{{ promoFirst }} <small>/ 1º mês</small></strong>
                 </div>
               </div>
               <div class="cp-offer-perks">
                 <span><i class="ph ph-first-aid"></i> Telemedicina Médica 24h</span>
                 <span><i class="ph ph-tag"></i> Clube Certo (Até 50% desc.)</span>
                 <span><i class="ph ph-dog"></i> Orientação Veterinária 24h</span>
-                <span><i class="ph ph-users-three"></i> 4 Dependentes Inclusos</span>
+                <span v-if="planType === 'Família'"><i class="ph ph-users-three"></i> 4 Dependentes Inclusos</span>
               </div>
               <p class="cp-offer-terms">
-                * Apenas R$ 19,90 no 1º mês. A partir do 2º mês, renovação no valor padrão de R$ 129,90/mês. Cancele quando quiser.
+                * Apenas {{ promoFirst }} no 1º mês. A partir do 2º mês, renovação no valor padrão de {{ promoRegular }}/mês. Cancele quando quiser.
               </p>
             </div>
 
@@ -474,8 +509,8 @@ const copyPix = async () => {
             </div>
 
             <p v-if="error" class="cp-error">{{ error }}</p>
-            <button type="submit" class="btn btn-secondary btn-full cp-submit" :disabled="submitting">
-              {{ submitting ? 'Processando…' : (isTrialSignup ? 'Gerar QR Code de 30 dias grátis (D+30)' : (isPromoOffer ? (paymentMethod === 'card' ? 'Assinar por R$ 19,90 no cartão' : 'Confirmar e pagar R$ 19,90 via Pix') : (paymentMethod === 'card' ? 'Assinar com cartão' : 'Confirmar e gerar Pix Automático'))) }}
+            <button type="submit" class="btn btn-secondary btn-full cp-submit" :disabled="submitting || !!promoUnavailable">
+              {{ submitting ? 'Processando…' : (isTrialSignup ? 'Gerar QR Code de 30 dias grátis (D+30)' : (isPromoOffer ? (paymentMethod === 'card' ? `Assinar por ${promoFirst} no cartão` : `Confirmar e pagar ${promoFirst} via Pix`) : (paymentMethod === 'card' ? 'Assinar com cartão' : 'Confirmar e gerar Pix Automático'))) }}
             </button>
             <button type="button" class="cp-login-link" @click="emit('goLogin')">Já tem conta? Entrar</button>
           </form>
@@ -485,15 +520,15 @@ const copyPix = async () => {
           <h4>Resumo do Pedido</h4>
           <div class="cp-sum-row">
             <span>Plano</span>
-            <strong>{{ isPromoOffer ? 'Família (1º Mês Promo)' : planType }}</strong>
+            <strong>{{ isPromoOffer ? `${planType} (1º mês promocional)` : planType }}</strong>
           </div>
           <div class="cp-sum-row">
             <span>Periodicidade</span>
-            <strong>{{ isPromoOffer ? 'Mensal (1º mês R$ 19,90)' : 'Mensal' }}</strong>
+            <strong>{{ isPromoOffer ? `Mensal (1º mês ${promoFirst})` : 'Mensal' }}</strong>
           </div>
           <div class="cp-sum-row">
             <span>Dependentes</span>
-            <strong>Titular + até 4 dependentes</strong>
+            <strong>{{ planType === 'Família' ? 'Titular + até 4 dependentes' : 'Somente titular' }}</strong>
           </div>
           <div class="cp-sum-row">
             <span>Pagamento</span>
@@ -501,14 +536,14 @@ const copyPix = async () => {
           </div>
           <div v-if="isPromoOffer" class="cp-sum-row" style="color: var(--text-gray); font-size: 13px;">
             <span>A partir do 2º mês</span>
-            <span>R$ 129,90/mês</span>
+            <span>{{ promoRegular }}/mês</span>
           </div>
           <div class="cp-sum-row total">
             <span>{{ isTrialSignup ? 'Hoje' : 'Total Hoje' }}</span>
             <strong style="color: #0b3c82; font-size: 20px;">{{ isTrialSignup ? 'R$ 0,00' : (planPrice || '—') }}</strong>
           </div>
           <p class="cp-note">
-            {{ isPromoOffer ? 'A primeira mensalidade sai por apenas R$ 19,90. A partir do segundo mês, o plano renova no valor regular de R$ 129,90/mês. Cancele quando quiser.' : (isTrialSignup ? 'O primeiro pagamento será solicitado depois do período inicial. O link é único e só pode ser usado uma vez.' : 'Débito automático mensal via Pix. Você autoriza uma vez no banco. Cancele quando quiser.') }}
+            {{ isPromoOffer ? `A primeira mensalidade sai por apenas ${promoFirst}. A partir do segundo mês, o plano renova no valor regular de ${promoRegular}/mês. Cancele quando quiser.` : (isTrialSignup ? 'O primeiro pagamento será solicitado depois do período inicial. O link é único e só pode ser usado uma vez.' : 'Débito automático mensal via Pix. Você autoriza uma vez no banco. Cancele quando quiser.') }}
           </p>
           <div class="cp-guarantee">
             <i class="ph ph-shield-check"></i>
