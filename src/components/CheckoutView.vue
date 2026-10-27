@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import QRCode from 'qrcode'
 import { initTikTok, trackTikTokCart } from '../services/tiktok'
+import { loadCampaignPixels, trackCampaignCheckout, trackCampaignPurchase } from '../services/campaignPixels'
 import { api, lookupCep, tokenizeCard, formatCpf } from '../services/api'
 
 // Cartão (Pagar.me)
@@ -89,9 +90,11 @@ const planPrice = computed(() => {
  * Purchase no TikTok Pixel. O eventID é o mesmo que a Events API usa no
  * backend — sem ele o TikTok contaria a mesma venda duas vezes.
  */
+const planPriceNumber = () => Number(String(planPrice.value).replace(/[^\d,]/g, '').replace(',', '.')) || 0
 const trackPurchase = (transactionId) => {
+  trackCampaignPurchase(planType.value, planPriceNumber(), transactionId)
   if (typeof window === 'undefined' || typeof window.ttq?.track !== 'function') return
-  const value = Number(String(planPrice.value).replace(/[^\d,]/g, '').replace(',', '.')) || 0
+  const value = planPriceNumber()
   try {
     window.ttq.track(
       'Purchase',
@@ -131,6 +134,7 @@ onMounted(async () => {
       offerType.value = 'promocional'
       promo.value = { firstMonthPrice: info.firstMonthPrice, regularPrice: info.regularPrice }
       if (!info.available) promoUnavailable.value = info.reason || 'Esta oferta não está mais disponível.'
+      loadCampaignPixels(info)
     } catch (err) {
       promoUnavailable.value = err?.message || 'Oferta não encontrada.'
     }
@@ -184,6 +188,7 @@ const submit = async () => {
   }
   if (!isTrialSignup.value && !tikTokCartTracked) {
     trackTikTokCart(planType.value, planPrice.value)
+    trackCampaignCheckout(planType.value, planPriceNumber())
     tikTokCartTracked = true
   }
   submitting.value = true

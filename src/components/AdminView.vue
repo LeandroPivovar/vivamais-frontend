@@ -944,7 +944,12 @@ const promoLinks = ref([])
 const promoLinksLoading = ref(false)
 const promoSaving = ref(false)
 const promoError = ref('')
-const blankPromoForm = () => ({ plan: 'Família', firstMonthPrice: '', slug: '', limit: 'ilimitado', maxUses: '', expiresAt: '' })
+const blankPromoForm = () => ({ plan: 'Família', firstMonthPrice: '', slug: '', limit: 'ilimitado', maxUses: '', expiresAt: '', metaPixelId: '', tiktokPixelId: '' })
+// IDs de pixel como o backend aceita: Meta só números, TikTok maiúsculas e números.
+const cleanMetaPixel = (v) => String(v || '').replace(/\D/g, '')
+const cleanTiktokPixel = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+const editingPixelsId = ref(null)
+const pixelDraft = ref({ metaPixelId: '', tiktokPixelId: '' })
 const promoForm = ref(blankPromoForm())
 
 const promoRegularPrice = computed(() =>
@@ -1007,6 +1012,8 @@ const createPromoLink = async () => {
       maxUses: useUses ? Number(f.maxUses) : null,
       // datetime-local vem no fuso do navegador; vira ISO (UTC) para o servidor.
       expiresAt: useDate ? new Date(f.expiresAt).toISOString() : null,
+      metaPixelId: cleanMetaPixel(f.metaPixelId) || null,
+      tiktokPixelId: cleanTiktokPixel(f.tiktokPixelId) || null,
     })
     promoForm.value = blankPromoForm()
     await loadPromoLinks()
@@ -1025,6 +1032,26 @@ const togglePromoLink = async (link) => {
     if (idx !== -1) promoLinks.value[idx] = updated
   } catch {
     emit('triggerDevModal', { title: 'Erro', message: 'Não foi possível alterar o link agora.' })
+  }
+}
+
+const editPromoPixels = (link) => {
+  editingPixelsId.value = editingPixelsId.value === link.id ? null : link.id
+  pixelDraft.value = { metaPixelId: link.metaPixelId || '', tiktokPixelId: link.tiktokPixelId || '' }
+}
+
+const savePromoPixels = async (link) => {
+  try {
+    const updated = await api.put(`/admin/promo-links/${link.id}/pixels`, {
+      metaPixelId: cleanMetaPixel(pixelDraft.value.metaPixelId) || null,
+      tiktokPixelId: cleanTiktokPixel(pixelDraft.value.tiktokPixelId) || null,
+    })
+    const idx = promoLinks.value.findIndex((l) => l.id === link.id)
+    if (idx !== -1) promoLinks.value[idx] = updated
+    editingPixelsId.value = null
+  } catch (err) {
+    const msg = Array.isArray(err?.message) ? err.message.join(' ') : err?.message
+    emit('triggerDevModal', { title: 'Erro', message: msg || 'Não foi possível salvar os pixels agora.' })
   }
 }
 
@@ -2235,6 +2262,20 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             </div>
           </div>
 
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label">Pixel da Meta (opcional)</label>
+              <input v-model="promoForm.metaPixelId" type="text" inputmode="numeric" maxlength="30" class="form-control" placeholder="Ex.: 1022770670577377" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Pixel extra do TikTok (opcional)</label>
+              <input v-model="promoForm.tiktokPixelId" type="text" maxlength="30" class="form-control" placeholder="Ex.: DB4JR6JC77UAOLDV4V9G" />
+            </div>
+          </div>
+          <p style="margin: -6px 0 0; color: var(--text-gray); font-size: 12px;">
+            Carregados só nesta página. O pixel do TikTok do site já roda em todas as páginas.
+          </p>
+
           <p v-if="promoForm.firstMonthPrice" style="margin: 0; color: var(--text-gray); font-size: 13px;">
             O cliente paga <strong>{{ formatBrl(Number(String(promoForm.firstMonthPrice).replace(',', '.'))) }}</strong> agora e
             <strong>{{ formatBrl(promoRegularPrice) }}/mês</strong> a partir do 2º mês.
@@ -2259,18 +2300,29 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                     <th>Vendas</th>
                     <th>Validade</th>
                     <th>Situação</th>
+                    <th>Pixels</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="link in promoLinks" :key="link.id">
+                  <template v-for="link in promoLinks" :key="link.id">
+                  <tr>
                     <td><code>/oferta/{{ link.slug }}</code></td>
                     <td>{{ link.plan }}</td>
                     <td>{{ formatBrl(link.firstMonthPrice) }} → {{ formatBrl(link.regularPrice) }}</td>
                     <td>{{ link.usesCount }}{{ link.maxUses ? ` / ${link.maxUses}` : '' }}</td>
                     <td>{{ formatPromoDate(link.expiresAt) }}</td>
                     <td>{{ promoStatusLabel[link.status] || link.status }}</td>
+                    <td>
+                      <span v-if="link.metaPixelId">Meta</span>
+                      <span v-if="link.metaPixelId && link.tiktokPixelId"> + </span>
+                      <span v-if="link.tiktokPixelId">TikTok</span>
+                      <span v-if="!link.metaPixelId && !link.tiktokPixelId" style="color: var(--text-gray);">Só o do site</span>
+                    </td>
                     <td style="white-space: nowrap;">
+                      <button class="btn btn-outline" style="padding: 4px 10px; margin-right: 6px;" @click="editPromoPixels(link)">
+                        Pixels
+                      </button>
                       <button class="btn btn-outline" style="padding: 4px 10px;" @click="copyPromoLink(link)" title="Copiar link">
                         <i class="ph ph-copy"></i>
                       </button>
@@ -2279,6 +2331,17 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
                       </button>
                     </td>
                   </tr>
+                  <tr v-if="editingPixelsId === link.id">
+                    <td colspan="8">
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                        <input v-model="pixelDraft.metaPixelId" type="text" inputmode="numeric" maxlength="30" class="form-control" style="max-width: 220px;" placeholder="Pixel da Meta" />
+                        <input v-model="pixelDraft.tiktokPixelId" type="text" maxlength="30" class="form-control" style="max-width: 220px;" placeholder="Pixel extra do TikTok" />
+                        <button class="btn btn-secondary" style="padding: 4px 12px;" @click="savePromoPixels(link)">Salvar</button>
+                        <span style="color: var(--text-gray); font-size: 12px;">Vazio remove o pixel.</span>
+                      </div>
+                    </td>
+                  </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
