@@ -118,7 +118,7 @@ onMounted(async () => {
   refCode.value = params.get('ref') || ''
 
   const curPath = window.location.pathname.toLowerCase()
-  if (curPath.includes('familia-promocional') || curPath.includes('plano-familia') || curPath.includes('checkout-familia')) {
+  if (curPath.includes('familia-promocional')) {
     planType.value = 'Família'
     offerType.value = 'promocional'
     promo.value = { firstMonthPrice: 19.9, regularPrice: null }
