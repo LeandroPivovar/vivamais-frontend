@@ -1463,20 +1463,6 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- Linha de Saldo e Meu Extrato -->
-          <div class="pwa-header-pills-row">
-            <div class="pwa-balance-pill" @click="toggleShowBalance">
-              <div class="pwa-balance-left">
-                <i class="ph-fill ph-hand-coins pwa-money-bag-icon"></i>
-                <span class="pwa-balance-value">{{ showBalance ? userTotalBalance : 'R$ ••••' }}</span>
-              </div>
-              <i :class="showBalance ? 'ph-bold ph-eye' : 'ph-bold ph-eye-slash'" class="pwa-balance-eye"></i>
-            </div>
-            <button class="pwa-extrato-pill" @click="openExtratoModal">
-              <i class="ph-bold ph-receipt"></i>
-              <span>Meu extrato</span>
-            </button>
-          </div>
         </header>
 
         <!-- Corpo Branco PWA -->
