@@ -939,6 +939,70 @@ const copyTrialLink = async () => {
   emit('triggerDevModal', { title: 'Link copiado!', message: 'O link único de cadastro 30 dias foi copiado.' })
 }
 
+// --- NOTIFICAÇÕES DO APP (push para todos os celulares de um app) ---
+const showPushModal = ref(false)
+const pushAppOptions = [
+  { value: 'vivamais', label: 'Viva Mais', icon: 'ph ph-heartbeat' },
+  { value: 'kids', label: 'Viva Mais Kids', icon: 'ph ph-smiley' },
+  { value: 'teens', label: 'Viva Mais Teens', icon: 'ph ph-graduation-cap' },
+]
+const pushAppLabel = (app) => pushAppOptions.find((o) => o.value === app)?.label || app
+const pushSummary = ref(null)
+const pushLoading = ref(false)
+const pushSending = ref(false)
+const pushError = ref('')
+const pushResult = ref('')
+const pushForm = ref({ app: 'kids', title: '', body: '' })
+const formatPushDate = (value) =>
+  value ? new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
+
+const loadPushSummary = async () => {
+  pushLoading.value = true
+  try {
+    pushSummary.value = await api.get('/admin/push')
+  } catch (err) {
+    pushError.value = err?.message || 'Não foi possível carregar as notificações.'
+  } finally {
+    pushLoading.value = false
+  }
+}
+
+const openPushModal = () => {
+  pushError.value = ''
+  pushResult.value = ''
+  showPushModal.value = true
+  loadPushSummary()
+}
+
+watch(showPushModal, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
+const sendPushBroadcast = async () => {
+  pushError.value = ''
+  pushResult.value = ''
+  const { app, title, body } = pushForm.value
+  if (title.trim().length < 2 || body.trim().length < 2) {
+    pushError.value = 'Preencha o título e a mensagem.'
+    return
+  }
+  const total = pushSummary.value?.devices?.[app] || 0
+  if (!window.confirm(`Enviar "${title.trim()}" para ${total} celular(es) do ${pushAppLabel(app)}?`)) return
+  pushSending.value = true
+  try {
+    const r = await api.post('/admin/push/broadcast', { app, title: title.trim(), body: body.trim() })
+    pushResult.value = r.total
+      ? `Enviada para ${r.sent} de ${r.total} celular(es).`
+      : 'Nenhum celular com esse app cadastrado ainda — ficou registrada no histórico.'
+    pushForm.value = { app, title: '', body: '' }
+    await loadPushSummary()
+  } catch (err) {
+    pushError.value = err?.message || 'Não foi possível enviar.'
+  } finally {
+    pushSending.value = false
+  }
+}
+
 // --- LINKS DE OFERTA (1º mês promocional, depois o preço cheio) ---
 const promoLinks = ref([])
 const promoLinksLoading = ref(false)
@@ -1181,6 +1245,9 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
           </button>
           <button class="btn btn-outline" @click="openPromoLinksModal">
             <i class="ph ph-tag"></i> Links de oferta
+          </button>
+          <button class="btn btn-outline" @click="openPushModal">
+            <i class="ph ph-bell-ringing"></i> Notificações do app
           </button>
           <button class="btn btn-outline" @click="showConfigModal = true">
             <i class="ph ph-sliders"></i> Regras & Comissões
@@ -2203,6 +2270,92 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
             <button class="btn btn-outline" @click="copyTrialLink">
               <i class="ph ph-copy"></i> Copiar link
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: NOTIFICAÇÕES DO APP (push para todos os celulares de um app) -->
+    <div v-if="showPushModal" class="custom-modal-overlay" @click.self="showPushModal = false">
+      <div class="custom-modal-card modal-large" style="max-width: 760px;">
+        <div class="modal-header-container">
+          <h3><i class="ph ph-bell-ringing"></i> Notificações do app</h3>
+          <button class="btn-close-modal" @click="showPushModal = false">✕</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;">
+          <p style="color: var(--text-gray); margin: 0;">
+            Manda uma notificação para <strong>todos os celulares</strong> com o app escolhido instalado e logado.
+            Ela chega na hora, mesmo com o app fechado.
+          </p>
+          <p v-if="pushSummary && !pushSummary.enabled" style="margin: 0; color: #ef4444; font-size: 13px;">
+            As notificações estão desligadas no servidor (falta a credencial do Firebase).
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">App</label>
+            <div class="push-app-options">
+              <label v-for="opt in pushAppOptions" :key="opt.value" class="push-app-option" :class="{ active: pushForm.app === opt.value }">
+                <input v-model="pushForm.app" type="radio" :value="opt.value" />
+                <i :class="opt.icon"></i>
+                <span>
+                  <strong>{{ opt.label }}</strong>
+                  <small>{{ pushSummary ? `${pushSummary.devices[opt.value] || 0} celular(es)` : '...' }}</small>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Título</label>
+            <input v-model="pushForm.title" type="text" maxlength="80" class="form-control" placeholder="Ex.: Jogo novo no Viva Kids!" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mensagem</label>
+            <textarea v-model="pushForm.body" maxlength="300" rows="3" class="form-control" placeholder="Ex.: Entre no app e conheça o novo jogo da memória."></textarea>
+            <small style="color: var(--text-gray);">{{ pushForm.body.length }}/300</small>
+          </div>
+
+          <div v-if="pushForm.title || pushForm.body" class="push-preview">
+            <img src="/favicon.png" alt="" />
+            <div>
+              <span class="push-preview-app">{{ pushAppLabel(pushForm.app) }} · agora</span>
+              <strong>{{ pushForm.title || 'Título' }}</strong>
+              <p>{{ pushForm.body || 'Mensagem' }}</p>
+            </div>
+          </div>
+
+          <p v-if="pushError" style="margin: 0; color: #ef4444; font-size: 13px;">{{ pushError }}</p>
+          <p v-if="pushResult" style="margin: 0; color: #059669; font-size: 13px;">{{ pushResult }}</p>
+          <button class="btn btn-secondary" :disabled="pushSending" @click="sendPushBroadcast">
+            <i :class="pushSending ? 'ph ph-circle-notch' : 'ph ph-paper-plane-tilt'"></i>
+            {{ pushSending ? 'Enviando...' : 'Enviar notificação' }}
+          </button>
+
+          <div style="border-top: 1px solid var(--border-color); padding-top: 14px; min-width: 0;">
+            <h4 style="margin: 0 0 10px;">Enviadas</h4>
+            <p v-if="pushLoading" style="color: var(--text-gray);">Carregando...</p>
+            <p v-else-if="!pushSummary?.history?.length" style="color: var(--text-gray);">Nenhuma notificação enviada ainda.</p>
+            <div v-else style="overflow-x: auto;">
+              <table class="admin-table" style="width: 100%; font-size: 13px;">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>App</th>
+                    <th>Notificação</th>
+                    <th>Entregues</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in pushSummary.history" :key="item.id">
+                    <td style="white-space: nowrap;">{{ formatPushDate(item.createdAt) }}</td>
+                    <td style="white-space: nowrap;">{{ pushAppLabel(item.app) }}</td>
+                    <td><strong>{{ item.title }}</strong><br /><span style="color: var(--text-gray);">{{ item.body }}</span></td>
+                    <td>{{ item.sent }} / {{ item.total }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -4334,4 +4487,20 @@ const userRangeEnd = computed(() => Math.min(filteredUsers.value.length, userPag
   background: #dcfce7;
 }
 
+/* Notificações do app */
+.push-app-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.push-app-option { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
+.push-app-option input { display: none; }
+.push-app-option i { font-size: 22px; color: var(--text-gray); }
+.push-app-option span { display: grid; gap: 2px; line-height: 1.2; }
+.push-app-option small { color: var(--text-gray); font-size: 12px; }
+.push-app-option.active { border-color: var(--primary-color, #0B3C82); background: rgba(11, 60, 130, .06); }
+.push-app-option.active i { color: var(--primary-color, #0B3C82); }
+.push-preview { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: #f1f5f9; border: 1px solid var(--border-color); }
+.push-preview img { width: 32px; height: 32px; border-radius: 8px; }
+.push-preview div { display: grid; gap: 2px; min-width: 0; }
+.push-preview-app { font-size: 11px; color: var(--text-gray); }
+.push-preview strong { font-size: 14px; }
+.push-preview p { margin: 0; font-size: 13px; color: #334155; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .push-app-options { grid-template-columns: 1fr; } }
 </style>

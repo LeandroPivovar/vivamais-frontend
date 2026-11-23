@@ -6,8 +6,10 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 import { api } from './api'
 import { IS_NATIVE_APP, APP_MODULE } from './nativeApp'
 
-// Só o app principal tem Firebase configurado (os apps Kids/Teens não recebem push).
-const PUSH_ENABLED = IS_NATIVE_APP && !APP_MODULE
+// Os 3 apps (Viva Mais, Kids e Teens) estão no Firebase. O servidor guarda qual app
+// é cada celular para o admin poder mandar novidades só para o Kids ou só para o Teens.
+const PUSH_ENABLED = IS_NATIVE_APP
+const PUSH_APP = APP_MODULE === 'kids' ? 'kids' : APP_MODULE === 'teen' ? 'teens' : 'vivamais'
 
 const CHANNEL_ID = 'default'
 let listenersReady = false
@@ -26,13 +28,13 @@ export async function initPush(onOpenTab) {
       await PushNotifications.createChannel({
         id: CHANNEL_ID,
         name: 'Avisos da conta',
-        description: 'Pagamentos, renovações e comissões',
+        description: APP_MODULE ? 'Novidades do app' : 'Pagamentos, renovações e comissões',
         importance: 4,
         visibility: 1,
       })
       PushNotifications.addListener('registration', ({ value }) => {
         currentToken = value
-        api.post('/push/devices', { token: value, platform: 'android' }).catch(() => {})
+        api.post('/push/devices', { token: value, platform: 'android', app: PUSH_APP }).catch(() => {})
       })
       PushNotifications.addListener('registrationError', () => {})
       // Com o app aberto o Android não mostra a notificação sozinho: mostramos como local.
