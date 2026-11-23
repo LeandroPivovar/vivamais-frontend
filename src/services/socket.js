@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client'
 import { getToken } from './api'
+import { IS_NATIVE_APP, SITE_ORIGIN } from './nativeApp'
 
 let socket = null
 
@@ -7,7 +8,8 @@ let socket = null
 export function getSocket() {
   const token = getToken()
   if (!socket) {
-    socket = io({
+    // No app a página não está no domínio do site: conecta direto nele.
+    socket = io(IS_NATIVE_APP ? SITE_ORIGIN : undefined, {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,

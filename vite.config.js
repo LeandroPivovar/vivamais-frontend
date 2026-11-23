@@ -1,12 +1,26 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { rmSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+// App Android ainda sem Viva Kids/Teens: tira as imagens deles do pacote (~55 MB).
+const dropKidsTeenAssets = () => ({
+  name: 'drop-kids-teen-assets',
+  apply: 'build',
+  closeBundle() {
+    for (const p of ['kids', 'teen', 'kids-bg.png']) rmSync(resolve('dist', p), { recursive: true, force: true })
+  },
+})
 
 // https://vite.dev/config/
-export default defineConfig({
+// --mode app = build do app Android (Capacitor): sem service worker do PWA.
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
+    mode === 'app' && dropKidsTeenAssets(),
     VitePWA({
+      disable: mode === 'app',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'apple-touch-icon.png', 'logo-viva-mais.png'],
       manifest: {
@@ -52,4 +66,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

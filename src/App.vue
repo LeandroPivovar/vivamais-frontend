@@ -11,6 +11,7 @@ import CheckoutView from './components/CheckoutView.vue'
 import KidsView from './components/kids/KidsView.vue'
 import TeenView from './components/teen/TeenView.vue'
 import { api, getToken, clearToken } from './services/api'
+import { KIDS_TEEN_ENABLED } from './services/nativeApp'
 import { getSocket, disconnectSocket } from './services/socket'
 
 // Abas bloqueadas para dependentes (sem parte financeira nem gestão de dependentes).
@@ -181,7 +182,9 @@ const navigateTo = (tab) => {
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
-  
+  // App Android: Viva Kids/Teens ainda não fazem parte do app.
+  if (!KIDS_TEEN_ENABLED && /^(kids|teen)/.test(tab)) return
+
   if (tab === 'kids' || tab === 'kids-dashboard') {
     currentTab.value = kidsTeenSessionModule() === 'kids' ? 'kids-dashboard' : 'kids-auth'
     showDropdown.value = false

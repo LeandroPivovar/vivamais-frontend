@@ -19,7 +19,7 @@ android {
     }
     flavorDimensions "app"
     productFlavors {
-        main {
+        vivamais {
             dimension "app"
             applicationId "br.com.vivamaisclub.app"
             manifestPlaceholders = [appLabel: "Viva Mais"]

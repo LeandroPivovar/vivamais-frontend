@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import QRCode from 'qrcode'
 import { api, lookupCep, tokenizeCard } from '../services/api'
+import { IS_NATIVE_APP, SITE_ORIGIN, KIDS_TEEN_ENABLED } from '../services/nativeApp'
 
 // Converte "MM/AA" (ou "MM/AAAA") em { exp_month, exp_year } p/ a Pagar.me.
 function parseExpiry(raw) {
@@ -51,7 +52,7 @@ const SSO_BENEFIT_SLUGS = {
 // Pet (Veterinário) não tem API/SSO — o usuário faz login direto no portal do parceiro.
 const PET_PORTAL_URL = 'https://pet.consultastelemedicina.com.br/login_n'
 
-const portalOrigin = () => window.location.origin || 'https://conta.vivamaisclub.com'
+const portalOrigin = () => (IS_NATIVE_APP ? SITE_ORIGIN : window.location.origin || SITE_ORIGIN)
 const portalUrl = (path) => `${portalOrigin()}${path.startsWith('/') ? path : `/${path}`}`
 
 function resolveBenefitSlug(title) {
@@ -435,6 +436,9 @@ const hasKidsDependents = computed(() =>
 const hasTeenDependents = computed(() =>
   (depInfo.value?.dependents || []).some((d) => d.ageGroup === 'teen')
 )
+// Atalhos do Viva Kids/Teens: admin sempre vê; titular só com dependente da faixa. Fora do app Android.
+const showKidsEntry = computed(() => KIDS_TEEN_ENABLED && (props.user?.role === 'admin' || hasKidsDependents.value))
+const showTeenEntry = computed(() => KIDS_TEEN_ENABLED && (props.user?.role === 'admin' || hasTeenDependents.value))
 
 // Programa de Indicações (Afiliação)
 const activeRefTab = ref('visaoGeral')
@@ -1357,7 +1361,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-if="user?.role === 'admin' || hasKidsDependents"
+              v-if="showKidsEntry"
               class="shortcut-card animated-item"
               style="animation-delay: 0.75s;"
               @click="emit('changeTab', 'kids-auth')"
@@ -1373,7 +1377,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-if="user?.role === 'admin' || hasTeenDependents"
+              v-if="showTeenEntry"
               class="shortcut-card animated-item"
               style="animation-delay: 0.8s;"
               @click="emit('changeTab', 'teen-auth')"
@@ -1542,7 +1546,7 @@ onMounted(async () => {
               </div>
 
               <div
-                v-if="user?.role === 'admin' || hasKidsDependents"
+                v-if="showKidsEntry"
                 class="pwa-srv-card"
                 @click="emit('changeTab', 'kids-auth')"
               >
@@ -1553,7 +1557,7 @@ onMounted(async () => {
               </div>
 
               <div
-                v-if="user?.role === 'admin' || hasTeenDependents"
+                v-if="showTeenEntry"
                 class="pwa-srv-card"
                 @click="emit('changeTab', 'teen-auth')"
               >

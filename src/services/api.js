@@ -1,4 +1,6 @@
-const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+import { IS_NATIVE_APP, SITE_ORIGIN } from './nativeApp'
+
+const BASE_URL = IS_NATIVE_APP ? `${SITE_ORIGIN}/api` : (import.meta.env.VITE_API_URL ?? '/api')
 const TOKEN_KEY = 'acesso_saude_token'
 
 export function getToken() {
