@@ -12,6 +12,7 @@ import KidsView from './components/kids/KidsView.vue'
 import TeenView from './components/teen/TeenView.vue'
 import { api, getToken, clearToken } from './services/api'
 import { KIDS_TEEN_ENABLED } from './services/nativeApp'
+import { initPush, unregisterPush } from './services/push'
 import { getSocket, disconnectSocket } from './services/socket'
 
 // Abas bloqueadas para dependentes (sem parte financeira nem gestão de dependentes).
@@ -104,6 +105,7 @@ const handleLogin = (userData) => {
   }
 
   initFloatingChat()
+  initPush(navigateTo)
 }
 
 let loggingOut = false
@@ -119,6 +121,7 @@ const handleLogout = async (redirectTab = 'home') => {
   try {
     const targetTab = Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
     if (getToken()) {
+      await unregisterPush()
       try {
         await api.post('/auth/logout')
       } catch {
@@ -357,7 +360,10 @@ onMounted(async () => {
   }
   restoringSession.value = false
 
-  if (isLoggedIn.value) initFloatingChat()
+  if (isLoggedIn.value) {
+    initFloatingChat()
+    initPush(navigateTo)
+  }
 
   if (!showPublicCheckout.value) {
     handleRouting()
