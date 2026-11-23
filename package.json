@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "build:app": "vite build --mode app && npx cap sync android"
+    "build:app": "vite build --mode app && npx cap sync android",
+    "build:app:kids": "vite build --mode app-kids && npx cap sync android",
+    "build:app:teen": "vite build --mode app-teen && npx cap sync android"
   },
   "dependencies": {
     "@capacitor/local-notifications": "^8.3.0",

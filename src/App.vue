@@ -11,7 +11,7 @@ import CheckoutView from './components/CheckoutView.vue'
 import KidsView from './components/kids/KidsView.vue'
 import TeenView from './components/teen/TeenView.vue'
 import { api, getToken, clearToken } from './services/api'
-import { KIDS_TEEN_ENABLED } from './services/nativeApp'
+import { KIDS_TEEN_ENABLED, APP_MODULE } from './services/nativeApp'
 import { initPush, unregisterPush } from './services/push'
 import { getSocket, disconnectSocket } from './services/socket'
 
@@ -119,7 +119,10 @@ const handleLogout = async (redirectTab = 'home') => {
   if (loggingOut) return
   loggingOut = true
   try {
-    const targetTab = Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
+    // App Kids/Teens: sair sempre volta para o login da própria área.
+    const targetTab = APP_MODULE
+      ? `${APP_MODULE}-auth`
+      : Object.prototype.hasOwnProperty.call(logoutRedirects, redirectTab) ? redirectTab : 'home'
     if (getToken()) {
       await unregisterPush()
       try {
@@ -182,6 +185,8 @@ const mobileLogout = () => {
 }
 
 const navigateTo = (tab) => {
+  // App Kids/Teens: qualquer destino fora da área (ex.: "voltar ao início") fica na própria área.
+  if (APP_MODULE && !tab.startsWith(APP_MODULE)) tab = APP_MODULE
   if (tab === 'admin' && currentUser.value?.role !== 'admin') return
   // Dependente não acessa financeiro/indicações/dependentes.
   if (currentUser.value?.isDependent && DEPENDENT_BLOCKED_TABS.includes(tab)) return
@@ -273,6 +278,10 @@ const handleRouting = () => {
   if (isPublicCheckoutRoute()) {
     showPublicCheckout.value = true
     return
+  }
+  // App Kids/Teens abre direto na área dele (login ou painel, conforme a sessão salva).
+  if (APP_MODULE && !window.location.pathname.startsWith(`/${APP_MODULE}`)) {
+    window.history.replaceState({}, '', `/${APP_MODULE}`)
   }
   const path = window.location.pathname
   const hash = window.location.hash

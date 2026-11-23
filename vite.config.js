@@ -1,26 +1,46 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
-import { rmSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 
-// App Android ainda sem Viva Kids/Teens: tira as imagens deles do pacote (~55 MB).
-const dropKidsTeenAssets = () => ({
-  name: 'drop-kids-teen-assets',
+// Apps Android: cada um leva só as imagens da sua área (Kids sozinho tem ~50 MB).
+const APP_DROPPED_ASSETS = {
+  app: ['kids', 'teen', 'kids-bg.png'],
+  'app-kids': ['teen'],
+  'app-teen': ['kids', 'kids-bg.png'],
+}
+const listFiles = (dir) =>
+  existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? listFiles(join(dir, e.name)) : [join(dir, e.name)])
+    : []
+const dropAssets = (paths) => ({
+  name: 'drop-app-assets',
   apply: 'build',
   closeBundle() {
-    for (const p of ['kids', 'teen', 'kids-bg.png']) rmSync(resolve('dist', p), { recursive: true, force: true })
+    for (const p of paths) rmSync(resolve('dist', p), { recursive: true, force: true })
+    // Apps Kids/Teens: public/kids e public/teen têm muita imagem antiga que o código
+    // não usa mais. Só fica no pacote o arquivo cujo nome aparece no JS/CSS/HTML gerado.
+    const code = [...listFiles(resolve('dist/assets')), resolve('dist/index.html')]
+      .filter((f) => /\.(js|css|html)$/.test(f))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n')
+    for (const f of [...listFiles(resolve('dist/kids')), ...listFiles(resolve('dist/teen'))]) {
+      const name = basename(f)
+      if (!code.includes(name) && !code.includes(encodeURIComponent(name))) rmSync(f, { force: true })
+    }
   },
 })
 
 // https://vite.dev/config/
-// --mode app = build do app Android (Capacitor): sem service worker do PWA.
+// --mode app / app-kids / app-teen = apps Android (Capacitor): sem service worker do PWA.
 export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    mode === 'app' && dropKidsTeenAssets(),
+    APP_DROPPED_ASSETS[mode] && dropAssets(APP_DROPPED_ASSETS[mode]),
     VitePWA({
-      disable: mode === 'app',
+      disable: mode.startsWith('app'),
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'apple-touch-icon.png', 'logo-viva-mais.png'],
       manifest: {

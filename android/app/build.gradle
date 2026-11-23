@@ -67,6 +67,11 @@ try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
+        // Só o app principal (br.com.vivamaisclub.app) está no Firebase: os apps Kids/Teens
+        // não recebem push e não processam o google-services.json (senão o build falha).
+        tasks.configureEach { t ->
+            if (t.name ==~ /process(Kids|Teens)\w*GoogleServices/) t.enabled = false
+        }
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")

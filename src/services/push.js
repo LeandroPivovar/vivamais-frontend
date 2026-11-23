@@ -4,7 +4,10 @@
 import { PushNotifications } from '@capacitor/push-notifications'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { api } from './api'
-import { IS_NATIVE_APP } from './nativeApp'
+import { IS_NATIVE_APP, APP_MODULE } from './nativeApp'
+
+// Só o app principal tem Firebase configurado (os apps Kids/Teens não recebem push).
+const PUSH_ENABLED = IS_NATIVE_APP && !APP_MODULE
 
 const CHANNEL_ID = 'default'
 let listenersReady = false
@@ -16,7 +19,7 @@ let localId = 1
  * e ao abrir o app já logado. `onOpenTab(tab)` é chamado quando o usuário toca na notificação.
  */
 export async function initPush(onOpenTab) {
-  if (!IS_NATIVE_APP) return
+  if (!PUSH_ENABLED) return
   try {
     if (!listenersReady) {
       listenersReady = true
@@ -65,7 +68,7 @@ export async function initPush(onOpenTab) {
 
 /** Logout: este celular para de receber as notificações da conta. Chamar antes de limpar o token. */
 export async function unregisterPush() {
-  if (!IS_NATIVE_APP || !currentToken) return
+  if (!PUSH_ENABLED || !currentToken) return
   try {
     await api.delete('/push/devices', { token: currentToken })
   } catch { /* segue o logout */ }
